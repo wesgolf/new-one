@@ -36,3 +36,11 @@ externalPort = 80
 [[ports]]
 localPort = 24678
 externalPort = 3000
+
+[userenv]
+
+[userenv.shared]
+VITE_SUPABASE_URL = "https://fvklictojdijhnikxuik.supabase.co"
+VITE_SUPABASE_PK = "sb_publishable_CQRw790O2RLkM_Qchqa6Ag_TZZaHBBs"
+VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ2a2xpY3RvamRpamhuaWt4dWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTM3NjEsImV4cCI6MjA5MDYyOTc2MX0.krV1jyyk-zxjhwnI6JsxvKoXdA_-8PgFgukkj-qHwk8"
+VITE_ZERNIO_API_KEY = "sk_a9f56616310d963d1093c234b59e567e985b38cf67e3c41586c29fc1106610d0"
