@@ -167,7 +167,22 @@ export function PostComposerModal({
     onSave({ ...formData, status: 'ready', publish_status: 'draft' });
   };
 
+  const validateForm = (): string | null => {
+    if (!formData.title?.trim() && !formData.hook?.trim()) {
+      return 'Please enter a title or hook for your post';
+    }
+    if (!formData.caption?.trim()) {
+      return 'Please add a caption for your post';
+    }
+    return null;
+  };
+
   const handlePublishNow = async () => {
+    const validationError = validateForm();
+    if (validationError) {
+      setActionError(validationError);
+      return;
+    }
     if (!formData.id) {
       onSave({ ...formData, status: 'ready', publish_status: 'draft' });
       return;
@@ -186,8 +201,18 @@ export function PostComposerModal({
   };
 
   const handleSchedule = async () => {
+    const validationError = validateForm();
+    if (validationError) {
+      setActionError(validationError);
+      return;
+    }
     if (!formData.scheduled_at) {
       setActionError('Please select a date and time to schedule');
+      return;
+    }
+    const scheduledDate = new Date(formData.scheduled_at);
+    if (scheduledDate <= new Date()) {
+      setActionError('Schedule time must be in the future');
       return;
     }
     setIsScheduling(true);

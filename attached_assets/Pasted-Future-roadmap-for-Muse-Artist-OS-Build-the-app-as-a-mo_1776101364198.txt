@@ -1,0 +1,98 @@
+Future roadmap for Muse / Artist OS
+
+Build the app as a modular artist operating system with four long-term product pillars:
+
+1. Growth
+
+* Smart Links & Pre-Saves
+* Fan CRM & Email
+* Playlist Pitch Agent
+* Competitor Analysis
+
+2. Live Career
+
+* Venue Booking
+* Electronic Press Kit
+
+3. Analytics & Intelligence
+
+* Artist Analytics (including Spotify and other supported platforms)
+* Competitor Benchmarking
+* Reporting for managers, labels, and collaborators
+
+4. Content Operations
+
+* Social Scheduling
+* Platform-specific publishing settings
+* Best posting time recommendations
+* Audio workflow automation where relevant
+
+Future modules to support:
+
+Venue Booking
+
+* Let the user define target cities, venues, and show goals
+* Research venues and store structured venue records
+* Track capacity, genre fit, city, contact info, notes, and booking history
+* Draft personalized outreach pitches
+* Track sent, replied, follow-up, booked, and declined statuses
+
+Fan CRM & Email
+
+* Capture fans from pre-saves, smart links, website forms, and signups
+* Store fan profiles and source attribution
+* Segment fans by location, engagement, and source
+* Send campaigns for releases, shows, and announcements
+* Track campaign history and engagement
+
+Electronic Press Kit
+
+* Generate a shareable public EPK page
+* Include bio, press photos, music links, stats, embedded content, and rider information
+* Make it easy to update without rebuilding the page each time
+
+Smart Links & Pre-Saves
+
+* Create branded release links and pre-save campaigns
+* Support multiple platforms in one link
+* Track clicks, conversions, and source performance
+* Integrate with the fan CRM where possible
+
+Artist Analytics
+
+* Show key artist metrics in one place, including streaming, playlist, social, and audience data where available
+* Sync data regularly
+* Avoid building this as Spotify-only if the underlying providers support broader coverage
+
+Playlist Pitch Agent
+
+* Research playlist curators and relevant contacts
+* Generate personalized pitch drafts
+* Track outreach, opens, replies, and follow-ups
+* Keep the user in control before sending anything
+
+Competitor Analysis
+
+* Track selected comparable artists
+* Benchmark growth, releases, playlist traction, and platform performance
+* Surface trends and opportunities in a clear dashboard
+
+Reporting
+
+* Generate clean reports for managers, labels, venues, or investors
+* Include campaign performance, audience growth, content performance, and release metrics
+* Support exportable summaries and charts
+
+Potential integrations
+
+* Use Auphonic for audio processing and workflow automation where relevant
+* Evaluate Soundcharts for music metadata, artist intelligence, venue/festival data, and competitor research
+* Evaluate Songstats for artist, label, and track analytics, especially for reporting and performance dashboards
+
+Architecture requirements
+
+* Keep each module separate and extensible
+* Use Supabase as the system of record where possible
+* Store third-party sync results in normalized tables
+* Use clear service layers/adapters for external APIs
+* Make it easy to enable modules over time without rewriting the app
