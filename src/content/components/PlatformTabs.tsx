@@ -226,8 +226,12 @@ function InstagramFields({ post, onUpdate }: { post: PlatformPost; onUpdate: (id
       </div>
 
       <div className="border-t border-slate-100 pt-3 space-y-0.5">
-        <Toggle label="Share to Feed" checked={s.share_to_feed !== false} onChange={v => set('share_to_feed', v)} icon={Eye} />
-        <Toggle label="Trial Reel" checked={s.trial_reel || false} onChange={v => set('trial_reel', v)} />
+        {format === 'reel' && (
+          <Toggle label="Share to Feed" checked={s.share_to_feed !== false} onChange={v => set('share_to_feed', v)} icon={Eye} />
+        )}
+        {format === 'reel' && (
+          <Toggle label="Trial Reel" checked={s.trial_reel || false} onChange={v => set('trial_reel', v)} />
+        )}
       </div>
     </div>
   );
