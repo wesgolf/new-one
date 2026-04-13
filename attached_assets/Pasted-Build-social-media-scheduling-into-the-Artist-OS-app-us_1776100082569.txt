@@ -1,0 +1,104 @@
+Build social media scheduling into the Artist OS app using the Zernio API and Supabase.
+
+Goal:
+Create a full scheduling system that lets me create, edit, schedule, and publish social media posts across Instagram, TikTok, and YouTube, while supporting platform-specific publishing options and storing everything in Supabase.
+
+Core requirements:
+
+1. Scheduling system
+
+* Add the ability to create a post draft with caption, media, platform selection, scheduled date/time, status, and platform-specific settings
+* Support scheduling posts for:
+
+  * Instagram
+  * TikTok
+  * YouTube Shorts
+* Allow posts to be saved as drafts, scheduled, published, failed, or cancelled
+* Allow editing and deleting scheduled posts before they are published
+
+2. Platform-specific settings
+   Build a flexible settings architecture so each platform can support its own options without breaking the UI.
+   Examples:
+
+* Instagram: reel settings, trial reels, caption, hashtags, cover image, etc.
+* TikTok: feed view options, privacy settings, caption, commercial/music usage options if available
+* YouTube Shorts: title, description, category, privacy, audience setting, tags, etc.
+
+Do not hardcode only these examples. The system should be extensible so more platform-specific options can be added easily later.
+
+3. Calendar integration
+
+* Add scheduled posts into the calendar view
+* Let me click a calendar item to view or edit the post
+* Allow creating a post directly from the calendar
+* Show status visually in the calendar (draft, scheduled, posted, failed)
+
+4. Content page integration
+
+* Add a content planning section where I can manage all post drafts and scheduled posts
+* Allow filtering by platform, status, and date
+* Allow opening a post to edit content and platform settings
+* Show whether a post is connected to a calendar date/time
+
+5. Best posting times
+
+* Use the Zernio API to fetch best times to post for each platform if available
+* Display recommended posting times in the scheduling UI
+* Use this as a suggestion layer, not an automatic override
+* Show recommendations in a clean way when selecting a publish date/time
+
+6. Supabase backend
+   Connect the whole system to Supabase.
+   Use Supabase for:
+
+* storing post drafts
+* storing scheduled posts
+* storing publish status
+* storing platform-specific settings in a scalable structure
+* storing API responses/logs where useful
+* storing posting history and errors
+
+Set up proper database tables, relationships, and types.
+Use row-level security if auth is already in place.
+
+7. Architecture
+
+* Build this in a modular way
+* Separate UI, scheduling logic, Zernio API integration, and Supabase data access
+* Create reusable types/interfaces for posts, platforms, statuses, and settings
+* Build the platform settings form dynamically where possible
+* Make it easy to add more social platforms later
+
+8. UX requirements
+
+* Make the flow feel polished and easy to use
+* The user should be able to:
+
+  * create a post from the content page
+  * schedule it
+  * see it on the calendar
+  * edit it later
+  * publish or reschedule it
+* Show success, loading, and error states clearly
+* Make the UI feel premium and modern, consistent with the rest of Artist OS
+
+9. Deliverables
+   Please implement:
+
+* frontend scheduling UI
+* calendar integration
+* content page integration
+* Supabase schema changes
+* Zernio API service layer
+* post creation/edit flow
+* recommended posting times UI
+* publish status handling
+* clean TypeScript types
+* clear comments where needed
+
+Also include:
+
+* suggested Supabase table schema
+* a description of the main components/files added
+* any assumptions made about the Zernio API endpoints and payloads
+* placeholders or adapters where exact endpoint details are still unknown
