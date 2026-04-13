@@ -298,92 +298,48 @@ export const zernioAdapter = {
     }
 
     try {
-      // Step 1: find the account ID for this platform
-      console.log(`[Zernio BestTimes] Step 1: GET /v1/accounts`);
-      const accounts = await this.getSocialAccounts();
-      console.log(`[Zernio BestTimes] Accounts:`, accounts.map((a: any) => ({
-        id: a.id, platform: a.platform, username: a.username || a.displayName
-      })));
-
-      const platformKey = platform.toLowerCase();
-      const account = accounts.find((a: any) =>
-        (a.platform || '').toLowerCase() === platformKey
-      );
-
-      if (!account) {
-        console.warn(`[Zernio BestTimes] No account found for "${platform}". Available:`, accounts.map((a: any) => a.platform));
-        return this.mockBestPostingTimes(platform);
-      }
-
-      // Step 2: fetch analytics for this account — Zernio has no /best-times endpoint,
-      // so we derive best times from real post performance data
-      const url = `${ZERNIO_API_BASE}/analytics?accountId=${account.id}`;
-      console.log(`[Zernio BestTimes] Step 2: GET ${url}`, {
-        accountId: account.id,
-        username: account.username || account.displayName,
-        platform,
-      });
+      const url = `${ZERNIO_API_BASE}/analytics/best-time`;
+      console.log(`[Zernio BestTimes] GET ${url}`);
 
       const response = await fetch(url, { headers: getHeaders() });
       console.log(`[Zernio BestTimes] Response status: ${response.status}`);
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        console.warn(`[Zernio BestTimes] Analytics request failed (${response.status}):`, errData);
+        console.warn(`[Zernio BestTimes] Request failed (${response.status}):`, errData);
         return this.mockBestPostingTimes(platform);
       }
 
       const data = await response.json();
-      const posts: any[] = data.posts || [];
-      console.log(`[Zernio BestTimes] Got ${posts.length} posts for ${platform} — computing best times from engagement rates`);
+      const slots: any[] = data.slots || [];
+      console.log(`[Zernio BestTimes] Raw slots (${slots.length}):`, slots);
 
-      if (posts.length < 3) {
-        console.warn(`[Zernio BestTimes] Too few posts (${posts.length}) to compute meaningful best times — using mock`);
+      if (!slots.length) {
+        console.warn(`[Zernio BestTimes] Empty slots — falling back to mock`);
         return this.mockBestPostingTimes(platform);
       }
 
-      // Group posts by day-of-week + hour, average engagement rate per bucket
       const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      const buckets: Record<string, { total: number; count: number; day: string; hour: number }> = {};
+      const maxEngagement = Math.max(...slots.map((s: any) => s.avg_engagement ?? 0), 0.01);
 
-      for (const post of posts) {
-        const ts = post.publishedAt || post.scheduledFor;
-        if (!ts) continue;
-        const engagement = post.analytics?.engagementRate ?? 0;
-        const d = new Date(ts);
-        const day = dayNames[d.getDay()];
-        const hour = d.getHours();
-        const key = `${day}-${hour}`;
-        if (!buckets[key]) buckets[key] = { total: 0, count: 0, day, hour };
-        buckets[key].total += engagement;
-        buckets[key].count += 1;
-      }
-
-      const computed = Object.values(buckets).map(b => ({
-        day: b.day,
-        hour: b.hour,
-        avg: b.total / b.count,
-        count: b.count,
-      }));
-
-      if (computed.length === 0) {
-        console.warn(`[Zernio BestTimes] No valid timestamps found in posts — using mock`);
-        return this.mockBestPostingTimes(platform);
-      }
-
-      const maxAvg = Math.max(...computed.map(c => c.avg), 0.01);
-      const result: BestPostingTime[] = computed
-        .map(c => ({
-          platform,
-          day: c.day,
-          time: `${String(c.hour).padStart(2, '0')}:00`,
-          score: Math.round((c.avg / maxAvg) * 100),
-          label: `${c.count} post${c.count > 1 ? 's' : ''} · avg ${c.avg.toFixed(1)}% engagement`,
-        }))
+      const result: BestPostingTime[] = slots
+        .map((s: any) => {
+          const hour = s.hour ?? 0;
+          const dayIndex = s.day_of_week ?? 0;
+          const avg = s.avg_engagement ?? 0;
+          const count = s.post_count ?? 0;
+          return {
+            platform,
+            day: dayNames[dayIndex] ?? 'Mon',
+            time: `${String(hour).padStart(2, '0')}:00`,
+            score: Math.round((avg / maxEngagement) * 100),
+            label: `${count} post${count !== 1 ? 's' : ''} · avg ${avg.toFixed(0)} engagement`,
+          } as BestPostingTime;
+        })
         .sort((a, b) => b.score - a.score)
         .slice(0, 10);
 
-      console.log(`[Zernio BestTimes] Computed best times for ${platform}:`, result);
+      console.log(`[Zernio BestTimes] Result for ${platform}:`, result);
       return result;
     } catch (err) {
       console.error(`[Zernio BestTimes] Unexpected error for ${platform}:`, err);
