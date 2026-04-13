@@ -16,36 +16,19 @@ import {
 import { cn } from '../../lib/utils';
 import { ContentItem, Platform, BestPostingTime } from '../types';
 import { motion } from 'framer-motion';
-import { zernioAdapter } from '../services/zernioAdapter';
 
 interface WeeklyContentCalendarProps {
   items: ContentItem[];
   onSelectItem: (item: ContentItem) => void;
   onAddPost: (date: Date, time?: string) => void;
+  bestTimes?: BestPostingTime[];
 }
 
 const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-export function WeeklyContentCalendar({ items, onSelectItem, onAddPost }: WeeklyContentCalendarProps) {
+export function WeeklyContentCalendar({ items, onSelectItem, onAddPost, bestTimes = [] }: WeeklyContentCalendarProps) {
   const [currentDate, setCurrentDate] = React.useState(new Date());
-  const [bestTimes, setBestTimes] = React.useState<BestPostingTime[]>([]);
   const [showBestTimes, setShowBestTimes] = React.useState(true);
-
-  React.useEffect(() => {
-    const loadBestTimes = async () => {
-      try {
-        const [ig, tt, yt] = await Promise.all([
-          zernioAdapter.getBestPostingTimes('Instagram'),
-          zernioAdapter.getBestPostingTimes('TikTok'),
-          zernioAdapter.getBestPostingTimes('YouTube'),
-        ]);
-        setBestTimes([...ig, ...tt, ...yt]);
-      } catch {
-        setBestTimes([]);
-      }
-    };
-    loadBestTimes();
-  }, []);
 
   const getStartOfWeek = (date: Date) => {
     const d = new Date(date);

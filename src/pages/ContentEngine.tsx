@@ -7,10 +7,11 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 
-import { ContentItem, ContentStatus, ContentItemWithAssets, PlatformPost } from '../content/types';
+import { ContentItem, ContentStatus, ContentItemWithAssets, PlatformPost, BestPostingTime } from '../content/types';
 import { Release } from '../types';
 
 import { WeeklyContentCalendar } from '../content/components/WeeklyContentCalendar';
+import { BestTimesPanel } from '../content/components/BestTimesPanel';
 import { ContentLibrary } from '../content/components/ContentLibrary';
 import { PostComposerModal } from '../content/components/PostComposerModal';
 import { PostEditor } from '../content/components/PostEditor';
@@ -41,6 +42,8 @@ export function ContentEngine() {
   const [contentListRefresh, setContentListRefresh] = React.useState(0);
   const [activeTab, setActiveTab] = React.useState<'library' | 'pipeline'>('library');
   const [scheduledPlatformItems, setScheduledPlatformItems] = React.useState<ContentItem[]>([]);
+  const [bestTimes, setBestTimes] = React.useState<BestPostingTime[]>([]);
+  const [isBestTimesLoading, setIsBestTimesLoading] = React.useState(true);
 
   const loadScheduledPlatformPosts = React.useCallback(async () => {
     try {
@@ -98,6 +101,14 @@ export function ContentEngine() {
       if (intervalId) clearInterval(intervalId);
     };
   }, [syncZernio]);
+
+  React.useEffect(() => {
+    setIsBestTimesLoading(true);
+    zernioAdapter.getBestPostingTimes('Instagram')
+      .then(slots => setBestTimes(slots))
+      .catch(() => setBestTimes([]))
+      .finally(() => setIsBestTimesLoading(false));
+  }, []);
 
   const handleSaveContent = async (item: Partial<ContentItem>) => {
     const tempId = item.id || `cont_${Date.now()}`;
@@ -227,7 +238,10 @@ export function ContentEngine() {
             setIsComposerOpen(true);
           }}
           onAddPost={handleAddPostFromCalendar}
+          bestTimes={bestTimes}
         />
+
+        <BestTimesPanel bestTimes={bestTimes} isLoading={isBestTimesLoading} />
 
         <div className="flex items-center gap-6 border-b border-slate-200 pb-1">
           {[
