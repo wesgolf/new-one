@@ -12,12 +12,12 @@ A comprehensive artist management web application built with React 19, Vite, Typ
 ## Key Features
 
 ### Content Engine (`src/pages/ContentEngine.tsx`)
-- **Content Pipeline**: Kanban board for managing content lifecycle (idea → drafted → ready → scheduled → posted)
-- **Content Tab**: List view of uploaded content with platform/status/date filters, click to edit
-- **Scheduling Tab**: Full scheduling manager with platform/status/date filters, quick publish/cancel actions
-- **Performance Analytics**: Track content performance across platforms
-- **Strategy & Planning**: AI-powered content recommendations and weekly planning
-- **Upload Content**: Opens PostEditor for MP4 upload → platform selection → edit → schedule/post flow
+- **Weekly Schedule** (always visible at top): Weekly calendar view with best posting times overlay from Zernio. Click empty slots or best-time indicators to add posts. Fetches best times for Instagram, TikTok, YouTube.
+- **Content Library tab**: Grid of uploaded videos with 9:16 thumbnail previews, drag-and-drop .mp4 upload, "Add Media" button, filter by all/unposted/scheduled/published.
+- **Pipeline tab**: Kanban board for managing content lifecycle (idea → drafted → ready → scheduled → posted)
+- **Scheduling tab**: Full scheduling manager with platform/status/date filters, quick publish/cancel actions
+- **Auto-sync**: Zernio data syncs automatically every hour on the hour (no manual sync button)
+- **Removed**: Weekly goal card, Growth velocity card, PostNextCard (release countdown), Performance tab, Strategy & Planning tab, Engagement Hub
 
 ### MP4 Upload → Edit → Schedule/Post Flow
 Core flow: Upload .mp4 → create content_item + content_asset → select platforms → create platform_posts → edit per-platform details → Post Now or Schedule
