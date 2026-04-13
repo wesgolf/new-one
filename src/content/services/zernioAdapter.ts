@@ -292,31 +292,58 @@ export const zernioAdapter = {
 
   async getBestPostingTimes(platform: Platform): Promise<BestPostingTime[]> {
     const apiKey = import.meta.env.VITE_ZERNIO_API_KEY;
-    if (!apiKey) return this.mockBestPostingTimes(platform);
+    if (!apiKey) {
+      console.log(`[Zernio BestTimes] No API key — using mock data for ${platform}`);
+      return this.mockBestPostingTimes(platform);
+    }
 
     try {
+      console.log(`[Zernio BestTimes] Step 1: Fetching social accounts from GET /v1/social-accounts`);
       const accounts = await this.getSocialAccounts();
+      console.log(`[Zernio BestTimes] Accounts response:`, accounts.map((a: any) => ({ id: a.id, platform: a.platform, name: a.name })));
+
       const platformKey = platform.toLowerCase();
       const account = accounts.find((a: any) =>
         (a.platform || '').toLowerCase() === platformKey
       );
-      if (!account) return this.mockBestPostingTimes(platform);
+
+      if (!account) {
+        console.warn(`[Zernio BestTimes] No account found for platform "${platform}" — available platforms:`, accounts.map((a: any) => a.platform));
+        return this.mockBestPostingTimes(platform);
+      }
 
       const tz = encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone);
-      const response = await fetch(
-        `${ZERNIO_API_BASE}/social-accounts/${account.id}/best-times?timezone=${tz}&range=90d&granularity=hour`,
-        { headers: getHeaders() }
-      );
-      if (!response.ok) return this.mockBestPostingTimes(platform);
+      const url = `${ZERNIO_API_BASE}/social-accounts/${account.id}/best-times?timezone=${tz}&range=90d&granularity=hour`;
+      console.log(`[Zernio BestTimes] Step 2: Fetching best times for ${platform}`, {
+        accountId: account.id,
+        accountName: account.name,
+        url,
+      });
+
+      const response = await fetch(url, { headers: getHeaders() });
+      console.log(`[Zernio BestTimes] Response status: ${response.status}`);
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        console.warn(`[Zernio BestTimes] Request failed (${response.status}):`, errData);
+        return this.mockBestPostingTimes(platform);
+      }
 
       const data = await response.json();
+      console.log(`[Zernio BestTimes] Raw response for ${platform}:`, data);
+
       const buckets: any[] = data.bestTimes || data.best_times || data.times || data.slots || [];
-      if (!buckets.length) return this.mockBestPostingTimes(platform);
+      console.log(`[Zernio BestTimes] Found ${buckets.length} time buckets (tried keys: bestTimes, best_times, times, slots)`);
+
+      if (!buckets.length) {
+        console.warn(`[Zernio BestTimes] Empty buckets — falling back to mock for ${platform}`);
+        return this.mockBestPostingTimes(platform);
+      }
 
       const maxScore = Math.max(...buckets.map((b: any) => b.score ?? b.value ?? b.engagement ?? 1), 1);
       const dayMap: Record<number, string> = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
 
-      return buckets.map((b: any) => {
+      const result = buckets.map((b: any) => {
         const rawScore = b.score ?? b.value ?? b.engagement ?? 0;
         const normalised = Math.round((rawScore / maxScore) * 100);
         const hour = b.hour ?? parseInt((b.time || '0').split(':')[0], 10);
@@ -331,7 +358,11 @@ export const zernioAdapter = {
           label: b.label || b.reason || undefined,
         } as BestPostingTime;
       }).sort((a, b) => b.score - a.score);
-    } catch {
+
+      console.log(`[Zernio BestTimes] Normalised result for ${platform}:`, result);
+      return result;
+    } catch (err) {
+      console.error(`[Zernio BestTimes] Unexpected error for ${platform}:`, err);
       return this.mockBestPostingTimes(platform);
     }
   },
