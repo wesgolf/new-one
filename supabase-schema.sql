@@ -226,6 +226,46 @@ CREATE TABLE IF NOT EXISTS publish_logs (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Content Assets Table (uploaded media files)
+CREATE TABLE IF NOT EXISTS content_assets (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  content_item_id UUID REFERENCES content_items(id) ON DELETE CASCADE,
+  file_url TEXT NOT NULL,
+  file_path TEXT,
+  file_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  asset_type TEXT NOT NULL DEFAULT 'video' CHECK (asset_type IN ('video', 'image', 'audio')),
+  file_size_bytes BIGINT,
+  duration_seconds NUMERIC,
+  thumbnail_url TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Platform Posts Table (per-platform child posts of a content item)
+CREATE TABLE IF NOT EXISTS platform_posts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  content_item_id UUID REFERENCES content_items(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL CHECK (platform IN ('Instagram', 'TikTok', 'YouTube')),
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'scheduled', 'publishing', 'published', 'failed', 'cancelled')),
+  caption TEXT,
+  title TEXT,
+  description TEXT,
+  hashtags TEXT[] DEFAULT '{}',
+  platform_settings_json JSONB DEFAULT '{}'::JSONB,
+  scheduled_at TIMESTAMP WITH TIME ZONE,
+  published_at TIMESTAMP WITH TIME ZONE,
+  external_post_id TEXT,
+  external_post_url TEXT,
+  zernio_post_id TEXT,
+  error_message TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Update content_items with campaign and notes columns
+ALTER TABLE content_items ADD COLUMN IF NOT EXISTS campaign TEXT;
+ALTER TABLE content_items ADD COLUMN IF NOT EXISTS notes TEXT;
+
 -- Enable Row Level Security (Optional for prototype)
 -- ALTER TABLE inbox ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE releases ENABLE ROW LEVEL SECURITY;

@@ -12,13 +12,15 @@ import {
   MessageSquare,
   Search,
   Filter,
-  Clock
+  Clock,
+  Upload,
+  Film
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 
 // Types
-import { ContentItem, ContentAnalytics, ContentReflection, ContentPlanSuggestion, Platform, ContentStatus } from '../content/types';
+import { ContentItem, ContentAnalytics, ContentReflection, ContentPlanSuggestion, Platform, ContentStatus, ContentItemWithAssets } from '../content/types';
 import { Release } from '../types';
 
 // Components
@@ -36,6 +38,8 @@ import { ContentInsightsPanel } from '../content/components/ContentInsightsPanel
 import { SchedulerPanel } from '../content/components/SchedulerPanel';
 import { EngagementHub } from '../content/components/EngagementHub';
 import { ZernioAccountStatus } from '../content/components/ZernioAccountStatus';
+import { PostEditor } from '../content/components/PostEditor';
+import { ContentListView } from '../content/components/ContentListView';
 
 // Engines & Services
 import { contentRecommendationEngine } from '../content/engine/contentRecommendationEngine';
@@ -57,10 +61,13 @@ export function ContentEngine() {
   const [isCreatorOpen, setIsCreatorOpen] = React.useState(false);
   const [isPostModeOpen, setIsPostModeOpen] = React.useState(false);
   const [isComposerOpen, setIsComposerOpen] = React.useState(false);
+  const [isEditorOpen, setIsEditorOpen] = React.useState(false);
   const [selectedItem, setSelectedItem] = React.useState<ContentItem | null>(null);
+  const [editorItem, setEditorItem] = React.useState<ContentItemWithAssets | null>(null);
   const [loading, setLoading] = React.useState(false);
-  const [activeTab, setActiveTab] = React.useState<'pipeline' | 'scheduling' | 'analytics' | 'strategy'>('pipeline');
+  const [activeTab, setActiveTab] = React.useState<'pipeline' | 'content' | 'scheduling' | 'analytics' | 'strategy'>('pipeline');
   const [isSyncing, setIsSyncing] = React.useState(false);
+  const [contentListRefresh, setContentListRefresh] = React.useState(0);
 
   // Fetch real data from Zernio
   React.useEffect(() => {
@@ -315,6 +322,7 @@ export function ContentEngine() {
           <div className="flex items-center gap-8">
             {[
               { id: 'pipeline', label: 'Content Pipeline', icon: LayoutGrid },
+              { id: 'content', label: 'Content', icon: Film },
               { id: 'scheduling', label: 'Scheduling', icon: Clock },
               { id: 'analytics', label: 'Performance', icon: BarChart3 },
               { id: 'strategy', label: 'Strategy & Planning', icon: Calendar }
@@ -339,16 +347,28 @@ export function ContentEngine() {
             ))}
           </div>
 
-          <button 
-            onClick={() => {
-              setSelectedItem(null);
-              setIsCreatorOpen(true);
-            }}
-            className="px-6 py-3 bg-blue-600 text-white rounded-2xl font-black text-sm shadow-lg shadow-blue-200 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 mb-2"
-          >
-            <Plus className="w-4 h-4" />
-            New Content Idea
-          </button>
+          <div className="flex gap-3 mb-2">
+            <button 
+              onClick={() => {
+                setEditorItem(null);
+                setIsEditorOpen(true);
+              }}
+              className="px-5 py-3 bg-emerald-600 text-white rounded-2xl font-black text-sm shadow-lg shadow-emerald-200 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2"
+            >
+              <Upload className="w-4 h-4" />
+              Upload Content
+            </button>
+            <button 
+              onClick={() => {
+                setSelectedItem(null);
+                setIsCreatorOpen(true);
+              }}
+              className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-black text-sm shadow-lg shadow-blue-200 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              New Idea
+            </button>
+          </div>
         </div>
 
         {/* Tab Content */}
@@ -379,6 +399,27 @@ export function ContentEngine() {
 
                 {/* 10. LIGHT ENGAGEMENT HUB */}
                 <EngagementHub onOpenPlatform={(p) => window.open(`https://${p.toLowerCase()}.com`, '_blank')} />
+              </div>
+            )}
+
+            {activeTab === 'content' && (
+              <div className="space-y-8">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center">
+                    <Film className="w-6 h-6 text-blue-600" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-2xl font-black text-slate-900 tracking-tight">Uploaded Content</h3>
+                    <p className="text-slate-500 font-medium text-sm">All your uploaded videos and their platform posts.</p>
+                  </div>
+                </div>
+                <ContentListView
+                  onEditItem={(item) => {
+                    setEditorItem(item);
+                    setIsEditorOpen(true);
+                  }}
+                  refreshTrigger={contentListRefresh}
+                />
               </div>
             )}
 
@@ -524,6 +565,39 @@ export function ContentEngine() {
             setIsPostModeOpen(false);
             setSelectedItem(item);
             setIsCreatorOpen(true);
+          }}
+        />
+
+        <PostEditor
+          isOpen={isEditorOpen}
+          onClose={() => {
+            setIsEditorOpen(false);
+            setEditorItem(null);
+          }}
+          contentItem={editorItem}
+          onSaved={(item) => {
+            setContentListRefresh(prev => prev + 1);
+            const asContentItem: ContentItem = {
+              id: item.id,
+              user_id: item.user_id,
+              title: item.title,
+              hook: item.hook || '',
+              caption: item.caption || '',
+              hashtags: item.hashtags || [],
+              platform: item.platform,
+              post_type: item.post_type,
+              angle: item.angle,
+              status: item.status,
+              publish_status: item.publish_status,
+              media_url: item.media_url,
+              scheduled_at: item.scheduled_at,
+              created_at: item.created_at,
+              updated_at: item.updated_at,
+            };
+            setItems(prev => {
+              const exists = prev.some(i => i.id === item.id);
+              return exists ? prev.map(i => i.id === item.id ? asContentItem : i) : [asContentItem, ...prev];
+            });
           }}
         />
 

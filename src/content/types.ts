@@ -98,6 +98,49 @@ export interface ContentPlanSuggestion {
   rationale: string;
 }
 
+export type PlatformPostStatus = 'draft' | 'scheduled' | 'publishing' | 'published' | 'failed' | 'cancelled';
+
+export interface ContentAsset {
+  id: string;
+  content_item_id: string;
+  file_url: string;
+  file_path?: string;
+  file_name: string;
+  mime_type: string;
+  asset_type: 'video' | 'image' | 'audio';
+  file_size_bytes?: number;
+  duration_seconds?: number;
+  thumbnail_url?: string;
+  created_at: string;
+}
+
+export interface PlatformPost {
+  id: string;
+  content_item_id: string;
+  platform: 'Instagram' | 'TikTok' | 'YouTube';
+  status: PlatformPostStatus;
+  caption?: string;
+  title?: string;
+  description?: string;
+  hashtags: string[];
+  platform_settings_json: Record<string, any>;
+  scheduled_at?: string;
+  published_at?: string;
+  external_post_id?: string;
+  external_post_url?: string;
+  zernio_post_id?: string;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContentItemWithAssets extends ContentItem {
+  assets?: ContentAsset[];
+  platform_posts?: PlatformPost[];
+  campaign?: string;
+  notes?: string;
+}
+
 export interface ZernioPostResponse {
   id: string;
   status: 'success' | 'failed' | 'pending';

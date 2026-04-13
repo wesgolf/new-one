@@ -1,0 +1,271 @@
+Build the MP4 upload → edit → schedule/post flow for the Artist OS app using React, TypeScript, Supabase, and the existing app architecture.
+
+Goal:
+Let a user upload an .mp4 file, create a content item from it, add post details for Instagram, TikTok, and YouTube Shorts, then either post immediately or schedule it for later. Store everything in Supabase and prepare the publish flow for Zernio API integration.
+
+What to build:
+
+1. Upload flow
+
+* Add a “New Post” / “Upload Content” entry point
+* Support drag-and-drop and file picker upload for .mp4 files
+* Upload video files to Supabase Storage
+* After upload, create:
+
+  * a content_items record
+  * a content_assets record linked to the uploaded file
+* Save file URL, filename, mime type, and timestamps
+* If possible, generate and store simple video metadata like duration and thumbnail placeholder fields, even if thumbnail generation is stubbed for now
+
+2. Content item creation
+
+* After upload, automatically create a draft content item
+* Status should default to draft
+* Prompt the user to choose target platforms:
+
+  * Instagram
+  * TikTok
+  * YouTube Shorts
+* For each selected platform, create a platform_posts row linked to the parent content item
+
+3. Post editor UI
+   Build a post editor screen or modal that opens after upload.
+   This editor should allow:
+
+* viewing the uploaded video preview
+* editing shared metadata like:
+
+  * internal title
+  * campaign tag or release association
+  * notes
+* editing platform-specific post details in tabs or sections per platform
+
+4. Platform-specific tabs
+   Instagram tab:
+
+* caption
+* hashtags
+* cover image / cover frame placeholder field
+* reel settings placeholder structure
+* trial reel toggle placeholder
+
+TikTok tab:
+
+* caption
+* hashtags
+* privacy setting
+* allow comments toggle
+* allow duet toggle
+* allow stitch toggle
+
+YouTube Shorts tab:
+
+* title
+* description
+* tags
+* category
+* audience setting
+* privacy setting
+
+Store platform-specific options in a flexible settings JSON object rather than hardcoding every option as a separate database column.
+
+5. Scheduling and posting actions
+   In the editor, provide two main actions:
+
+* Post Now
+* Schedule for Later
+
+For Schedule for Later:
+
+* show a date picker and time picker
+* save scheduled_at on the relevant platform_posts rows
+* set status to scheduled
+
+For Post Now:
+
+* immediately trigger a publish action for selected platform posts
+* set status to publishing, then published or failed based on result
+
+6. Calendar integration
+
+* Add scheduled platform posts to the calendar view
+* Display title, platform, scheduled time, and status
+* Clicking a calendar event should open the post editor
+* Support rescheduling by editing the scheduled date/time
+* Drag-and-drop rescheduling can be stubbed if not already supported
+
+7. Content page integration
+
+* Add a content list view showing uploaded posts and their statuses
+* Include filters for:
+
+  * platform
+  * status
+  * scheduled date
+* Show each content item with its child platform posts
+* Let the user click into an item to edit it
+
+8. Supabase schema
+   Create or update the schema to support this flow.
+
+Suggested tables:
+
+content_items
+
+* id
+* title
+* status
+* campaign
+* notes
+* created_at
+* updated_at
+
+content_assets
+
+* id
+* content_item_id
+* file_url
+* file_path
+* file_name
+* mime_type
+* asset_type
+* duration_seconds
+* thumbnail_url
+* created_at
+
+platform_posts
+
+* id
+* content_item_id
+* platform
+* status
+* caption
+* title
+* description
+* hashtags
+* platform_settings_json
+* scheduled_at
+* published_at
+* external_post_id
+* external_post_url
+* error_message
+* created_at
+* updated_at
+
+publish_logs
+
+* id
+* platform_post_id
+* request_payload
+* response_payload
+* success
+* error_message
+* created_at
+
+Use TypeScript types for all major records.
+If auth is already in place, use row-level security policies appropriately.
+
+9. Zernio integration layer
+   Create a dedicated service layer for publishing to Zernio.
+   Do not tightly couple UI code to API calls.
+
+Create functions like:
+
+* publishInstagramPost(platformPostId)
+* publishTikTokPost(platformPostId)
+* publishYouTubeShort(platformPostId)
+
+For now, if exact endpoints are not finalized, create adapter/service stubs with clearly marked TODOs and mock-safe interfaces.
+The important part is having the correct architecture in place.
+
+10. Publish flow logic
+    Implement the logic for Post Now and scheduled publishing.
+
+For Post Now:
+
+* validate required fields for the selected platform
+* build the platform-specific payload
+* send through the Zernio service layer
+* store request/response in publish_logs
+* update platform_posts status accordingly
+
+For scheduled publishing:
+
+* build the backend-ready structure so scheduled posts can later be picked up by a Supabase Edge Function or cron job
+* save enough information so a scheduler can query all platform_posts with status = scheduled and scheduled_at <= now
+
+11. Validation and UX
+    Add validation and clear feedback:
+
+* disable publish if required fields are missing
+* show inline validation errors
+* show loading states during upload and publishing
+* show success states
+* show failed states with useful error messages
+
+Examples:
+
+* YouTube Shorts requires title and audience setting
+* TikTok requires caption if the API requires it
+* Missing media file should block publishing
+
+12. UX expectations
+    The flow should feel fast and polished:
+
+* user uploads .mp4
+* selects platforms
+* edits details
+* posts now or schedules
+* sees it appear in calendar/content list
+
+Design expectations:
+
+* clean, modern UI
+* compact but premium feeling
+* optimized for content operations, not generic admin dashboards
+
+13. Code structure
+    Keep code modular and production-friendly.
+
+Suggested structure:
+
+* components/content/UploadDropzone
+* components/content/PostEditor
+* components/content/PlatformTabs
+* components/content/ScheduleControls
+* components/calendar/CalendarPostEvent
+* services/contentService
+* services/publishService
+* services/zernioService
+* lib/supabase
+* types/content
+
+14. Deliverables
+    Implement:
+
+* upload flow
+* Supabase storage integration
+* draft content item creation
+* platform post creation
+* editor UI
+* schedule/post actions
+* calendar integration
+* content page integration
+* Supabase schema/types
+* Zernio service layer stubs
+* validation/error handling
+
+Also include:
+
+* any migration SQL needed
+* a short explanation of the components/files added
+* any assumptions made
+* TODO markers where Zernio endpoint details are still unknown
+
+Important implementation notes:
+
+* Build around one parent content item with child platform posts
+* Keep platform settings extensible
+* Do not hardcode the flow for only one platform
+* Prefer reusable components and clean TypeScript typing
+* Make the app ready for future analytics and approval workflows

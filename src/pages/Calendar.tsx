@@ -132,14 +132,16 @@ export function Calendar() {
         showsRes,
         meetingsRes,
         todosRes,
-        goalsRes
+        goalsRes,
+        platformPostsRes
       ] = await Promise.all([
         supabase.from('releases').select('*'),
         supabase.from('content_items').select('*'),
         supabase.from('shows').select('*'),
         supabase.from('meetings').select('*'),
         supabase.from('todos').select('*'),
-        supabase.from('goals').select('*')
+        supabase.from('goals').select('*'),
+        supabase.from('platform_posts').select('*, content_items(title, media_url)')
       ]);
 
       if (releasesRes.error) throw releasesRes.error;
@@ -155,6 +157,7 @@ export function Calendar() {
       const meetings = meetingsRes.data;
       const todos = todosRes.data;
       const goals = goalsRes.data;
+      const platformPosts = platformPostsRes.data || [];
 
       const rawEvents: Event[] = [
         ...(releases || []).map(r => ({
@@ -244,7 +247,26 @@ export function Calendar() {
           recurrencePattern: g.recurrence_pattern,
           recurrenceInterval: g.recurrence_interval,
           recurrenceEndDate: g.recurrence_end_date
-        }))
+        })),
+        ...(platformPosts || [])
+          .filter((pp: any) => pp.scheduled_at)
+          .map((pp: any) => {
+            const scheduledDate = new Date(pp.scheduled_at);
+            const dateStr = `${scheduledDate.getFullYear()}-${String(scheduledDate.getMonth() + 1).padStart(2, '0')}-${String(scheduledDate.getDate()).padStart(2, '0')}`;
+            const timeStr = `${String(scheduledDate.getHours()).padStart(2, '0')}:${String(scheduledDate.getMinutes()).padStart(2, '0')}`;
+            const parentTitle = pp.content_items?.title || pp.title || 'Untitled';
+            return {
+              id: `pp_${pp.id}`,
+              title: `${parentTitle} (${pp.platform})`,
+              date: dateStr,
+              time: timeStr,
+              type: 'post' as const,
+              platform: pp.platform,
+              publishStatus: pp.status as any,
+              status: pp.status,
+              notes: pp.caption,
+            };
+          })
       ].filter(e => e.date);
 
       const allEvents = expandRecurringEvents(rawEvents);
