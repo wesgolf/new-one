@@ -109,7 +109,11 @@ export function useSoundCloud() {
     const handleMessage = async (event: MessageEvent) => {
       // Validate origin
       const origin = event.origin;
-      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) {
+      if (
+        !origin.endsWith('.run.app') &&
+        !origin.endsWith('.replit.dev') &&
+        !origin.includes('localhost')
+      ) {
         return;
       }
 

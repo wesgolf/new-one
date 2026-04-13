@@ -37,6 +37,9 @@ async function startServer() {
 
   // SoundCloud Auth Routes
   app.get('/api/soundcloud/login', (req, res) => {
+    if (!SOUNDCLOUD_CLIENT_ID) {
+      return res.status(503).json({ error: 'SoundCloud is not configured. Please add SOUNDCLOUD_CLIENT_ID to your secrets.' });
+    }
     const { code_challenge, state } = req.query;
     const appUrl = process.env.APP_URL || `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host'] || req.headers.host}`;
     const redirectUri = `${appUrl.replace(/\/$/, '')}/soundcloud-callback`;
@@ -46,6 +49,9 @@ async function startServer() {
   });
 
   app.post('/api/soundcloud/token', async (req, res) => {
+    if (!SOUNDCLOUD_CLIENT_ID || !SOUNDCLOUD_CLIENT_SECRET) {
+      return res.status(503).json({ error: 'SoundCloud is not configured. Please add SOUNDCLOUD_CLIENT_ID and SOUNDCLOUD_CLIENT_SECRET to your secrets.' });
+    }
     const { code, code_verifier } = req.body;
     const appUrl = process.env.APP_URL || `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host'] || req.headers.host}`;
     const redirectUri = `${appUrl.replace(/\/$/, '')}/soundcloud-callback`;
