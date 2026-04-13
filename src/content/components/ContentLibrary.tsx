@@ -1,8 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Film, Upload, Plus, Instagram, Music2, Youtube, Clock, Send, Trash2, Loader2, GripVertical, AlertCircle, CheckCircle2, Eye, X } from 'lucide-react';
+import { Film, Upload, Plus, Instagram, Music2, Youtube, Loader2, FileText, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../../lib/utils';
-import { ContentItemWithAssets, PlatformPost } from '../types';
+import { ContentItemWithAssets } from '../types';
 import { contentService } from '../../services/contentService';
 
 interface ContentLibraryProps {
@@ -17,14 +17,118 @@ const platformIcons: Record<string, React.ElementType> = {
   YouTube: Youtube,
 };
 
-const statusConfig: Record<string, { bg: string; text: string; dot: string; label: string }> = {
-  draft: { bg: 'bg-slate-50', text: 'text-slate-600', dot: 'bg-slate-400', label: 'Draft' },
-  scheduled: { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-500', label: 'Scheduled' },
-  publishing: { bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-500', label: 'Publishing' },
-  published: { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500', label: 'Published' },
-  failed: { bg: 'bg-red-50', text: 'text-red-700', dot: 'bg-red-500', label: 'Failed' },
-  cancelled: { bg: 'bg-slate-50', text: 'text-slate-400', dot: 'bg-slate-300', label: 'Cancelled' },
+const statusColors: Record<string, string> = {
+  draft: 'bg-slate-100 text-slate-500',
+  scheduled: 'bg-blue-100 text-blue-700',
+  publishing: 'bg-amber-100 text-amber-700',
+  published: 'bg-emerald-100 text-emerald-700',
+  failed: 'bg-red-100 text-red-600',
+  cancelled: 'bg-slate-100 text-slate-400',
 };
+
+function LibraryCard({ item, onEdit }: { item: ContentItemWithAssets; onEdit: (item: ContentItemWithAssets) => void }) {
+  const [notes, setNotes] = useState(item.notes || '');
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [notesSaved, setNotesSaved] = useState(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleNotesChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setNotes(val);
+    setNotesSaved(false);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      setIsSavingNotes(true);
+      try {
+        await contentService.updateContentItem(item.id, { notes: val });
+        setNotesSaved(true);
+        setTimeout(() => setNotesSaved(false), 2000);
+      } catch {}
+      setIsSavingNotes(false);
+    }, 800);
+  };
+
+  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="flex flex-col"
+    >
+      <div
+        className="relative rounded-2xl overflow-hidden bg-black aspect-[9/16] shadow-lg hover:shadow-xl transition-all cursor-pointer group hover:scale-[1.02]"
+        onClick={() => onEdit(item)}
+      >
+        {item.media_url || item.assets?.[0]?.file_url ? (
+          <video
+            src={item.media_url || item.assets?.[0]?.file_url}
+            className="w-full h-full object-cover"
+            muted
+            preload="metadata"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-slate-900">
+            <Film className="w-8 h-8 text-slate-600" />
+          </div>
+        )}
+
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+        <div className="absolute bottom-0 left-0 right-0 p-3 opacity-0 group-hover:opacity-100 transition-opacity">
+          <p className="text-white text-xs font-black truncate">{item.title || 'Untitled'}</p>
+          {item.campaign && <p className="text-white/60 text-[9px] font-bold mt-0.5">{item.campaign}</p>}
+        </div>
+
+        <div className="absolute top-2 left-2 right-2 flex items-center gap-1 flex-wrap">
+          {item.platform_posts && item.platform_posts.length > 0 ? (
+            item.platform_posts.map(post => {
+              const Icon = platformIcons[post.platform] || Film;
+              return (
+                <div
+                  key={post.id}
+                  className={cn(
+                    "flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[8px] font-black backdrop-blur-sm",
+                    statusColors[post.status] || statusColors.draft
+                  )}
+                >
+                  <Icon className="w-2.5 h-2.5" />
+                </div>
+              );
+            })
+          ) : (
+            <div className="px-1.5 py-0.5 rounded-md bg-white/80 backdrop-blur-sm text-[8px] font-black text-slate-500">
+              Draft
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-2 px-0.5">
+        <p className="text-xs font-bold text-slate-700 truncate">{item.title || 'Untitled'}</p>
+        <p className="text-[10px] text-slate-400">{new Date(item.created_at).toLocaleDateString()}</p>
+
+        <div className="mt-2 relative" onClick={e => e.stopPropagation()}>
+          <textarea
+            value={notes}
+            onChange={handleNotesChange}
+            placeholder="Add notes..."
+            rows={2}
+            className="w-full text-[10px] text-slate-600 placeholder:text-slate-300 bg-slate-50 hover:bg-slate-100 focus:bg-white border border-transparent focus:border-slate-200 rounded-xl px-2 py-1.5 resize-none outline-none transition-all leading-relaxed"
+          />
+          {(isSavingNotes || notesSaved) && (
+            <div className="absolute bottom-1.5 right-1.5">
+              {isSavingNotes
+                ? <Loader2 className="w-2.5 h-2.5 text-slate-300 animate-spin" />
+                : <Check className="w-2.5 h-2.5 text-emerald-500" />
+              }
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 export function ContentLibrary({ onEditItem, onUploadNew, refreshTrigger }: ContentLibraryProps) {
   const [items, setItems] = useState<ContentItemWithAssets[]>([]);
@@ -250,71 +354,11 @@ export function ContentLibrary({ onEditItem, onUploadNew, refreshTrigger }: Cont
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {filteredItems.map(item => (
-              <motion.div
+              <LibraryCard
                 key={item.id}
-                layout
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="group cursor-pointer"
-                onClick={() => onEditItem(item)}
-              >
-                <div className="relative rounded-2xl overflow-hidden bg-black aspect-[9/16] shadow-lg group-hover:shadow-xl transition-all group-hover:scale-[1.02]">
-                  {item.media_url || item.assets?.[0]?.file_url ? (
-                    <video
-                      src={item.media_url || item.assets?.[0]?.file_url}
-                      className="w-full h-full object-cover"
-                      muted
-                      preload="metadata"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-slate-900">
-                      <Film className="w-8 h-8 text-slate-600" />
-                    </div>
-                  )}
-
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-
-                  <div className="absolute bottom-0 left-0 right-0 p-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <p className="text-white text-xs font-black truncate">{item.title || 'Untitled'}</p>
-                    {item.campaign && (
-                      <p className="text-white/60 text-[9px] font-bold mt-0.5">{item.campaign}</p>
-                    )}
-                  </div>
-
-                  <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
-                    <div className="flex gap-1">
-                      {item.platform_posts && item.platform_posts.length > 0 ? (
-                        item.platform_posts.map(post => {
-                          const Icon = platformIcons[post.platform] || Film;
-                          const config = statusConfig[post.status] || statusConfig.draft;
-                          return (
-                            <div
-                              key={post.id}
-                              className={cn(
-                                "flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[8px] font-black backdrop-blur-sm",
-                                config.bg, config.text
-                              )}
-                            >
-                              <Icon className="w-2.5 h-2.5" />
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white/80 backdrop-blur-sm text-[8px] font-black text-slate-500">
-                          Draft
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-2 px-1">
-                  <p className="text-xs font-bold text-slate-700 truncate">{item.title || 'Untitled'}</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    {new Date(item.created_at).toLocaleDateString()}
-                  </p>
-                </div>
-              </motion.div>
+                item={item}
+                onEdit={onEditItem}
+              />
             ))}
 
             <button

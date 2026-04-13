@@ -1,27 +1,26 @@
 import React from 'react';
 import { 
   Loader2, 
-  Clock,
   Film,
   Upload
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 
-import { ContentItem, ContentAnalytics, ContentStatus, ContentItemWithAssets } from '../content/types';
+import { ContentItem, ContentStatus, ContentItemWithAssets, PlatformPost } from '../content/types';
 import { Release } from '../types';
 
 import { WeeklyContentCalendar } from '../content/components/WeeklyContentCalendar';
 import { ContentLibrary } from '../content/components/ContentLibrary';
 import { PostComposerModal } from '../content/components/PostComposerModal';
 import { PostEditor } from '../content/components/PostEditor';
-import { SchedulingManager } from '../content/components/SchedulingManager';
 import { ContentPipelineBoard } from '../content/components/ContentPipelineBoard';
 import { ContentCreatorPanel } from '../content/components/ContentCreatorPanel';
 import { PostModeModal } from '../content/components/PostModeModal';
 
 import { zernioAdapter } from '../content/services/zernioAdapter';
 import { contentPersistence } from '../content/services/contentPersistence';
+import { contentService } from '../services/contentService';
 
 import { mockReleases, mockContentItems } from '../content/mockData';
 
@@ -40,7 +39,33 @@ export function ContentEngine() {
   const [isSyncing, setIsSyncing] = React.useState(false);
   const [lastSyncTime, setLastSyncTime] = React.useState<Date | null>(null);
   const [contentListRefresh, setContentListRefresh] = React.useState(0);
-  const [activeTab, setActiveTab] = React.useState<'library' | 'pipeline' | 'scheduling'>('library');
+  const [activeTab, setActiveTab] = React.useState<'library' | 'pipeline'>('library');
+  const [scheduledPlatformItems, setScheduledPlatformItems] = React.useState<ContentItem[]>([]);
+
+  const loadScheduledPlatformPosts = React.useCallback(async () => {
+    try {
+      const platformPosts = await contentService.getScheduledPlatformPosts();
+      const asItems: ContentItem[] = platformPosts.map((pp: PlatformPost) => ({
+        id: `pp_${pp.id}`,
+        user_id: 'user_1',
+        title: pp.title || pp.caption || 'Scheduled Post',
+        hook: pp.caption || '',
+        caption: pp.caption || '',
+        hashtags: pp.hashtags || [],
+        platform: pp.platform,
+        post_type: 'drop_clip',
+        angle: 'hype',
+        status: 'scheduled' as ContentStatus,
+        publish_status: 'scheduled',
+        scheduled_at: pp.scheduled_at,
+        created_at: pp.created_at,
+        updated_at: pp.updated_at,
+      }));
+      setScheduledPlatformItems(asItems);
+    } catch {
+      setScheduledPlatformItems([]);
+    }
+  }, []);
 
   const syncZernio = React.useCallback(async () => {
     setIsSyncing(true);
@@ -53,7 +78,8 @@ export function ContentEngine() {
     } finally {
       setIsSyncing(false);
     }
-  }, []);
+    loadScheduledPlatformPosts();
+  }, [loadScheduledPlatformPosts]);
 
   React.useEffect(() => {
     syncZernio();
@@ -195,7 +221,7 @@ export function ContentEngine() {
         </header>
 
         <WeeklyContentCalendar 
-          items={items}
+          items={[...items, ...scheduledPlatformItems]}
           onSelectItem={(item) => {
             setSelectedItem(item);
             setIsComposerOpen(true);
@@ -207,7 +233,6 @@ export function ContentEngine() {
           {[
             { id: 'library', label: 'Content Library', icon: Film },
             { id: 'pipeline', label: 'Pipeline', icon: Film },
-            { id: 'scheduling', label: 'Scheduling', icon: Clock },
           ].map(tab => (
             <button
               key={tab.id}
@@ -270,50 +295,6 @@ export function ContentEngine() {
               />
             )}
 
-            {activeTab === 'scheduling' && (
-              <SchedulingManager
-                items={items}
-                releases={releases}
-                onEdit={(item) => {
-                  setSelectedItem(item);
-                  setIsComposerOpen(true);
-                }}
-                onPublishNow={async (item) => {
-                  const response = await zernioAdapter.postContent(item);
-                  if (response.status === 'success') {
-                    setItems(prev => prev.map(i => i.id === item.id ? {
-                      ...i,
-                      status: 'posted' as ContentStatus,
-                      publish_status: 'published' as const,
-                      posted_at: new Date().toISOString(),
-                      external_post_id: response.platform_post_id
-                    } : i));
-                    await contentPersistence.markPublished(item.id, response.platform_post_id);
-                  } else {
-                    setItems(prev => prev.map(i => i.id === item.id ? { ...i, publish_status: 'failed' as const, publish_error: response.error } : i));
-                    await contentPersistence.markFailed(item.id, response.error);
-                  }
-                }}
-                onCancel={async (item) => {
-                  try {
-                    await zernioAdapter.cancelScheduledPost(item);
-                    setItems(prev => prev.map(i => i.id === item.id ? {
-                      ...i,
-                      status: 'ready' as ContentStatus,
-                      publish_status: 'cancelled' as const
-                    } : i));
-                    await contentPersistence.markCancelled(item.id);
-                  } catch (err: any) {
-                    setItems(prev => prev.map(i => i.id === item.id ? { ...i, publish_error: err.message } : i));
-                    throw err;
-                  }
-                }}
-                onReschedule={(item) => {
-                  setSelectedItem(item);
-                  setIsComposerOpen(true);
-                }}
-              />
-            )}
           </motion.div>
         </AnimatePresence>
 
@@ -326,6 +307,7 @@ export function ContentEngine() {
           contentItem={editorItem}
           onSaved={(item) => {
             setContentListRefresh(prev => prev + 1);
+            loadScheduledPlatformPosts();
             const asContentItem: ContentItem = {
               id: item.id,
               user_id: item.user_id,

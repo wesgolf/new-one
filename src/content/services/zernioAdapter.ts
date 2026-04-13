@@ -277,30 +277,63 @@ export const zernioAdapter = {
     }
   },
 
-  async getBestPostingTimes(platform: Platform): Promise<BestPostingTime[]> {
-    try {
-      const apiKey = import.meta.env.VITE_ZERNIO_API_KEY;
-      if (apiKey) {
-        const response = await fetch(`${ZERNIO_API_BASE}/analytics/best-times?platform=${platform.toLowerCase()}`, {
-          headers: getHeaders()
-        });
-        if (response.ok) {
-          const data = await response.json();
-          if (data.times && Array.isArray(data.times)) {
-            return data.times.map((t: any) => ({
-              platform,
-              day: t.day || t.dayOfWeek || '',
-              time: t.time || t.hour || '',
-              score: t.score || t.engagement || 0,
-              label: t.label || t.reason || undefined,
-            }));
-          }
-        }
-      }
-    } catch {
-      // fall through to mock
+  async getSocialAccounts(): Promise<any[]> {
+    const response = await fetch(`${ZERNIO_API_BASE}/social-accounts`, {
+      headers: getHeaders()
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || err.message || `${response.status}`);
     }
-    return this.mockBestPostingTimes(platform);
+    const data = await response.json();
+    const accounts = Array.isArray(data) ? data : (data.accounts || data.socialAccounts || []);
+    return accounts.map((a: any) => ({ ...a, id: a.id || a._id }));
+  },
+
+  async getBestPostingTimes(platform: Platform): Promise<BestPostingTime[]> {
+    const apiKey = import.meta.env.VITE_ZERNIO_API_KEY;
+    if (!apiKey) return this.mockBestPostingTimes(platform);
+
+    try {
+      const accounts = await this.getSocialAccounts();
+      const platformKey = platform.toLowerCase();
+      const account = accounts.find((a: any) =>
+        (a.platform || '').toLowerCase() === platformKey
+      );
+      if (!account) return this.mockBestPostingTimes(platform);
+
+      const tz = encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone);
+      const response = await fetch(
+        `${ZERNIO_API_BASE}/social-accounts/${account.id}/best-times?timezone=${tz}&range=90d&granularity=hour`,
+        { headers: getHeaders() }
+      );
+      if (!response.ok) return this.mockBestPostingTimes(platform);
+
+      const data = await response.json();
+      const buckets: any[] = data.bestTimes || data.best_times || data.times || data.slots || [];
+      if (!buckets.length) return this.mockBestPostingTimes(platform);
+
+      const maxScore = Math.max(...buckets.map((b: any) => b.score ?? b.value ?? b.engagement ?? 1), 1);
+      const dayMap: Record<number, string> = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
+
+      return buckets.map((b: any) => {
+        const rawScore = b.score ?? b.value ?? b.engagement ?? 0;
+        const normalised = Math.round((rawScore / maxScore) * 100);
+        const hour = b.hour ?? parseInt((b.time || '0').split(':')[0], 10);
+        const dayOfWeek = b.dayOfWeek ?? b.day_of_week ?? b.day ?? 0;
+        const dayName = typeof dayOfWeek === 'number' ? (dayMap[dayOfWeek] ?? 'Mon') : dayOfWeek;
+        const timeStr = `${String(hour).padStart(2, '0')}:00`;
+        return {
+          platform,
+          day: dayName,
+          time: timeStr,
+          score: normalised,
+          label: b.label || b.reason || undefined,
+        } as BestPostingTime;
+      }).sort((a, b) => b.score - a.score);
+    } catch {
+      return this.mockBestPostingTimes(platform);
+    }
   },
 
   async syncPostAnalytics(externalPostId: string, platform: Platform): Promise<ContentAnalytics> {
