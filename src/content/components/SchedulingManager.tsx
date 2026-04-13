@@ -165,19 +165,18 @@ export function SchedulingManager({ items, releases, onEdit, onPublishNow, onCan
           <Filter className="w-3.5 h-3.5 text-slate-400" />
           <select
             value={platformFilter}
-            onChange={(e) => setPlatformFilter(e.target.value as any)}
+            onChange={(e) => setPlatformFilter(e.target.value as Platform | 'all')}
             className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none"
           >
             <option value="all">All Platforms</option>
             <option value="Instagram">Instagram</option>
             <option value="TikTok">TikTok</option>
             <option value="YouTube">YouTube</option>
-            <option value="Twitter">Twitter</option>
           </select>
 
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as any)}
+            onChange={(e) => setStatusFilter(e.target.value as PublishStatus | 'all')}
             className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none"
           >
             <option value="all">All Status</option>
@@ -190,7 +189,7 @@ export function SchedulingManager({ items, releases, onEdit, onPublishNow, onCan
 
           <select
             value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value as any)}
+            onChange={(e) => setDateFilter(e.target.value as 'all' | 'today' | 'week' | 'month')}
             className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none"
           >
             <option value="all">All Dates</option>

@@ -42,6 +42,7 @@ import { contentRecommendationEngine } from '../content/engine/contentRecommenda
 import { contentSchedulerEngine } from '../content/engine/contentSchedulerEngine';
 import { contentReflectionEngine } from '../content/engine/contentReflectionEngine';
 import { zernioAdapter } from '../content/services/zernioAdapter';
+import { contentPersistence } from '../content/services/contentPersistence';
 
 // Mock Data
 import { mockReleases, mockContentItems, mockAnalytics, mockReflections } from '../content/mockData';
@@ -107,10 +108,10 @@ export function ContentEngine() {
     }
   }, [focusTrack, items]);
 
-  // Handlers
-  const handleSaveContent = (item: Partial<ContentItem>) => {
+  const handleSaveContent = async (item: Partial<ContentItem>) => {
+    const tempId = item.id || `cont_${Date.now()}`;
     const newItem: ContentItem = {
-      id: item.id || `cont_${Date.now()}`,
+      id: tempId,
       user_id: 'user_1',
       title: item.title || 'Untitled Content',
       hook: item.hook || '',
@@ -120,20 +121,29 @@ export function ContentEngine() {
       post_type: item.post_type || 'drop_clip',
       angle: item.angle || 'hype',
       status: item.status || 'idea',
+      publish_status: item.publish_status || 'draft',
+      platform_settings: item.platform_settings || {},
       track_id: item.track_id,
       scheduled_at: item.scheduled_at,
+      media_url: item.media_url,
       created_at: item.created_at || new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      ...item
+      ...item,
     };
+    newItem.id = tempId;
 
     if (item.id) {
-      setItems(items.map(i => i.id === item.id ? newItem : i));
+      setItems(prev => prev.map(i => i.id === item.id ? newItem : i));
     } else {
-      setItems([newItem, ...items]);
+      setItems(prev => [newItem, ...prev]);
     }
     setIsCreatorOpen(false);
     setSelectedItem(null);
+
+    const persistedId = await contentPersistence.upsertItem(newItem);
+    if (persistedId && persistedId !== tempId) {
+      setItems(prev => prev.map(i => i.id === tempId ? { ...i, id: persistedId } : i));
+    }
   };
 
   const handleDeleteContent = async (id: string) => {
@@ -391,8 +401,10 @@ export function ContentEngine() {
                         posted_at: new Date().toISOString(),
                         external_post_id: response.platform_post_id
                       } : i));
+                      await contentPersistence.markPublished(item.id, response.platform_post_id);
                     } else {
                       setItems(prev => prev.map(i => i.id === item.id ? { ...i, publish_status: 'failed' as const, publish_error: response.error } : i));
+                      await contentPersistence.markFailed(item.id, response.error);
                     }
                   }}
                   onCancel={async (item) => {
@@ -403,6 +415,7 @@ export function ContentEngine() {
                         status: 'ready' as ContentStatus,
                         publish_status: 'cancelled' as const
                       } : i));
+                      await contentPersistence.markCancelled(item.id);
                     } catch (err: any) {
                       setItems(prev => prev.map(i => i.id === item.id ? { ...i, publish_error: err.message } : i));
                       throw err;
@@ -539,32 +552,46 @@ export function ContentEngine() {
                 const exists = prev.some(i => i.id === item.id);
                 return exists ? prev.map(i => i.id === item.id ? updated : i) : [updated, ...prev];
               });
+              await contentPersistence.markPublished(item.id, response.platform_post_id);
             } else {
               setItems(prev => prev.map(i => i.id === item.id ? { ...i, publish_status: 'failed' as const, publish_error: response.error } : i));
+              await contentPersistence.markFailed(item.id, response.error);
             }
           }}
           onSchedule={async (item, scheduledAt) => {
+            let itemId = item.id;
+            if (itemId.startsWith('cont_')) {
+              const persistedId = await contentPersistence.upsertItem(item);
+              if (persistedId) {
+                itemId = persistedId;
+                item = { ...item, id: persistedId };
+              }
+            }
             const response = await zernioAdapter.scheduleContent(item, scheduledAt);
             if (response.status === 'success') {
               const updated = {
                 ...item,
+                id: itemId,
                 status: 'scheduled' as ContentStatus,
                 publish_status: 'scheduled' as const,
                 scheduled_at: scheduledAt,
                 zernio_job_id: response.id
               };
               setItems(prev => {
-                const exists = prev.some(i => i.id === item.id);
-                return exists ? prev.map(i => i.id === item.id ? updated : i) : [updated, ...prev];
+                const exists = prev.some(i => i.id === itemId || i.id === item.id);
+                return exists ? prev.map(i => (i.id === itemId || i.id === item.id) ? updated : i) : [updated, ...prev];
               });
+              await contentPersistence.updateSchedule(itemId, scheduledAt, response.id);
             } else {
               setItems(prev => prev.map(i => i.id === item.id ? { ...i, publish_status: 'failed' as const, publish_error: response.error } : i));
+              await contentPersistence.markFailed(itemId, response.error);
             }
           }}
           onCancel={async (item) => {
             try {
               await zernioAdapter.cancelScheduledPost(item);
               setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'ready' as ContentStatus, publish_status: 'cancelled' as const } : i));
+              await contentPersistence.markCancelled(item.id);
             } catch (err: any) {
               setItems(prev => prev.map(i => i.id === item.id ? { ...i, publish_error: err.message } : i));
               throw err;

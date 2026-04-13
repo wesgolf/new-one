@@ -44,7 +44,7 @@ interface PostComposerModalProps {
   initialDate?: string;
 }
 
-const platforms: Platform[] = ['Instagram', 'TikTok', 'YouTube', 'Twitter'];
+const platforms: Platform[] = ['Instagram', 'TikTok', 'YouTube'];
 const postTypes: { value: PostType; label: string }[] = [
   { value: 'drop_clip', label: 'Drop Clip' },
   { value: 'teaser', label: 'Teaser' },

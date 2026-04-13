@@ -36,6 +36,12 @@ A comprehensive artist management web application built with React 19, Vite, Typ
 - `BestPostingTime`: Platform-specific best posting time data
 - `PublishLog`: Audit trail for publish actions
 
+### Content Persistence (`src/content/services/contentPersistence.ts`)
+- Bridges `scheduled_at` (ISO string in UI) to `scheduled_date`/`scheduled_time` (Supabase columns)
+- Persists all lifecycle transitions (draft/scheduled/published/failed/cancelled) to Supabase
+- Handles upsert for new items (inserts) and existing items (updates)
+- All scheduling/publishing/cancel actions in ContentEngine write through this layer
+
 ### Zernio Integration (`src/content/services/zernioAdapter.ts`)
 - Post content immediately or schedule for future
 - Cancel scheduled posts
