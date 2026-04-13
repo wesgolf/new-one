@@ -38,6 +38,7 @@ interface Event {
   zernioId?: string;
   releaseId?: string;
   status?: string;
+  publishStatus?: 'draft' | 'scheduled' | 'published' | 'failed' | 'cancelled';
   notes?: string;
   venue?: string;
   task?: string;
@@ -177,9 +178,10 @@ export function Calendar() {
           type: 'post' as const,
           platform: c.platform,
           priority: c.priority,
-          zernioId: c.zernio_id,
+          zernioId: c.zernio_id || c.zernio_post_id,
           releaseId: c.linked_release_id,
           status: c.status,
+          publishStatus: c.publish_status || 'draft',
           notes: c.caption,
           isFullDay: c.is_full_day,
           isRecurring: c.is_recurring,
@@ -694,7 +696,12 @@ export function Calendar() {
                                 "text-[10px] p-1 rounded-md font-bold truncate border flex items-center gap-1 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.02] hover:shadow-sm",
                                 (event.type === 'release' || event.isFullDay) && !event.platform?.includes('SoundCloud') && "bg-blue-600 text-white border-blue-700 shadow-md py-1.5 px-2 -mx-1",
                                 (event.type === 'release' || event.isFullDay) && event.platform?.includes('SoundCloud') && "bg-orange-600 text-white border-orange-700 shadow-md py-1.5 px-2 -mx-1",
-                                !event.isFullDay && event.type === 'post' && "bg-purple-50 text-purple-600 border-purple-100",
+                                !event.isFullDay && event.type === 'post' && !event.publishStatus && "bg-purple-50 text-purple-600 border-purple-100",
+                                !event.isFullDay && event.type === 'post' && event.publishStatus === 'draft' && "bg-slate-50 text-slate-600 border-slate-200",
+                                !event.isFullDay && event.type === 'post' && event.publishStatus === 'scheduled' && "bg-blue-50 text-blue-600 border-blue-200",
+                                !event.isFullDay && event.type === 'post' && event.publishStatus === 'published' && "bg-emerald-50 text-emerald-600 border-emerald-200",
+                                !event.isFullDay && event.type === 'post' && event.publishStatus === 'failed' && "bg-red-50 text-red-600 border-red-200",
+                                !event.isFullDay && event.type === 'post' && event.publishStatus === 'cancelled' && "bg-amber-50 text-amber-600 border-amber-200",
                                 !event.isFullDay && event.type === 'show' && "bg-rose-50 text-rose-600 border-rose-100",
                                 !event.isFullDay && event.type === 'meeting' && "bg-slate-100 text-slate-600 border-slate-200",
                                 !event.isFullDay && event.type === 'todo' && "bg-emerald-50 text-emerald-600 border-emerald-100",
@@ -709,8 +716,11 @@ export function Calendar() {
                                 </div>
                               ) : (
                                 <>
-                                  {event.priority === 'high' && <div className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0 animate-pulse" />}
-                                  {event.priority === 'medium' && <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 shrink-0" />}
+                                  {event.type === 'post' && event.publishStatus === 'failed' && <div className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0 animate-pulse" />}
+                                  {event.type === 'post' && event.publishStatus === 'scheduled' && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />}
+                                  {event.type === 'post' && event.publishStatus === 'published' && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />}
+                                  {event.type !== 'post' && event.priority === 'high' && <div className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0 animate-pulse" />}
+                                  {event.type !== 'post' && event.priority === 'medium' && <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 shrink-0" />}
                                   <span className="truncate">{event.title}</span>
                                   {event.isRecurring && <Repeat className="w-2.5 h-2.5 ml-auto shrink-0 text-slate-400" />}
                                   {event.zernioId && <Share2 className="w-2 h-2 text-purple-500 ml-auto shrink-0" />}
@@ -774,7 +784,12 @@ export function Calendar() {
                               "text-[10px] p-2 rounded-xl font-bold border flex flex-col gap-1 cursor-grab active:cursor-grabbing shadow-sm transition-all hover:scale-[1.02] hover:shadow-md",
                               (event.type === 'release' || event.isFullDay) && !event.platform?.includes('SoundCloud') && "bg-blue-600 text-white border-blue-700 p-3 -mx-1",
                               (event.type === 'release' || event.isFullDay) && event.platform?.includes('SoundCloud') && "bg-orange-600 text-white border-orange-700 p-3 -mx-1",
-                              !event.isFullDay && event.type === 'post' && "bg-purple-50 text-purple-600 border-purple-100",
+                              !event.isFullDay && event.type === 'post' && !event.publishStatus && "bg-purple-50 text-purple-600 border-purple-100",
+                              !event.isFullDay && event.type === 'post' && event.publishStatus === 'draft' && "bg-slate-50 text-slate-600 border-slate-200",
+                              !event.isFullDay && event.type === 'post' && event.publishStatus === 'scheduled' && "bg-blue-50 text-blue-600 border-blue-200",
+                              !event.isFullDay && event.type === 'post' && event.publishStatus === 'published' && "bg-emerald-50 text-emerald-600 border-emerald-200",
+                              !event.isFullDay && event.type === 'post' && event.publishStatus === 'failed' && "bg-red-50 text-red-600 border-red-200",
+                              !event.isFullDay && event.type === 'post' && event.publishStatus === 'cancelled' && "bg-amber-50 text-amber-600 border-amber-200",
                               !event.isFullDay && event.type === 'show' && "bg-rose-50 text-rose-600 border-rose-100",
                               !event.isFullDay && event.type === 'meeting' && "bg-slate-100 text-slate-600 border-slate-200",
                               !event.isFullDay && event.type === 'todo' && "bg-emerald-50 text-emerald-600 border-emerald-100",
@@ -1005,18 +1020,19 @@ export function Calendar() {
             </section>
 
             <section className="glass-card p-6 bg-blue-50 border-blue-100">
-              <h3 className="text-lg font-bold mb-2 text-slate-900">Posting Schedule</h3>
-              <p className="text-xs text-slate-500 mb-4">Optimized based on your audience engagement.</p>
-              <div className="space-y-3">
+              <h3 className="text-lg font-bold mb-2 text-slate-900">Post Status Legend</h3>
+              <p className="text-xs text-slate-500 mb-4">Color coding for your content posts.</p>
+              <div className="space-y-2">
                 {[
-                  { day: 'Mon', time: '7:00 PM', platform: 'Instagram' },
-                  { day: 'Wed', time: '6:00 PM', platform: 'TikTok' },
-                  { day: 'Fri', time: '8:00 PM', platform: 'YouTube' },
+                  { label: 'Draft', color: 'bg-slate-400' },
+                  { label: 'Scheduled', color: 'bg-blue-500' },
+                  { label: 'Published', color: 'bg-emerald-500' },
+                  { label: 'Failed', color: 'bg-red-500' },
+                  { label: 'Cancelled', color: 'bg-amber-500' },
                 ].map((item, i) => (
-                  <div key={i} className="flex items-center justify-between p-2 bg-white rounded-lg border border-blue-100 shadow-sm">
-                    <span className="text-xs font-bold text-slate-700">{item.day}</span>
-                    <span className="text-xs font-medium text-slate-500">{item.time}</span>
-                    <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">{item.platform}</span>
+                  <div key={i} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-blue-100 shadow-sm">
+                    <div className={cn("w-2.5 h-2.5 rounded-full shrink-0", item.color)} />
+                    <span className="text-xs font-bold text-slate-700">{item.label}</span>
                   </div>
                 ))}
               </div>

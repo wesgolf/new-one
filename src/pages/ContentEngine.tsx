@@ -11,7 +11,8 @@ import {
   Calendar,
   MessageSquare,
   Search,
-  Filter
+  Filter,
+  Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
@@ -26,6 +27,8 @@ import { WeeklyContentCalendar } from '../content/components/WeeklyContentCalend
 import { ContentCreatorPanel } from '../content/components/ContentCreatorPanel';
 import { ContentPipelineBoard } from '../content/components/ContentPipelineBoard';
 import { PostModeModal } from '../content/components/PostModeModal';
+import { PostComposerModal } from '../content/components/PostComposerModal';
+import { SchedulingManager } from '../content/components/SchedulingManager';
 import { ContentPerformancePanel } from '../content/components/ContentPerformancePanel';
 import { ReflectionCard } from '../content/components/ReflectionCard';
 import { TrackContentImpactPanel } from '../content/components/TrackContentImpactPanel';
@@ -52,9 +55,10 @@ export function ContentEngine() {
   
   const [isCreatorOpen, setIsCreatorOpen] = React.useState(false);
   const [isPostModeOpen, setIsPostModeOpen] = React.useState(false);
+  const [isComposerOpen, setIsComposerOpen] = React.useState(false);
   const [selectedItem, setSelectedItem] = React.useState<ContentItem | null>(null);
   const [loading, setLoading] = React.useState(false);
-  const [activeTab, setActiveTab] = React.useState<'pipeline' | 'analytics' | 'strategy'>('pipeline');
+  const [activeTab, setActiveTab] = React.useState<'pipeline' | 'scheduling' | 'analytics' | 'strategy'>('pipeline');
   const [isSyncing, setIsSyncing] = React.useState(false);
 
   // Fetch real data from Zernio
@@ -301,6 +305,7 @@ export function ContentEngine() {
           <div className="flex items-center gap-8">
             {[
               { id: 'pipeline', label: 'Content Pipeline', icon: LayoutGrid },
+              { id: 'scheduling', label: 'Scheduling', icon: Clock },
               { id: 'analytics', label: 'Performance', icon: BarChart3 },
               { id: 'strategy', label: 'Strategy & Planning', icon: Calendar }
             ].map(tab => (
@@ -364,6 +369,50 @@ export function ContentEngine() {
 
                 {/* 10. LIGHT ENGAGEMENT HUB */}
                 <EngagementHub onOpenPlatform={(p) => window.open(`https://${p.toLowerCase()}.com`, '_blank')} />
+              </div>
+            )}
+
+            {activeTab === 'scheduling' && (
+              <div className="space-y-12">
+                <SchedulingManager
+                  items={items}
+                  releases={releases}
+                  onEdit={(item) => {
+                    setSelectedItem(item);
+                    setIsComposerOpen(true);
+                  }}
+                  onPublishNow={async (item) => {
+                    const response = await zernioAdapter.postContent(item);
+                    if (response.status === 'success') {
+                      setItems(prev => prev.map(i => i.id === item.id ? {
+                        ...i,
+                        status: 'posted' as ContentStatus,
+                        publish_status: 'published' as const,
+                        posted_at: new Date().toISOString(),
+                        external_post_id: response.platform_post_id
+                      } : i));
+                    } else {
+                      setItems(prev => prev.map(i => i.id === item.id ? { ...i, publish_status: 'failed' as const, publish_error: response.error } : i));
+                    }
+                  }}
+                  onCancel={async (item) => {
+                    try {
+                      await zernioAdapter.cancelScheduledPost(item);
+                      setItems(prev => prev.map(i => i.id === item.id ? {
+                        ...i,
+                        status: 'ready' as ContentStatus,
+                        publish_status: 'cancelled' as const
+                      } : i));
+                    } catch (err: any) {
+                      setItems(prev => prev.map(i => i.id === item.id ? { ...i, publish_error: err.message } : i));
+                      throw err;
+                    }
+                  }}
+                  onReschedule={(item) => {
+                    setSelectedItem(item);
+                    setIsComposerOpen(true);
+                  }}
+                />
               </div>
             )}
 
@@ -463,6 +512,66 @@ export function ContentEngine() {
             setSelectedItem(item);
             setIsCreatorOpen(true);
           }}
+        />
+
+        <PostComposerModal
+          isOpen={isComposerOpen}
+          onClose={() => {
+            setIsComposerOpen(false);
+            setSelectedItem(null);
+          }}
+          onSave={(item) => {
+            handleSaveContent(item);
+            setIsComposerOpen(false);
+            setSelectedItem(null);
+          }}
+          onPublishNow={async (item) => {
+            const response = await zernioAdapter.postContent(item);
+            if (response.status === 'success') {
+              const updated = {
+                ...item,
+                status: 'posted' as ContentStatus,
+                publish_status: 'published' as const,
+                posted_at: new Date().toISOString(),
+                external_post_id: response.platform_post_id
+              };
+              setItems(prev => {
+                const exists = prev.some(i => i.id === item.id);
+                return exists ? prev.map(i => i.id === item.id ? updated : i) : [updated, ...prev];
+              });
+            } else {
+              setItems(prev => prev.map(i => i.id === item.id ? { ...i, publish_status: 'failed' as const, publish_error: response.error } : i));
+            }
+          }}
+          onSchedule={async (item, scheduledAt) => {
+            const response = await zernioAdapter.scheduleContent(item, scheduledAt);
+            if (response.status === 'success') {
+              const updated = {
+                ...item,
+                status: 'scheduled' as ContentStatus,
+                publish_status: 'scheduled' as const,
+                scheduled_at: scheduledAt,
+                zernio_job_id: response.id
+              };
+              setItems(prev => {
+                const exists = prev.some(i => i.id === item.id);
+                return exists ? prev.map(i => i.id === item.id ? updated : i) : [updated, ...prev];
+              });
+            } else {
+              setItems(prev => prev.map(i => i.id === item.id ? { ...i, publish_status: 'failed' as const, publish_error: response.error } : i));
+            }
+          }}
+          onCancel={async (item) => {
+            try {
+              await zernioAdapter.cancelScheduledPost(item);
+              setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'ready' as ContentStatus, publish_status: 'cancelled' as const } : i));
+            } catch (err: any) {
+              setItems(prev => prev.map(i => i.id === item.id ? { ...i, publish_error: err.message } : i));
+              throw err;
+            }
+          }}
+          releases={releases}
+          initialItem={selectedItem}
         />
       </div>
     );

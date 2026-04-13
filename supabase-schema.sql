@@ -202,6 +202,30 @@ ALTER TABLE goals ADD COLUMN IF NOT EXISTS status_indicator TEXT DEFAULT 'on-tra
 ALTER TABLE todos ADD COLUMN IF NOT EXISTS linked_entity_id UUID;
 ALTER TABLE todos ADD COLUMN IF NOT EXISTS linked_entity_type TEXT;
 
+-- Content Items Table Updates for Social Media Scheduling
+ALTER TABLE content_items ADD COLUMN IF NOT EXISTS publish_status TEXT DEFAULT 'draft' CHECK (publish_status IN ('draft', 'scheduled', 'published', 'failed', 'cancelled'));
+ALTER TABLE content_items ADD COLUMN IF NOT EXISTS platform_settings JSONB DEFAULT '{}'::JSONB;
+ALTER TABLE content_items ADD COLUMN IF NOT EXISTS zernio_post_id TEXT;
+ALTER TABLE content_items ADD COLUMN IF NOT EXISTS media_url TEXT;
+ALTER TABLE content_items ADD COLUMN IF NOT EXISTS publish_error TEXT;
+ALTER TABLE content_items ADD COLUMN IF NOT EXISTS hashtags TEXT[] DEFAULT '{}';
+ALTER TABLE content_items ADD COLUMN IF NOT EXISTS post_type TEXT;
+ALTER TABLE content_items ADD COLUMN IF NOT EXISTS angle TEXT;
+ALTER TABLE content_items ADD COLUMN IF NOT EXISTS posted_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE content_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+-- Publish Logs Table for tracking publish attempts and errors
+CREATE TABLE IF NOT EXISTS publish_logs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  content_item_id UUID REFERENCES content_items(id) ON DELETE CASCADE,
+  action TEXT NOT NULL CHECK (action IN ('schedule', 'publish', 'cancel', 'reschedule', 'fail')),
+  platform TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('success', 'failed')),
+  zernio_response JSONB DEFAULT '{}'::JSONB,
+  error_message TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Enable Row Level Security (Optional for prototype)
 -- ALTER TABLE inbox ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE releases ENABLE ROW LEVEL SECURITY;

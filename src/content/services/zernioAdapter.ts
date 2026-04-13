@@ -1,5 +1,5 @@
-import { ContentItem, ZernioPostResponse, ContentAnalytics, Platform, ContentStatus } from '../types';
-import { mockContentItems, mockAnalytics } from '../mockData';
+import { ContentItem, ZernioPostResponse, ContentAnalytics, Platform, ContentStatus, BestPostingTime, PublishLog } from '../types';
+import { supabase } from '../../lib/supabase';
 
 const ZERNIO_API_BASE = 'https://zernio.com/api/v1';
 
@@ -29,12 +29,17 @@ function buildZernioPayload(item: ContentItem, accountId: string, isScheduling: 
   const mediaItems = item.media_url ? [{ type: mediaType, url: item.media_url }] : [];
 
   let platformSpecificData: any = undefined;
+  const ps = item.platform_settings || {};
+
   if (platformKey === 'instagram') {
-    if (postTypeLower === 'reel') {
-      platformSpecificData = { contentType: 'reels', shareToFeed: true };
-    } else if (postTypeLower === 'story') {
-      platformSpecificData = { contentType: 'story' };
-    }
+    platformSpecificData = {};
+    if (ps.content_type) platformSpecificData.contentType = ps.content_type;
+    else if (postTypeLower === 'reel') platformSpecificData.contentType = 'reels';
+    else if (postTypeLower === 'story') platformSpecificData.contentType = 'story';
+    if (ps.share_to_feed !== undefined) platformSpecificData.shareToFeed = ps.share_to_feed;
+    if (ps.first_comment) platformSpecificData.firstComment = ps.first_comment;
+    if (ps.collaborators?.length) platformSpecificData.collaborators = ps.collaborators;
+    if (ps.cover_image_url) platformSpecificData.instagramThumbnail = ps.cover_image_url;
   }
 
   const platformEntry: any = {
@@ -42,7 +47,7 @@ function buildZernioPayload(item: ContentItem, accountId: string, isScheduling: 
     accountId: accountId
   };
   
-  if (platformSpecificData) {
+  if (platformSpecificData && Object.keys(platformSpecificData).length > 0) {
     platformEntry.platformSpecificData = platformSpecificData;
   }
 
@@ -55,6 +60,19 @@ function buildZernioPayload(item: ContentItem, accountId: string, isScheduling: 
     payload.mediaItems = mediaItems;
   }
 
+  if (platformKey === 'tiktok') {
+    payload.tiktokSettings = {
+      privacy_level: ps.privacy_level || 'PUBLIC_TO_EVERYONE',
+      allow_comment: ps.allow_comment !== false,
+      allow_duet: ps.allow_duet !== false,
+      allow_stitch: ps.allow_stitch !== false,
+      video_made_with_ai: ps.video_made_with_ai || false,
+      content_preview_confirmed: true,
+      express_consent_given: true,
+      commercialContentType: ps.commercial_content || 'none',
+    };
+  }
+
   if (isScheduling && scheduledAt) {
     payload.scheduledFor = scheduledAt;
     payload.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -65,14 +83,29 @@ function buildZernioPayload(item: ContentItem, accountId: string, isScheduling: 
   return payload;
 }
 
-/**
- * Zernio Adapter Layer
- * This abstracts the Zernio API and maps it to our internal normalized schema.
- */
+async function logPublishAction(
+  contentItemId: string,
+  action: PublishLog['action'],
+  platform: string,
+  status: 'success' | 'failed',
+  zernioResponse?: any,
+  errorMessage?: string
+) {
+  try {
+    await supabase.from('publish_logs').insert([{
+      content_item_id: contentItemId,
+      action,
+      platform,
+      status,
+      zernio_response: zernioResponse || {},
+      error_message: errorMessage,
+    }]);
+  } catch (err) {
+    console.error('Failed to log publish action:', err);
+  }
+}
+
 export const zernioAdapter = {
-  /**
-   * Check if Zernio API is correctly configured
-   */
   async configCheck(): Promise<any> {
     try {
       const response = await fetch(`${ZERNIO_API_BASE}/accounts`, {
@@ -86,9 +119,6 @@ export const zernioAdapter = {
     }
   },
 
-  /**
-   * Fetch all connected accounts from Zernio
-   */
   async fetchAccounts(): Promise<any[]> {
     try {
       const response = await fetch(`${ZERNIO_API_BASE}/accounts`, {
@@ -97,31 +127,24 @@ export const zernioAdapter = {
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error('ZernioAdapter: Accounts error data:', errorData);
         throw new Error(errorData.error || errorData.message || `Zernio API error: ${response.statusText}`);
       }
       const data = await response.json();
       
-      // Zernio returns { accounts: [...] }
       const accounts = Array.isArray(data) ? data : (data?.accounts || []);
-      const mapped = accounts.map((a: any) => ({
+      return accounts.map((a: any) => ({
         ...a,
         id: a.id || a._id,
         name: a.name || a.username || a.display_name || 'Unknown Account'
       }));
-      return mapped;
     } catch (error) {
       console.error('ZernioAdapter: Fetch accounts failed', error);
       throw error;
     }
   },
 
-  /**
-   * Post content immediately via Zernio
-   */
   async postContent(item: ContentItem): Promise<ZernioPostResponse> {
     try {
-      // 1. Fetch accounts to find the right one for the platform
       const accounts = await this.fetchAccounts();
       const platformKey = item.platform.toLowerCase();
       const account = accounts.find((a: any) => a.platform.toLowerCase() === platformKey);
@@ -143,23 +166,26 @@ export const zernioAdapter = {
 
       const data = await response.json();
       const post = data.post || data;
-      return {
+      const result: ZernioPostResponse = {
         id: post.id || post._id || post.job_id,
         status: 'success',
         platform_post_id: post.platform_post_id
       };
-    } catch (error) {
+
+      await logPublishAction(item.id, 'publish', item.platform, 'success', data);
+      return result;
+    } catch (error: any) {
       console.error('Zernio: Post failed', error);
-      return this.mockPost(item);
+      await logPublishAction(item.id, 'publish', item.platform, 'failed', undefined, error.message);
+      if (!import.meta.env.VITE_ZERNIO_API_KEY) {
+        return this.mockPost(item);
+      }
+      return { id: '', status: 'failed', error: error.message };
     }
   },
 
-  /**
-   * Schedule content for a future date via Zernio
-   */
   async scheduleContent(item: ContentItem, scheduledAt: string): Promise<ZernioPostResponse> {
     try {
-      // 1. Fetch accounts to find the right one for the platform
       const accounts = await this.fetchAccounts();
       const platformKey = item.platform.toLowerCase();
       const account = accounts.find((a: any) => a.platform.toLowerCase() === platformKey);
@@ -181,22 +207,55 @@ export const zernioAdapter = {
 
       const data = await response.json();
       const post = data.post || data;
-      return {
+      const result: ZernioPostResponse = {
         id: post.job_id || post.id || post._id,
         status: 'success'
       };
-    } catch (error) {
+
+      await logPublishAction(item.id, 'schedule', item.platform, 'success', data);
+      return result;
+    } catch (error: any) {
       console.error('Zernio: Scheduling failed', error);
-      return this.mockSchedule(item, scheduledAt);
+      await logPublishAction(item.id, 'schedule', item.platform, 'failed', undefined, error.message);
+      if (!import.meta.env.VITE_ZERNIO_API_KEY) {
+        return this.mockSchedule(item, scheduledAt);
+      }
+      return { id: '', status: 'failed', error: error.message };
     }
   },
 
-  /**
-   * Delete a post from Zernio
-   */
+  async cancelScheduledPost(item: ContentItem): Promise<boolean> {
+    try {
+      const postId = item.zernio_post_id || item.zernio_job_id;
+      if (!postId || postId.startsWith('zernio_') || postId.startsWith('mock_')) {
+        await logPublishAction(item.id, 'cancel', item.platform, 'success');
+        return true;
+      }
+
+      const response = await fetch(`${ZERNIO_API_BASE}/posts/${postId}`, {
+        method: 'DELETE',
+        headers: getHeaders()
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.message || `Zernio API error: ${response.statusText}`);
+      }
+
+      await logPublishAction(item.id, 'cancel', item.platform, 'success');
+      return true;
+    } catch (error: any) {
+      console.error('Zernio: Cancel failed', error);
+      await logPublishAction(item.id, 'cancel', item.platform, 'failed', undefined, error.message);
+      if (!import.meta.env.VITE_ZERNIO_API_KEY) {
+        return true;
+      }
+      throw error;
+    }
+  },
+
   async deletePost(postId: string): Promise<boolean> {
     try {
-      // If it's a mock ID, just return true
       if (postId.startsWith('zernio_') || postId.startsWith('mock_')) {
         return true;
       }
@@ -208,7 +267,6 @@ export const zernioAdapter = {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error('ZernioAdapter: Delete post error data:', errorData);
         throw new Error(errorData.error || errorData.message || `Zernio API error: ${response.statusText}`);
       }
 
@@ -219,12 +277,34 @@ export const zernioAdapter = {
     }
   },
 
-  /**
-   * Sync analytics for a specific post from Zernio
-   */
+  async getBestPostingTimes(platform: Platform): Promise<BestPostingTime[]> {
+    try {
+      const apiKey = import.meta.env.VITE_ZERNIO_API_KEY;
+      if (apiKey) {
+        const response = await fetch(`${ZERNIO_API_BASE}/analytics/best-times?platform=${platform.toLowerCase()}`, {
+          headers: getHeaders()
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data.times && Array.isArray(data.times)) {
+            return data.times.map((t: any) => ({
+              platform,
+              day: t.day || t.dayOfWeek || '',
+              time: t.time || t.hour || '',
+              score: t.score || t.engagement || 0,
+              label: t.label || t.reason || undefined,
+            }));
+          }
+        }
+      }
+    } catch {
+      // fall through to mock
+    }
+    return this.mockBestPostingTimes(platform);
+  },
+
   async syncPostAnalytics(externalPostId: string, platform: Platform): Promise<ContentAnalytics> {
     try {
-      // Zernio analytics endpoint - mocking for now unless specified in docs
       return this.mockAnalytics(externalPostId, platform);
     } catch (error) {
       console.error('Zernio: Analytics sync failed', error);
@@ -232,9 +312,6 @@ export const zernioAdapter = {
     }
   },
 
-  /**
-   * Fetch all posts/content items from Zernio
-   */
   async fetchPosts(): Promise<ContentItem[]> {
     try {
       const response = await fetch(`${ZERNIO_API_BASE}/posts`, {
@@ -243,16 +320,13 @@ export const zernioAdapter = {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error('ZernioAdapter: Posts error data:', errorData);
         throw new Error(errorData.error || errorData.message || `Zernio API error: ${response.statusText}`);
       }
 
       const data = await response.json();
-      
       const posts = Array.isArray(data) ? data : (data.posts || []);
       
-      // Map Zernio response to our internal ContentItem schema
-      const mapped = posts.map((post: any) => ({
+      return posts.map((post: any) => ({
         id: post.id || post._id,
         user_id: 'user_1',
         title: post.metadata?.title || post.content?.substring(0, 30) || 'Untitled',
@@ -263,24 +337,22 @@ export const zernioAdapter = {
         post_type: post.metadata?.post_type || 'drop_clip',
         angle: post.metadata?.angle || 'hype',
         status: this.mapStatus(post.status || 'idea'),
+        publish_status: this.mapPublishStatus(post.status),
+        platform_settings: post.platform_settings || {},
         track_id: post.metadata?.track_id,
         scheduled_at: post.scheduledFor || post.scheduled_at,
         posted_at: post.posted_at,
         external_post_id: post.platform_post_id,
+        zernio_post_id: post.id || post._id,
         created_at: post.created_at || new Date().toISOString(),
         updated_at: post.updated_at || post.created_at || new Date().toISOString()
       }));
-      
-      return mapped;
     } catch (error) {
       console.error('ZernioAdapter: Fetch posts failed', error);
       throw error;
     }
   },
 
-  /**
-   * Fetch all analytics from Zernio
-   */
   async fetchAnalytics(): Promise<ContentAnalytics[]> {
     try {
       const response = await fetch(`${ZERNIO_API_BASE}/analytics`, {
@@ -289,15 +361,13 @@ export const zernioAdapter = {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error('ZernioAdapter: Analytics error data:', errorData);
         throw new Error(errorData.error || errorData.message || `Zernio API error: ${response.statusText}`);
       }
 
       const data = await response.json();
-      
       const analytics = Array.isArray(data) ? data : (data.analytics || data.posts || []);
       
-      const mapped = analytics.map((ana: any) => ({
+      return analytics.map((ana: any) => ({
         id: ana.id || ana._id,
         content_item_id: ana.post_id,
         platform: this.mapPlatform(ana.platform || 'instagram'),
@@ -312,8 +382,6 @@ export const zernioAdapter = {
         performance_score: ana.performance_score || 0,
         velocity: ana.velocity || 0
       }));
-      
-      return mapped;
     } catch (error) {
       console.error('ZernioAdapter: Fetch analytics failed', error);
       throw error;
@@ -337,7 +405,15 @@ export const zernioAdapter = {
     return 'idea';
   },
 
-  // Helper mocks for when key is missing or API fails
+  mapPublishStatus(status: string): 'draft' | 'scheduled' | 'published' | 'failed' | 'cancelled' {
+    const s = (status || '').toLowerCase();
+    if (s === 'published' || s === 'posted') return 'published';
+    if (s === 'scheduled') return 'scheduled';
+    if (s === 'failed') return 'failed';
+    if (s === 'cancelled') return 'cancelled';
+    return 'draft';
+  },
+
   async mockPost(item: ContentItem): Promise<ZernioPostResponse> {
     return {
       id: `zernio_${Math.random().toString(36).substr(2, 9)}`,
@@ -351,6 +427,41 @@ export const zernioAdapter = {
       id: `zernio_job_${Math.random().toString(36).substr(2, 9)}`,
       status: 'success'
     };
+  },
+
+  mockBestPostingTimes(platform: Platform): BestPostingTime[] {
+    const timesMap: Record<Platform, BestPostingTime[]> = {
+      Instagram: [
+        { platform: 'Instagram', day: 'Mon', time: '11:00', score: 92, label: 'Peak engagement' },
+        { platform: 'Instagram', day: 'Wed', time: '14:00', score: 88, label: 'High reach' },
+        { platform: 'Instagram', day: 'Fri', time: '10:00', score: 85, label: 'Strong saves' },
+        { platform: 'Instagram', day: 'Sat', time: '09:00', score: 82, label: 'Weekend boost' },
+        { platform: 'Instagram', day: 'Thu', time: '19:00', score: 80, label: 'Evening spike' },
+        { platform: 'Instagram', day: 'Tue', time: '12:00', score: 78, label: 'Lunch traffic' },
+      ],
+      TikTok: [
+        { platform: 'TikTok', day: 'Tue', time: '19:00', score: 95, label: 'Viral window' },
+        { platform: 'TikTok', day: 'Thu', time: '12:00', score: 90, label: 'FYP boost' },
+        { platform: 'TikTok', day: 'Sat', time: '20:00', score: 88, label: 'Weekend prime' },
+        { platform: 'TikTok', day: 'Mon', time: '18:00', score: 84, label: 'After work' },
+        { platform: 'TikTok', day: 'Fri', time: '17:00', score: 82, label: 'TGIF traffic' },
+        { platform: 'TikTok', day: 'Wed', time: '15:00', score: 79, label: 'Mid-week' },
+      ],
+      YouTube: [
+        { platform: 'YouTube', day: 'Fri', time: '15:00', score: 91, label: 'Pre-weekend' },
+        { platform: 'YouTube', day: 'Sat', time: '11:00', score: 89, label: 'Weekend browse' },
+        { platform: 'YouTube', day: 'Wed', time: '17:00', score: 86, label: 'Mid-week push' },
+        { platform: 'YouTube', day: 'Sun', time: '14:00', score: 83, label: 'Sunday chill' },
+        { platform: 'YouTube', day: 'Thu', time: '16:00', score: 80, label: 'Steady views' },
+      ],
+      Twitter: [
+        { platform: 'Twitter', day: 'Mon', time: '09:00', score: 87, label: 'Morning buzz' },
+        { platform: 'Twitter', day: 'Wed', time: '12:00', score: 85, label: 'Lunch chat' },
+        { platform: 'Twitter', day: 'Thu', time: '10:00', score: 82, label: 'News cycle' },
+        { platform: 'Twitter', day: 'Fri', time: '14:00', score: 80, label: 'End of week' },
+      ],
+    };
+    return timesMap[platform] || [];
   },
 
   async mockAnalytics(externalPostId: string, platform: Platform): Promise<ContentAnalytics> {
