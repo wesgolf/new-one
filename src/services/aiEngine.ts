@@ -1,7 +1,17 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Release, ContentItem, Goal, Todo } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let _ai: GoogleGenAI | null = null;
+function getAI(): GoogleGenAI {
+  if (!_ai) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY is not configured. Please add it in the Secrets panel.");
+    }
+    _ai = new GoogleGenAI({ apiKey });
+  }
+  return _ai;
+}
 
 export interface AIAnalysisResult {
   focusTrackId: string;
@@ -47,7 +57,7 @@ export async function analyzeArtistState(
     Be specific, strategic, and data-driven.
   `;
 
-  const response = await ai.models.generateContent({
+  const response = await getAI().models.generateContent({
     model: "gemini-3.1-pro-preview",
     contents: prompt,
     config: {
