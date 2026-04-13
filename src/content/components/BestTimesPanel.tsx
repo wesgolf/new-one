@@ -1,27 +1,48 @@
 import React from 'react';
-import { Sparkles, TrendingUp, Clock } from 'lucide-react';
+import { Sparkles, TrendingUp, Clock, Instagram, Youtube, Music } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { BestPostingTime } from '../types';
+import { BestPostingTime, Platform } from '../types';
 
 interface BestTimesPanelProps {
   bestTimes: BestPostingTime[];
   isLoading: boolean;
 }
 
-const scoreColor = (score: number) => {
-  if (score >= 80) return 'from-emerald-400 to-teal-400';
-  if (score >= 55) return 'from-amber-400 to-orange-400';
-  return 'from-slate-300 to-slate-400';
+const PLATFORMS: Platform[] = ['Instagram', 'TikTok', 'YouTube'];
+
+const platformIcon = (platform: Platform) => {
+  switch (platform) {
+    case 'Instagram': return <Instagram className="w-4 h-4" />;
+    case 'TikTok': return <Music className="w-4 h-4" />;
+    case 'YouTube': return <Youtube className="w-4 h-4" />;
+  }
 };
 
-const scoreBadgeColor = (score: number) => {
+const platformColor = (platform: Platform) => {
+  switch (platform) {
+    case 'Instagram': return 'text-pink-500 bg-pink-50 border-pink-100';
+    case 'TikTok': return 'text-slate-800 bg-slate-50 border-slate-200';
+    case 'YouTube': return 'text-red-500 bg-red-50 border-red-100';
+  }
+};
+
+const platformBarColor = (platform: Platform) => {
+  switch (platform) {
+    case 'Instagram': return 'from-pink-400 to-rose-400';
+    case 'TikTok': return 'from-slate-500 to-slate-700';
+    case 'YouTube': return 'from-red-400 to-orange-400';
+  }
+};
+
+const scoreTextColor = (score: number) => {
   if (score >= 80) return 'text-emerald-600 bg-emerald-50';
   if (score >= 55) return 'text-amber-600 bg-amber-50';
-  return 'text-slate-500 bg-slate-100';
+  return 'text-slate-400 bg-slate-100';
 };
 
 export function BestTimesPanel({ bestTimes, isLoading }: BestTimesPanelProps) {
-  const top = bestTimes.slice(0, 8);
+  const byPlatform = (platform: Platform) =>
+    bestTimes.filter(bt => bt.platform === platform).slice(0, 5);
 
   return (
     <div className="glass-card overflow-hidden">
@@ -32,7 +53,7 @@ export function BestTimesPanel({ bestTimes, isLoading }: BestTimesPanelProps) {
           </div>
           <div>
             <h3 className="text-lg font-black text-slate-900 tracking-tight">Best Times to Post</h3>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Based on your real post performance</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ranked by avg engagement per platform</p>
           </div>
         </div>
         <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 text-white text-[9px] font-black uppercase tracking-wider">
@@ -41,65 +62,64 @@ export function BestTimesPanel({ bestTimes, isLoading }: BestTimesPanelProps) {
         </span>
       </div>
 
-      <div className="p-5">
-        {isLoading ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="h-16 rounded-2xl bg-slate-100 animate-pulse" />
-            ))}
-          </div>
-        ) : top.length === 0 ? (
-          <div className="text-center py-10 text-slate-400">
-            <Sparkles className="w-8 h-8 mx-auto mb-2 opacity-30" />
-            <p className="text-sm font-bold">No data yet</p>
-            <p className="text-xs">Post more content to unlock your best times</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {top.map((bt, i) => (
-              <div
-                key={i}
-                className={cn(
-                  "relative flex flex-col gap-2 p-3.5 rounded-2xl border transition-all",
-                  i === 0
-                    ? "bg-amber-50 border-amber-100 shadow-sm shadow-amber-100"
-                    : "bg-white border-slate-100 hover:border-slate-200"
-                )}
-              >
-                {i === 0 && (
-                  <span className="absolute top-2 right-2 text-[8px] font-black text-amber-500 uppercase tracking-wider">
-                    Top Pick
-                  </span>
-                )}
-
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-black text-slate-300">#{i + 1}</span>
-                  <Clock className="w-3 h-3 text-slate-400" />
-                  <span className="text-xs font-black text-slate-700">{bt.time}</span>
-                </div>
-
-                <p className="text-sm font-black text-slate-900 leading-tight">{bt.day}</p>
-
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden mr-2">
-                      <div
-                        className={cn("h-full rounded-full bg-gradient-to-r", scoreColor(bt.score))}
-                        style={{ width: `${bt.score}%` }}
-                      />
-                    </div>
-                    <span className={cn("text-[9px] font-black px-1.5 py-0.5 rounded-full", scoreBadgeColor(bt.score))}>
-                      {bt.score}
-                    </span>
-                  </div>
-                  {bt.label && (
-                    <p className="text-[9px] text-slate-400 font-medium truncate">{bt.label}</p>
-                  )}
-                </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+        {PLATFORMS.map(platform => {
+          const slots = byPlatform(platform);
+          return (
+            <div key={platform} className="p-5 space-y-3">
+              <div className={cn('inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-black', platformColor(platform))}>
+                {platformIcon(platform)}
+                {platform}
               </div>
-            ))}
-          </div>
-        )}
+
+              {isLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="h-10 rounded-xl bg-slate-100 animate-pulse" />
+                  ))}
+                </div>
+              ) : slots.length === 0 ? (
+                <div className="py-6 text-center text-slate-300">
+                  <Sparkles className="w-5 h-5 mx-auto mb-1 opacity-40" />
+                  <p className="text-xs font-bold">No data yet</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {slots.map((bt, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        "flex items-center gap-3 p-2.5 rounded-xl border transition-all",
+                        i === 0 ? "bg-white border-slate-200 shadow-sm" : "bg-slate-50/50 border-transparent"
+                      )}
+                    >
+                      <span className="text-[10px] font-black text-slate-300 w-3 shrink-0">#{i + 1}</span>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <Clock className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                          <span className="text-xs font-black text-slate-800">{bt.day} · {bt.time}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex-1 h-1 rounded-full bg-slate-100 overflow-hidden">
+                            <div
+                              className={cn("h-full rounded-full bg-gradient-to-r", platformBarColor(platform))}
+                              style={{ width: `${bt.score}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <span className={cn("text-[9px] font-black px-1.5 py-0.5 rounded-full shrink-0", scoreTextColor(bt.score))}>
+                        {bt.score}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

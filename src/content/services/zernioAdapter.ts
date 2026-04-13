@@ -298,7 +298,7 @@ export const zernioAdapter = {
     }
 
     try {
-      const url = `${ZERNIO_API_BASE}/analytics/best-time`;
+      const url = `${ZERNIO_API_BASE}/analytics/best-time?platform=${platform.toLowerCase()}`;
       console.log(`[Zernio BestTimes] GET ${url}`);
 
       const response = await fetch(url, { headers: getHeaders() });

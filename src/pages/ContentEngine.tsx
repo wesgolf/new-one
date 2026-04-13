@@ -104,8 +104,12 @@ export function ContentEngine() {
 
   React.useEffect(() => {
     setIsBestTimesLoading(true);
-    zernioAdapter.getBestPostingTimes('Instagram')
-      .then(slots => setBestTimes(slots))
+    Promise.all([
+      zernioAdapter.getBestPostingTimes('Instagram'),
+      zernioAdapter.getBestPostingTimes('TikTok'),
+      zernioAdapter.getBestPostingTimes('YouTube'),
+    ])
+      .then(([ig, tt, yt]) => setBestTimes([...ig, ...tt, ...yt]))
       .catch(() => setBestTimes([]))
       .finally(() => setIsBestTimesLoading(false));
   }, []);
