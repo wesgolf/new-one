@@ -323,6 +323,8 @@ export function ContentEngine() {
             setEditorItem(null);
           }}
           contentItem={editorItem}
+          releases={releases}
+          onDraftSaved={() => setActiveTab('library')}
           onSaved={(item) => {
             setContentListRefresh(prev => prev + 1);
             loadScheduledPlatformPosts();

@@ -41,9 +41,11 @@ async function logPublishAction(
 
 function validatePlatformPost(post: PlatformPost): string | null {
   if (post.platform === 'YouTube') {
-    if (!post.title?.trim()) return 'YouTube Shorts requires a title';
+    if (!post.title?.trim()) return 'YouTube requires a title';
     const settings = post.platform_settings_json || {};
-    if (!settings.audience) return 'YouTube Shorts requires an audience setting';
+    if (!settings.audience) {
+      post.platform_settings_json = { ...settings, audience: 'not_kids' };
+    }
   }
   if (post.platform === 'TikTok') {
     if (!post.caption?.trim()) return 'TikTok requires a caption';
