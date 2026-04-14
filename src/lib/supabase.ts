@@ -1,10 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_PK;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase environment variables are missing. Please configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in the AI Studio Secrets panel.');
+  console.warn('Supabase environment variables are missing. Please configure VITE_SUPABASE_URL and VITE_SUPABASE_PK in the AI Studio Secrets panel.');
 }
 
 // We still export the client, but it will fail on calls if URL is missing.

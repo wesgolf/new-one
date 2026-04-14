@@ -7,8 +7,8 @@ export function useArtistData<T>(table: string) {
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    if (import.meta.env.VITE_SUPABASE_URL === undefined || import.meta.env.VITE_SUPABASE_ANON_KEY === undefined) {
-      setError('Supabase configuration is missing. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in the AI Studio Secrets panel.');
+    if (import.meta.env.VITE_SUPABASE_URL === undefined || import.meta.env.VITE_SUPABASE_PK === undefined) {
+      setError('Supabase configuration is missing. Please set VITE_SUPABASE_URL and VITE_SUPABASE_PK in the AI Studio Secrets panel.');
       setLoading(false);
       return;
     }
