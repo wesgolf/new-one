@@ -8,6 +8,7 @@ interface PlatformTabsProps {
   onUpdate: (postId: string, updates: Partial<PlatformPost>) => void;
   globalCaption?: string;
   globalHashtags?: string;
+  mediaType?: 'video' | 'image';
 }
 
 const platformConfig = {
@@ -113,10 +114,15 @@ function TagsInput({ label, tags, onChange, placeholder }: {
   );
 }
 
-function InstagramFields({ post, onUpdate }: { post: PlatformPost; onUpdate: (id: string, u: Partial<PlatformPost>) => void }) {
+function InstagramFields({ post, onUpdate, mediaType }: { post: PlatformPost; onUpdate: (id: string, u: Partial<PlatformPost>) => void; mediaType?: 'video' | 'image' }) {
   const s = post.platform_settings_json || {};
   const set = (key: string, value: any) => onUpdate(post.id, { platform_settings_json: { ...s, [key]: value } });
-  const format: 'reel' | 'story' | 'post' = s.format || 'reel';
+
+  // Images can't be reels — auto-correct if needed
+  const rawFormat: 'reel' | 'story' | 'post' = s.format || (mediaType === 'image' ? 'post' : 'reel');
+  const format = mediaType === 'image' && rawFormat === 'reel' ? 'post' : rawFormat;
+  if (format !== rawFormat) set('format', format); // auto-correct stored value
+
   const carouselItems: string[] = s.carousel_items || [];
   const collaborators: string[] = s.collaborators || [];
   const userTags: string[] = s.user_tags || [];
@@ -131,14 +137,24 @@ function InstagramFields({ post, onUpdate }: { post: PlatformPost; onUpdate: (id
     if (carouselInputRef.current) carouselInputRef.current.value = '';
   };
 
+  // Build format options — reels require video
+  const formatOptions = [
+    ...(mediaType !== 'image' ? [{ value: 'reel', label: '🎬 Reel' }] : []),
+    { value: 'story', label: '📖 Story' },
+    { value: 'post', label: '🖼️ Post' },
+  ];
+
   return (
     <div className="space-y-4">
       <div>
         <Label>Format</Label>
+        {mediaType === 'image' && (
+          <p className="text-[9px] text-amber-500 font-bold mb-1.5">⚠️ Reels require video — not available for images</p>
+        )}
         <ButtonGroup
           value={format}
           onChange={v => set('format', v)}
-          options={[{ value: 'reel', label: 'Reel' }, { value: 'story', label: 'Story' }, { value: 'post', label: 'Post' }]}
+          options={formatOptions}
         />
       </div>
 
@@ -363,7 +379,7 @@ function YouTubeFields({ post, onUpdate }: { post: PlatformPost; onUpdate: (id: 
   );
 }
 
-export function PlatformTabs({ platformPosts, onUpdate, globalHashtags }: PlatformTabsProps) {
+export function PlatformTabs({ platformPosts, onUpdate, globalHashtags, mediaType }: PlatformTabsProps) {
   const [activeTab, setActiveTab] = React.useState(platformPosts[0]?.platform || 'Instagram');
 
   React.useEffect(() => {
@@ -411,7 +427,7 @@ export function PlatformTabs({ platformPosts, onUpdate, globalHashtags }: Platfo
       </div>
 
       <div>
-        {activePost.platform === 'Instagram' && <InstagramFields post={activePost} onUpdate={onUpdate} />}
+        {activePost.platform === 'Instagram' && <InstagramFields post={activePost} onUpdate={onUpdate} mediaType={mediaType} />}
         {activePost.platform === 'TikTok' && <TikTokFields post={activePost} onUpdate={onUpdate} />}
         {activePost.platform === 'YouTube' && <YouTubeFields post={activePost} onUpdate={onUpdate} />}
       </div>

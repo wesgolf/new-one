@@ -176,7 +176,7 @@ function PlatformPreviewPanel({
           })}
         </div>
       </div>
-      <div className="flex-1 min-h-0 flex items-center justify-center overflow-hidden p-3">
+      <div className="flex-1 min-h-0 overflow-hidden flex items-center justify-center p-3">
         <FeedPreview
           platform={previewPlatform}
           mediaUrl={effectiveMediaUrl}
@@ -187,6 +187,7 @@ function PlatformPreviewPanel({
           soundLabel={soundLabel}
           instagramFormat={igSettings.format || 'reel'}
           youtubeFormat={ytSettings.video_type || 'short'}
+          carouselItems={igSettings.carousel_items || []}
         />
       </div>
     </div>
@@ -674,7 +675,7 @@ export function PostEditor({ isOpen, onClose, contentItem, onSaved, onDraftSaved
                   {platformPosts.length > 0 && (
                     <div className="border-t border-slate-100 pt-5">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Platform Settings</p>
-                      <PlatformTabs platformPosts={platformPosts} onUpdate={handleUpdatePlatformPost} globalHashtags={hashtagsList.join(' ')} />
+                      <PlatformTabs platformPosts={platformPosts} onUpdate={handleUpdatePlatformPost} globalHashtags={hashtagsList.join(' ')} mediaType={mediaType} />
                     </div>
                   )}
 
