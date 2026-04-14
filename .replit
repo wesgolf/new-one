@@ -40,5 +40,3 @@ externalPort = 3000
 [userenv]
 
 [userenv.shared]
-VITE_SUPABASE_URL = "https://fvklictojdijhnikxuik.supabase.co"
-VITE_SUPABASE_PK = "sb_publishable_CQRw790O2RLkM_Qchqa6Ag_TZZaHBBs"
