@@ -1,170 +1,148 @@
-import React from 'react';
-import { useArtistData } from '../hooks/useArtistData';
-import { Release } from '../types';
-import { Music, Cloud, Zap, Sparkles, ExternalLink, Mail } from 'lucide-react';
-import { cn } from '../lib/utils';
-import { motion } from 'motion/react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { Headphones, Link2, Music2, Share2 } from 'lucide-react';
+import { fetchIdeaAssets, fetchIdeaComments, fetchIdeas } from '../lib/supabaseData';
+import { ARTIST_INFO } from '../constants';
+import type { IdeaAsset, IdeaComment, IdeaRecord } from '../types/domain';
 
 export function CollabPortal() {
-  const { data: releases, loading } = useArtistData<Release>('releases');
-  
-  const publicIdeas = releases.filter(r => r.is_public && r.status !== 'released');
+  const { shareId } = useParams();
+  const [ideas, setIdeas] = useState<IdeaRecord[]>([]);
+  const [assets, setAssets] = useState<Record<string, IdeaAsset[]>>({});
+  const [comments, setComments] = useState<Record<string, IdeaComment[]>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const rows = await fetchIdeas();
+        const publicIdeas = rows.filter((idea) => idea.is_public);
+        setIdeas(publicIdeas);
+        await Promise.all(
+          publicIdeas.map(async (idea) => {
+            const [ideaAssets, ideaComments] = await Promise.all([fetchIdeaAssets(idea.id), fetchIdeaComments(idea.id)]);
+            setAssets((current) => ({ ...current, [idea.id]: ideaAssets }));
+            setComments((current) => ({ ...current, [idea.id]: ideaComments }));
+          })
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, []);
+
+  const selected = useMemo(() => {
+    if (!shareId) return null;
+    return ideas.find((idea) => idea.share_slug === shareId || idea.id === shareId) || null;
+  }, [ideas, shareId]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
+    return <div className="min-h-screen bg-light-bg p-8 text-sm text-text-secondary">Loading collaboration portal...</div>;
   }
 
+  const renderedIdeas = selected ? [selected] : ideas;
+
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Hero Section */}
-      <div className="bg-slate-900 text-white py-24 px-6 relative overflow-hidden">
-        <div className="absolute inset-0 opacity-20">
-          <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,#3b82f6,transparent_70%)]" />
-        </div>
-        
-        <div className="max-w-5xl mx-auto relative z-10">
-          <div className="flex flex-col items-center text-center">
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600/20 rounded-full border border-blue-500/30 text-blue-400 text-xs font-bold uppercase tracking-widest mb-8"
-            >
-              <Sparkles className="w-4 h-4" />
-              Artist Collaboration Portal
-            </motion.div>
-            
-            <motion.h1 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="text-5xl md:text-7xl font-bold tracking-tight mb-8 leading-tight"
-            >
-              Collaborate on my <span className="text-blue-500">Latest Projects.</span>
-            </motion.h1>
-            
-            <motion.p 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="text-xl text-slate-400 max-w-3xl mx-auto leading-relaxed mb-10"
-            >
-              Welcome to my creative workspace. I've curated a selection of works-in-progress, demos, and stems that are currently open for collaboration. Whether you're a producer, vocalist, or songwriter, I'm looking for fresh perspectives to help take these tracks to the finish line.
-            </motion.p>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="flex flex-wrap items-center justify-center gap-4"
-            >
-              <a 
-                href="mailto:wesleyrob27@gmail.com"
-                className="px-8 py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20 flex items-center gap-2"
-              >
-                <Mail className="w-5 h-5" />
-                General Inquiries
-              </a>
-              <div className="px-6 py-4 bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-2xl text-slate-300 text-sm font-medium">
-                Active Projects: {publicIdeas.length}
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#e0f2fe,transparent_32%),linear-gradient(180deg,#f8fafc,#eef2ff)] px-4 py-8 sm:px-6">
+      <div className="mx-auto max-w-6xl space-y-8">
+        <header className="overflow-hidden rounded-[2.5rem] border border-white/70 bg-white/80 p-8 shadow-xl backdrop-blur-xl">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <div className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-white">
+                <Share2 className="h-3.5 w-3.5" />
+                Public collaboration hub
               </div>
-            </motion.div>
+              <h1 className="mt-5 text-5xl font-bold tracking-tight text-slate-950">{ARTIST_INFO.name}</h1>
+              <p className="mt-4 text-lg leading-8 text-slate-600">
+                Review work-in-progress tracks, listen to uploaded MP3s, and leave notes with the same route working for direct links and refreshes.
+              </p>
+            </div>
+            <div className="rounded-[2rem] border border-slate-200 bg-slate-50 px-5 py-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">Open ideas</p>
+              <p className="mt-2 text-3xl font-bold text-text-primary">{ideas.length}</p>
+            </div>
           </div>
-        </div>
-      </div>
+        </header>
 
-      {/* Ideas Grid */}
-      <div className="max-w-7xl mx-auto px-6 py-20">
-        <div className="flex items-center justify-between mb-12">
-          <div>
-            <h2 className="text-3xl font-bold text-slate-900">Open Projects</h2>
-            <p className="text-slate-500 mt-1">Select an idea to view details and assets.</p>
-          </div>
-          <div className="px-4 py-2 bg-white rounded-2xl border border-slate-200 shadow-sm flex items-center gap-2">
-            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-            <span className="text-xs font-bold text-slate-600 uppercase tracking-widest">{publicIdeas.length} Available</span>
-          </div>
-        </div>
-
-        {publicIdeas.length === 0 ? (
-          <div className="text-center py-32 bg-white rounded-[3rem] border border-dashed border-slate-200">
-            <Music className="w-16 h-16 text-slate-200 mx-auto mb-6" />
-            <h3 className="text-xl font-bold text-slate-900">No public ideas yet</h3>
-            <p className="text-slate-500 mt-2">Check back soon for new collaboration opportunities.</p>
+        {renderedIdeas.length === 0 ? (
+          <div className="rounded-[2rem] border border-border bg-white p-10 text-center shadow-sm">
+            <Music2 className="mx-auto h-10 w-10 text-border" />
+            <p className="mt-3 text-sm text-text-secondary">No public collaboration items are available yet.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {publicIdeas.map((idea, index) => (
-              <motion.div
-                key={idea.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-                className="glass-card group hover:border-blue-200 transition-all duration-300"
-              >
-                <div className="p-8">
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-bold uppercase tracking-widest border border-blue-100">
-                      {idea.type || 'Original'}
-                    </div>
-                    <div className="p-2 bg-slate-50 rounded-xl text-slate-400">
-                      <Zap className="w-4 h-4" />
-                    </div>
-                  </div>
+          <div className="grid gap-6">
+            {renderedIdeas.map((idea) => {
+              const ideaAssets = assets[idea.id] || [];
+              const ideaComments = comments[idea.id] || [];
+              const audioAsset = ideaAssets.find((asset) => asset.asset_type === 'audio');
+              const linkAssets = ideaAssets.filter((asset) => asset.asset_type !== 'audio');
 
-                  <h3 className="text-2xl font-bold text-slate-900 mb-3">{idea.title}</h3>
-                  <p className="text-slate-500 text-sm line-clamp-3 mb-8 leading-relaxed">
-                    {idea.rationale || "This track is in the early stages and open for creative input. Looking for specific vibes and sound design."}
-                  </p>
-
-                  <div className="space-y-3 mb-8">
-                    {idea.production?.project_file_url && (
-                      <a 
-                        href={idea.production.project_file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl hover:bg-blue-50 hover:text-blue-600 transition-all group/link border border-slate-100 hover:border-blue-100"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Cloud className="w-5 h-5" />
-                          <span className="text-sm font-bold">Listen to Demo</span>
-                        </div>
-                        <ExternalLink className="w-4 h-4 opacity-0 group-hover/link:opacity-100 transition-opacity" />
-                      </a>
-                    )}
-                    {idea.production?.stems_url && (
-                      <a 
-                        href={idea.production.stems_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl hover:bg-purple-50 hover:text-purple-600 transition-all group/link border border-slate-100 hover:border-purple-100"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Music className="w-5 h-5" />
-                          <span className="text-sm font-bold">Download Stems</span>
-                        </div>
-                        <ExternalLink className="w-4 h-4 opacity-0 group-hover/link:opacity-100 transition-opacity" />
-                      </a>
+              return (
+                <article key={idea.id} className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
+                  <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="max-w-3xl">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">{idea.status}</p>
+                      <h2 className="mt-2 text-3xl font-bold text-text-primary">{idea.title}</h2>
+                      <p className="mt-3 text-sm leading-7 text-text-secondary">{idea.description || 'No description added yet.'}</p>
+                    </div>
+                    {!selected && (
+                      <Link className="btn-secondary" to={`/collab/${idea.share_slug || idea.id}`}>
+                        Open direct review link
+                      </Link>
                     )}
                   </div>
 
-                  <a 
-                    href={`mailto:wesleyrob27@gmail.com?subject=Collab Request: ${idea.title}`}
-                    className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-blue-600 transition-all shadow-lg shadow-slate-200"
-                  >
-                    <Mail className="w-4 h-4" />
-                    Request Collaboration
-                  </a>
-                </div>
-              </motion.div>
-            ))}
+                  <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_0.9fr]">
+                    <div className="rounded-[1.75rem] bg-slate-50 p-5">
+                      <div className="flex items-center gap-2">
+                        <Headphones className="h-4 w-4 text-text-tertiary" />
+                        <h3 className="text-lg font-semibold text-text-primary">Audio review</h3>
+                      </div>
+                      {audioAsset ? (
+                        <audio className="mt-4 w-full" controls src={audioAsset.file_url} />
+                      ) : (
+                        <p className="mt-4 text-sm text-text-secondary">No MP3 uploaded yet.</p>
+                      )}
+
+                      {linkAssets.length > 0 && (
+                        <div className="mt-5 flex flex-wrap gap-3">
+                          {linkAssets.map((asset) => (
+                            <a key={asset.id} className="btn-secondary" href={asset.file_url} target="_blank" rel="noreferrer">
+                              <Link2 className="h-4 w-4" />
+                              {asset.metadata?.label || 'Project link'}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-[1.75rem] border border-border p-5">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">Comments</p>
+                      <div className="mt-4 space-y-3">
+                        {ideaComments.length === 0 ? (
+                          <p className="text-sm text-text-secondary">No comments yet.</p>
+                        ) : (
+                          ideaComments.map((comment) => (
+                            <div key={comment.id} className="rounded-2xl bg-slate-50 px-4 py-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">
+                                {comment.timestamp_seconds != null ? `${Math.floor(comment.timestamp_seconds / 60)}:${String(Math.floor(comment.timestamp_seconds % 60)).padStart(2, '0')}` : 'General note'}
+                              </p>
+                              <p className="mt-2 text-sm text-text-primary">{comment.body}</p>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </div>
-
     </div>
   );
 }
