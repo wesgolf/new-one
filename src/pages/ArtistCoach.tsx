@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabase } from '../lib/supabase';
+import { getCurrentAuthUser } from '../lib/auth';
 import { GoogleGenAI } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
@@ -110,7 +111,7 @@ export function ArtistCoach() {
 
   const handleAddResource = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { data: { user } } = await supabase.auth.getUser();
+    const user = await getCurrentAuthUser();
     if (!user) return;
 
     setIsUploading(true);

@@ -26,11 +26,14 @@ import {
   Star,
   Flame,
   AlertCircle,
-  LogOut
+  LogOut,
+  Lock
 } from 'lucide-react';
 import { Release, ReleaseStatus, ReleaseType } from '../types';
 import { cn } from '../lib/utils';
 import { useArtistData } from '../hooks/useArtistData';
+import { useCurrentUserRole } from '../hooks/useCurrentUserRole';
+import { canCreateTrack } from '../types/roles';
 import { useSoundCloud } from '../hooks/useSoundCloud';
 import { useSpotify } from '../hooks/useSpotify';
 import { ReleaseModal } from '../components/ReleaseModal';
@@ -38,6 +41,7 @@ import { ReleasePreviewModal } from '../components/ReleasePreviewModal';
 import { LinkedContentModal } from '../components/LinkedContentModal';
 import { ARTIST_INFO } from '../constants';
 import { supabase } from '../lib/supabase';
+import { getCurrentAuthUser } from '../lib/auth';
 
   const statusColors: Record<ReleaseStatus, { bg: string, text: string, border: string, icon: any }> = {
   idea: { bg: 'bg-slate-100', text: 'text-slate-500', border: 'border-slate-200', icon: Circle },
@@ -58,6 +62,8 @@ const detectType = (title: string): ReleaseType => {
 };
 
 export function ReleaseTracker() {
+  const role = useCurrentUserRole();
+  const canAdd = canCreateTrack(role);
   const [filter, setFilter] = useState<ReleaseStatus | 'all'>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date' | 'title' | 'streams'>('date');
@@ -362,9 +368,9 @@ export function ReleaseTracker() {
     setIsWiping(true);
     try {
       // Delete all releases for this user (or all if no user_id)
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = await getCurrentAuthUser();
       let query = supabase.from('releases').delete();
-      
+
       if (user) {
         query = query.eq('user_id', user.id);
       } else {
@@ -453,6 +459,12 @@ export function ReleaseTracker() {
         <div className="text-center sm:text-left">
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900">Release Command Center</h2>
           <p className="text-slate-500 mt-2">Your central command for every release.</p>
+          {!canAdd && (
+            <div className="flex items-center gap-2 mt-3 px-3 py-2 bg-warning/10 border border-warning/30 rounded-lg text-xs text-warning w-fit">
+              <Lock className="w-4 h-4" />
+              <p>Only artists can create new tracks</p>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <div className="relative flex-1 sm:flex-none">
@@ -533,7 +545,7 @@ export function ReleaseTracker() {
               </div>
             )}
           </div>
-          <button className="flex-1 sm:flex-none btn-primary shadow-lg shadow-blue-200" onClick={handleAddRelease}>
+          <button className="flex-1 sm:flex-none btn-primary shadow-lg shadow-blue-200 disabled:opacity-50 disabled:cursor-not-allowed" onClick={handleAddRelease} disabled={!canAdd}>
             <Plus className="w-4 h-4" />
             New Track
           </button>

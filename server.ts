@@ -357,6 +357,8 @@ async function startServer() {
     try {
       const { createServer: createViteServer } = await import("vite");
       const vite = await createViteServer({
+        root: process.cwd(),
+        envDir: process.cwd(),
         server: { middlewareMode: true },
         appType: "spa",
       });

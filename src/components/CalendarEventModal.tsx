@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Calendar as CalendarIcon, Music, Video, MapPin, Clock, CheckSquare, Target, AlertCircle, Share2, Link as LinkIcon, Repeat, Zap } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabase } from '../lib/supabase';
+import { getCurrentAuthUser } from '../lib/auth';
 import { zernio } from '../lib/zernio';
 
 interface CalendarEventModalProps {
@@ -64,8 +65,8 @@ export function CalendarEventModal({ isOpen, onClose, onSave, initialDate, initi
     setError(null);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
+      const user = await getCurrentAuthUser();
+
       let table = '';
       let data: any = { 
         priority,

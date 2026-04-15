@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../lib/supabase';
+import { getCurrentAuthUser } from '../lib/auth';
 import { cn } from '../lib/utils';
 
 export function Opportunities() {
@@ -51,7 +52,7 @@ export function Opportunities() {
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { data: { user } } = await supabase.auth.getUser();
+    const user = await getCurrentAuthUser();
     const { error } = await supabase.from('opportunities').insert([{
       ...newContact,
       user_id: user?.id

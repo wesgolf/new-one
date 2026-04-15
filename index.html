@@ -4,24 +4,43 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="manifest" href="/manifest.json" />
+    
+    <!-- Branding & Metadata -->
     <meta name="theme-color" content="#2563eb" />
-    <title>My Google AI Studio App</title>
+    <meta name="description" content="ARTIST OS - Premium creative dashboard for music producers and artists" />
+    <meta name="keywords" content="music production, artist tools, releases, analytics, dashboard" />
+    <meta name="author" content="Wes" />
+    
+    <!-- Open Graph / Social -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="ARTIST OS" />
+    <meta property="og:description" content="Your personal command center for releases, analytics, and growth" />
+    <meta property="og:site_name" content="ARTIST OS" />
+    
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect fill='%232563eb' width='32' height='32' rx='8'/><path fill='white' d='M16 6l3 8h8l-6.4 4.6 2.4 8-6.4-5l-6.4 5 2.4-8L5 14h8l3-8z'/></svg>" />
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect fill='%232563eb' width='180' height='180' rx='40'/><path fill='white' d='M90 36l16 43h45l-36.4 26.4 13.6 43-36.4-28.8-36.4 28.8 13.6-43L29 79h45l16-43z'/></svg>" />
+    
+    <title>ARTIST OS</title>
+    
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js').then(reg => {
-            console.log('SW registered:', reg);
+            console.log('SW registered');
           }).catch(err => {
             console.log('SW registration failed:', err);
           });
         });
       }
-      // Suppress benign Vite WebSocket errors in this environment
+      
+      // Suppress benign Vite WebSocket errors
       window.addEventListener('unhandledrejection', (event) => {
         if (event.reason && event.reason.message && event.reason.message.includes('WebSocket')) {
           event.preventDefault();
         }
       });
+      
       const originalError = console.error;
       console.error = (...args) => {
         if (args[0] && typeof args[0] === 'string' && args[0].includes('[vite] failed to connect to websocket')) {

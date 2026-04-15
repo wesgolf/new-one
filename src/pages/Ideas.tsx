@@ -19,10 +19,13 @@ import {
   Cloud,
   Share2,
   AlertTriangle,
-  History
+  History,
+  Lock
 } from 'lucide-react';
 import { Release, ReleaseStatus } from '../types';
 import { useArtistData } from '../hooks/useArtistData';
+import { useCurrentUserRole } from '../hooks/useCurrentUserRole';
+import { canCreateTrack } from '../types/roles';
 import { cn } from '../lib/utils';
 import { ReleaseModal } from '../components/ReleaseModal';
 import { IdeaModal } from '../components/IdeaModal';
@@ -37,6 +40,8 @@ const statusColors: Record<string, { bg: string, text: string, border: string, i
 
 export function Ideas() {
   const { data: rawReleases, loading, addItem, updateItem, deleteItem } = useArtistData<Release>('releases');
+  const role = useCurrentUserRole();
+  const canAdd = canCreateTrack(role);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isIdeaModalOpen, setIsIdeaModalOpen] = useState(false);
   const [isPromoteModalOpen, setIsPromoteModalOpen] = useState(false);
@@ -96,24 +101,33 @@ export function Ideas() {
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900">Track Ideas & WIPs</h2>
           <p className="text-slate-500 mt-2">Manage your creative pipeline from spark to master.</p>
         </div>
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={() => window.open('/collab', '_blank')}
-            className="flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all shadow-sm"
-          >
-            <Share2 className="w-4 h-4" />
-            Share Portal
-          </button>
-          <button 
-            onClick={() => {
-              setSelectedRelease(null);
-              setIsIdeaModalOpen(true);
-            }}
-            className="btn-primary shadow-lg shadow-blue-200"
-          >
-            <Plus className="w-4 h-4" />
-            New Idea
-          </button>
+        <div className="flex flex-col items-stretch sm:items-center gap-4">
+          {!canAdd && (
+            <div className="flex items-start gap-2 px-3 py-2 bg-warning/10 border border-warning/30 rounded-lg text-xs text-warning">
+              <Lock className="w-4 h-4 shrink-0 mt-0.5" />
+              <p>Only artists can create new ideas</p>
+            </div>
+          )}
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => window.open('/collab', '_blank')}
+              className="flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all shadow-sm"
+            >
+              <Share2 className="w-4 h-4" />
+              Share Portal
+            </button>
+            <button 
+              onClick={() => {
+                setSelectedRelease(null);
+                setIsIdeaModalOpen(true);
+              }}
+              disabled={!canAdd}
+              className="btn-primary shadow-lg shadow-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Plus className="w-4 h-4" />
+              New Idea
+            </button>
+          </div>
         </div>
       </header>
 

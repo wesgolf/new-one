@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { getCurrentAuthUser } from '../lib/auth';
 import { Goal } from '../types';
 
 interface GoalModalProps {
@@ -55,8 +56,8 @@ export function GoalModal({ isOpen, onClose, onSuccess, goal }: GoalModalProps) 
     e.preventDefault();
     setLoading(true);
 
-    const { data: { user } } = await supabase.auth.getUser();
-    
+    const user = await getCurrentAuthUser();
+
     const goalData: any = {
       title: formData.title,
       target: parseFloat(formData.target),

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'artist-os-v1';
+const CACHE_NAME = 'artist-os-v2';
 const ASSETS = [
   '/',
   '/index.html',
@@ -6,6 +6,8 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
+  // Take over immediately so updated SW activates without needing tab close
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS);
@@ -13,10 +15,30 @@ self.addEventListener('install', (event) => {
   );
 });
 
+self.addEventListener('activate', (event) => {
+  // Claim all open tabs so the new SW takes effect right away
+  event.waitUntil(self.clients.claim());
+});
+
 self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
-    })
-  );
+  // Skip caching entirely for dev server requests (localhost / Vite HMR / API calls)
+  const url = new URL(event.request.url);
+  const isDevOrigin = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+  if (isDevOrigin || url.pathname.startsWith('/api/') || url.pathname.startsWith('/@')) {
+    return; // Let the browser handle it normally — no SW interception
+  }
+
+  event.respondWith((async () => {
+    try {
+      const cached = await caches.match(event.request);
+      if (cached) return cached;
+      return await fetch(event.request);
+    } catch (err) {
+      try {
+        return new Response('Service unavailable', { status: 503, statusText: 'Service Unavailable' });
+      } catch (e) {
+        return Response.error();
+      }
+    }
+  })());
 });
