@@ -1,32 +1,38 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  ChevronLeft, 
-  ChevronRight, 
-  Plus, 
+import React, { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
   Calendar as CalendarIcon,
-  Clock,
-  Video,
-  Smartphone,
-  Music,
-  MoreVertical,
-  Loader2,
   CheckSquare,
-  Target,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Loader2,
+  Music,
+  Plus,
   Share2,
-  Filter,
-  X,
+  Target,
+  Video,
   Zap,
-  Repeat
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabase } from '../lib/supabase';
 import { ApiErrorBanner } from '../components/ApiErrorBanner';
 import { CalendarEventModal } from '../components/CalendarEventModal';
 import { CalendarEventDetailModal } from '../components/CalendarEventDetailModal';
-import { Release } from '../types';
-import { useSoundCloud } from '../hooks/useSoundCloud';
-import { useSpotify } from '../hooks/useSpotify';
-import { ARTIST_INFO } from '../constants';
+import { CalendarSlotDrawer } from '../components/CalendarSlotDrawer';
+import { CalendarInsightsPanel } from '../components/CalendarInsightsPanel';
+import { CalendarAIAssistant, parseCalendarIntent } from '../components/CalendarAIAssistant';
+import type { IntentResult } from '../components/CalendarAIAssistant';
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+/** Visible hour range in week / day time-grid views */
+const HOURS = Array.from({ length: 18 }, (_, i) => i + 6); // 06:00 → 23:00
+/** Best posting hour slots — shown with an amber tint in time-grid */
+const BEST_POST_HOURS = new Set([9, 12, 18]);
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// ── Types ────────────────────────────────────────────────────────────────────
 
 interface Event {
   id: string;
@@ -54,706 +60,472 @@ interface Event {
   recurrenceEndDate?: string;
 }
 
-export function Calendar() {
-  const [view, setView] = useState<'month' | 'week' | 'day'>('month');
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [events, setEvents] = useState<Event[]>([]);
-  const [releases, setReleases] = useState<Release[]>([]);
-  const [selectedTrackId, setSelectedTrackId] = useState<string>('all');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-  const [modalType, setModalType] = useState<'release' | 'post' | 'show' | 'meeting' | 'todo' | 'goal' | undefined>(undefined);
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function getWeekDays(from: Date): Date[] {
+  const start = new Date(from);
+  start.setDate(from.getDate() - from.getDay()); // Sunday
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    return d;
   });
-  const [draggedEvent, setDraggedEvent] = useState<Event | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [isSpotifySyncing, setIsSpotifySyncing] = useState(false);
-  const { login: scLogin, token: scToken, fetchTracks: scFetchTracks } = useSoundCloud();
-  const { login: spLogin, isAuthenticated: isSpAuthed, fetchTracks: spFetchTracks } = useSpotify();
+}
 
-  const expandRecurringEvents = (rawEvents: Event[]): Event[] => {
-    const expanded: Event[] = [];
-    const now = new Date();
-    const endRange = new Date();
-    endRange.setFullYear(now.getFullYear() + 1); // Expand up to 1 year ahead
+function formatHour(h: number): string {
+  if (h === 0 || h === 24) return '12a';
+  if (h === 12) return '12p';
+  return h > 12 ? `${h - 12}p` : `${h}a`;
+}
 
-    rawEvents.forEach(event => {
-      if (!event.isRecurring || !event.recurrencePattern) {
-        expanded.push(event);
-        return;
-      }
+function eventPillClass(event: Event): string {
+  if (event.type === 'release' || event.isFullDay) return 'bg-blue-600 text-white';
+  switch (event.type) {
+    case 'post':
+      if (event.publishStatus === 'published') return 'bg-emerald-50 text-emerald-700 border border-emerald-100';
+      if (event.publishStatus === 'failed')    return 'bg-rose-50 text-rose-600 border border-rose-100';
+      if (event.publishStatus === 'scheduled') return 'bg-blue-50 text-blue-600 border border-blue-100';
+      return 'bg-purple-50 text-purple-600 border border-purple-100';
+    case 'show':    return 'bg-rose-50 text-rose-600 border border-rose-100';
+    case 'meeting': return 'bg-slate-100 text-slate-700 border border-slate-200';
+    case 'todo':    return 'bg-emerald-50 text-emerald-700 border border-emerald-100';
+    case 'goal':    return 'bg-amber-50 text-amber-700 border border-amber-100';
+    default:        return 'bg-slate-100 text-slate-700 border border-slate-200';
+  }
+}
 
-      // Parse the initial date carefully to avoid timezone shifts
-      const [year, month, day] = event.date.split('-').map(Number);
-      let current = new Date(year, month - 1, day);
-      
-      const end = event.recurrenceEndDate ? new Date(event.recurrenceEndDate) : endRange;
-      const interval = event.recurrenceInterval || 1;
+function expandRecurringEvents(rawEvents: Event[]): Event[] {
+  const expanded: Event[] = [];
+  const endRange = new Date();
+  endRange.setFullYear(endRange.getFullYear() + 1);
 
-      let count = 0;
-      while (current <= end && count < 365) {
-        const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
-        
-        expanded.push({
-          ...event,
-          id: count === 0 ? event.id : `${event.id}-${count}`,
-          date: dateStr,
-        });
+  rawEvents.forEach((event) => {
+    if (!event.isRecurring || !event.recurrencePattern) {
+      expanded.push(event);
+      return;
+    }
+    const [year, month, day] = event.date.split('-').map(Number);
+    let current = new Date(year, month - 1, day);
+    const end = event.recurrenceEndDate ? new Date(event.recurrenceEndDate) : endRange;
+    const interval = event.recurrenceInterval || 1;
+    let count = 0;
+    while (current <= end && count < 365) {
+      const ds = toDateStr(current);
+      expanded.push({ ...event, id: count === 0 ? event.id : `${event.id}-${count}`, date: ds });
+      if (event.recurrencePattern === 'daily')   current.setDate(current.getDate() + interval);
+      else if (event.recurrencePattern === 'weekly') current.setDate(current.getDate() + 7 * interval);
+      else if (event.recurrencePattern === 'monthly') current.setMonth(current.getMonth() + interval);
+      else break;
+      count++;
+    }
+  });
+  return expanded;
+}
 
-        if (event.recurrencePattern === 'daily') {
-          current.setDate(current.getDate() + interval);
-        } else if (event.recurrencePattern === 'weekly') {
-          current.setDate(current.getDate() + (7 * interval));
-        } else if (event.recurrencePattern === 'monthly') {
-          current.setMonth(current.getMonth() + interval);
-        } else {
-          break;
-        }
-        count++;
-      }
-    });
+// ── Component ────────────────────────────────────────────────────────────────
 
-    return expanded;
-  };
+export function Calendar() {
+  const navigate = useNavigate();
 
-  const fetchEvents = async () => {
+  // Core state
+  const [view,          setView]         = useState<'month' | 'week' | 'day'>('month');
+  const [currentDate,   setCurrentDate]  = useState(new Date());
+  const [events,        setEvents]       = useState<Event[]>([]);
+  const [loading,       setLoading]      = useState(true);
+  const [error,         setError]        = useState<Error | null>(null);
+  const [selectedDate,  setSelectedDate] = useState<string>(toDateStr(new Date()));
+  const [draggedEvent,  setDraggedEvent] = useState<Event | null>(null);
+
+  // Modals
+  const [isModalOpen,       setIsModalOpen]       = useState(false);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [selectedEvent,     setSelectedEvent]     = useState<Event | null>(null);
+  const [modalType,         setModalType]         = useState<Event['type'] | undefined>();
+
+  // Slot drawer (create-from-empty-slot)
+  const [slotOpen,         setSlotOpen]         = useState(false);
+  const [slotDate,         setSlotDate]         = useState('');
+  const [slotTime,         setSlotTime]         = useState<string | undefined>();
+  const [slotPrefillTitle, setSlotPrefillTitle] = useState('');
+  const [slotPrefillType,  setSlotPrefillType]  = useState<'event' | 'task' | undefined>();
+
+  // ── Data fetching ────────────────────────────────────────────────────────
+
+  const fetchEvents = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      
-      // Fetch from all tables
-      const [
-        releasesRes,
-        contentRes,
-        showsRes,
-        meetingsRes,
-        todosRes,
-        goalsRes,
-        platformPostsRes
-      ] = await Promise.all([
-        supabase.from('releases').select('*'),
-        supabase.from('content_items').select('*'),
-        supabase.from('shows').select('*'),
-        supabase.from('meetings').select('*'),
-        supabase.from('todos').select('*'),
-        supabase.from('goals').select('*'),
-        supabase.from('platform_posts').select('*, content_items(title, media_url)')
-      ]);
 
-      if (releasesRes.error) throw releasesRes.error;
-      if (contentRes.error) throw contentRes.error;
-      if (showsRes.error) throw showsRes.error;
-      if (meetingsRes.error) throw meetingsRes.error;
-      if (todosRes.error) throw todosRes.error;
-      if (goalsRes.error) throw goalsRes.error;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const safe = async (q: any) => {
+        const res = await q;
+        if (res?.error?.code === '42P01') return { data: [] };
+        return res;
+      };
 
-      const releases = releasesRes.data;
-      const content = contentRes.data;
-      const shows = showsRes.data;
-      const meetings = meetingsRes.data;
-      const todos = todosRes.data;
-      const goals = goalsRes.data;
-      const platformPosts = platformPostsRes.data || [];
+      const [releasesRes, contentRes, showsRes, meetingsRes, todosRes, goalsRes, tasksRes, ppRes] =
+        await Promise.all([
+          safe(supabase.from('releases').select('*')),
+          safe(supabase.from('content_items').select('*')),
+          safe(supabase.from('shows').select('*')),
+          safe(supabase.from('meetings').select('*')),
+          safe(supabase.from('todos').select('*')),
+          safe(supabase.from('goals').select('*')),
+          safe(supabase.from('tasks').select('*')),
+          safe(supabase.from('platform_posts').select('*, content_items(title)')),
+        ]);
 
       const rawEvents: Event[] = [
-        ...(releases || []).map(r => ({
-          id: r.id,
-          title: r.title,
-          date: r.release_date,
-          time: r.release_time,
-          type: 'release' as const,
-          platform: r.soundcloud_url ? 'SoundCloud' : undefined,
-          priority: r.priority,
-          releaseId: r.id,
-          status: r.status,
-          notes: r.notes,
-          isFullDay: r.is_full_day
-        })),
-        ...(content || []).map(c => ({
-          id: c.id,
-          title: c.title,
-          date: c.scheduled_date?.split('T')[0],
-          time: c.scheduled_time,
-          type: 'post' as const,
-          platform: c.platform,
-          priority: c.priority,
-          zernioId: c.zernio_id || c.zernio_post_id,
-          releaseId: c.linked_release_id,
-          status: c.status,
-          publishStatus: c.publish_status || 'draft',
-          notes: c.caption,
-          isFullDay: c.is_full_day,
-          isRecurring: c.is_recurring,
-          recurrencePattern: c.recurrence_pattern,
-          recurrenceInterval: c.recurrence_interval,
-          recurrenceEndDate: c.recurrence_end_date
-        })),
-        ...(shows || []).map(s => ({
-          id: s.id,
-          title: s.venue,
-          date: s.date,
-          time: s.time,
-          type: 'show' as const,
-          priority: s.priority,
-          status: s.status,
-          venue: s.venue,
-          isFullDay: s.is_full_day
-        })),
-        ...(meetings || []).map(m => ({
-          id: m.id,
-          title: m.title,
-          date: m.date,
-          time: m.time,
-          type: 'meeting' as const,
-          priority: m.priority,
-          notes: m.notes,
-          isFullDay: m.is_full_day,
-          isRecurring: m.is_recurring,
-          recurrencePattern: m.recurrence_pattern,
-          recurrenceInterval: m.recurrence_interval,
-          recurrenceEndDate: m.recurrence_end_date
-        })),
-        ...(todos || []).map(t => ({
-          id: t.id,
-          title: t.task,
-          date: t.due_date,
-          time: t.due_time,
-          type: 'todo' as const,
-          priority: t.priority,
-          status: t.completed ? 'completed' : 'pending',
-          task: t.task,
-          isFullDay: t.is_full_day,
-          isRecurring: t.is_recurring,
-          recurrencePattern: t.recurrence_pattern,
-          recurrenceInterval: t.recurrence_interval,
-          recurrenceEndDate: t.recurrence_end_date
-        })),
-        ...(goals || []).map(g => ({
-          id: g.id,
-          title: g.title,
-          date: g.deadline,
-          time: g.deadline_time,
-          type: 'goal' as const,
-          priority: g.priority,
-          category: g.category,
-          target: g.target,
-          current: g.current,
-          unit: g.unit,
-          isRecurring: g.is_recurring,
-          recurrencePattern: g.recurrence_pattern,
-          recurrenceInterval: g.recurrence_interval,
-          recurrenceEndDate: g.recurrence_end_date
-        })),
-        ...(platformPosts || [])
+        ...(releasesRes.data || [])
+          .filter((r: any) => r.release_date)
+          .map((r: any) => ({
+            id: r.id, title: r.title, date: r.release_date,
+            type: 'release' as const, isFullDay: true,
+            notes: r.notes, status: r.status, releaseId: r.id,
+          })),
+
+        ...(contentRes.data || [])
+          .filter((c: any) => c.scheduled_date)
+          .map((c: any) => ({
+            id: c.id, title: c.title,
+            date: (c.scheduled_date || '').split('T')[0],
+            time: c.scheduled_time,
+            type: 'post' as const,
+            platform: c.platform,
+            publishStatus: c.publish_status || 'draft',
+            zernioId: c.zernio_id || c.zernio_post_id,
+            notes: c.caption,
+            isFullDay: c.is_full_day,
+            isRecurring: c.is_recurring,
+            recurrencePattern: c.recurrence_pattern,
+            recurrenceInterval: c.recurrence_interval,
+            recurrenceEndDate: c.recurrence_end_date,
+          })),
+
+        ...(showsRes.data || [])
+          .filter((s: any) => s.date)
+          .map((s: any) => ({
+            id: s.id, title: s.venue || s.title || 'Show',
+            date: s.date, time: s.time,
+            type: 'show' as const, venue: s.venue, status: s.status,
+          })),
+
+        ...(meetingsRes.data || [])
+          .filter((m: any) => m.date)
+          .map((m: any) => ({
+            id: m.id, title: m.title, date: m.date, time: m.time,
+            type: 'meeting' as const, notes: m.notes,
+            isRecurring: m.is_recurring,
+            recurrencePattern: m.recurrence_pattern,
+            recurrenceInterval: m.recurrence_interval,
+            recurrenceEndDate: m.recurrence_end_date,
+          })),
+
+        ...(todosRes.data || [])
+          .filter((t: any) => t.due_date)
+          .map((t: any) => ({
+            id: t.id, title: t.task || t.title, date: t.due_date, time: t.due_time,
+            type: 'todo' as const, priority: t.priority,
+            status: t.completed ? 'completed' : 'pending',
+          })),
+
+        ...(tasksRes.data || [])
+          .filter((t: any) => t.due_date)
+          .map((t: any) => ({
+            id: `task_${t.id}`, title: t.title,
+            date: (t.due_date || '').split('T')[0],
+            time: t.due_date?.includes('T') ? t.due_date.split('T')[1]?.slice(0, 5) : undefined,
+            type: 'todo' as const,
+            priority: t.priority === 'urgent' ? 'high' : t.priority,
+            status: t.status === 'done' ? 'completed' : t.status,
+          })),
+
+        ...(goalsRes.data || [])
+          .filter((g: any) => g.deadline)
+          .map((g: any) => ({
+            id: g.id, title: g.title, date: g.deadline,
+            type: 'goal' as const, category: g.category,
+            target: g.target, current: g.current, unit: g.unit,
+          })),
+
+        ...(ppRes.data || [])
           .filter((pp: any) => pp.scheduled_at)
           .map((pp: any) => {
-            const scheduledDate = new Date(pp.scheduled_at);
-            const dateStr = `${scheduledDate.getFullYear()}-${String(scheduledDate.getMonth() + 1).padStart(2, '0')}-${String(scheduledDate.getDate()).padStart(2, '0')}`;
-            const timeStr = `${String(scheduledDate.getHours()).padStart(2, '0')}:${String(scheduledDate.getMinutes()).padStart(2, '0')}`;
-            const parentTitle = pp.content_items?.title || pp.title || 'Untitled';
+            const d = new Date(pp.scheduled_at);
             return {
               id: `pp_${pp.id}`,
-              title: `${parentTitle} (${pp.platform})`,
-              date: dateStr,
-              time: timeStr,
+              title: `${pp.content_items?.title || 'Post'} (${pp.platform})`,
+              date: toDateStr(d),
+              time: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
               type: 'post' as const,
               platform: pp.platform,
               publishStatus: pp.status as any,
-              status: pp.status,
-              notes: pp.caption,
             };
-          })
-      ].filter(e => e.date);
+          }),
+      ];
 
-      const allEvents = expandRecurringEvents(rawEvents);
-      setEvents(allEvents);
-      setReleases(releases || []);
+      setEvents(expandRecurringEvents(rawEvents));
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchEvents();
   }, []);
 
-  const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
-  const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
+  useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
-  const nextMonth = () => {
-    if (view === 'month') {
-      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
-    } else if (view === 'week') {
-      const nextWeek = new Date(currentDate);
-      nextWeek.setDate(currentDate.getDate() + 7);
-      setCurrentDate(nextWeek);
-    } else {
-      const nextDay = new Date(currentDate);
-      nextDay.setDate(currentDate.getDate() + 1);
-      setCurrentDate(nextDay);
+  // ── Navigation ───────────────────────────────────────────────────────────
+
+  const navigate_ = (direction: 1 | -1) => {
+    setCurrentDate((prev) => {
+      const d = new Date(prev);
+      if (view === 'month')      d.setMonth(d.getMonth() + direction);
+      else if (view === 'week')  d.setDate(d.getDate() + 7 * direction);
+      else                       d.setDate(d.getDate() + direction);
+      return d;
+    });
+  };
+
+  const goToday = () => {
+    setCurrentDate(new Date());
+    setSelectedDate(toDateStr(new Date()));
+  };
+
+  // ── Event queries ────────────────────────────────────────────────────────
+
+  const getEventsForDate = (d: Date) => {
+    const ds = toDateStr(d);
+    return events.filter((e) => e.date === ds);
+  };
+
+  const getEventsForDay = (day: number) => {
+    const ds = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return events.filter((e) => e.date === ds);
+  };
+
+  // ── Slot / intent handlers ───────────────────────────────────────────────
+
+  const openSlot = (date: string, time?: string) => {
+    setSlotDate(date);
+    setSlotTime(time);
+    setSlotPrefillTitle('');
+    setSlotPrefillType(undefined);
+    setSlotOpen(true);
+  };
+
+  const openDetail = (event: Event) => {
+    setSelectedEvent(event);
+    setIsDetailModalOpen(true);
+  };
+
+  const handleAIIntent = (result: IntentResult) => {
+    if (result.intent === 'create_event') {
+      setSlotDate(result.date);
+      setSlotTime(result.time);
+      setSlotPrefillTitle(result.title);
+      setSlotPrefillType('event');
+      setSlotOpen(true);
+    } else if (result.intent === 'create_task') {
+      setSlotDate(result.date);
+      setSlotTime(result.time);
+      setSlotPrefillTitle(result.title);
+      setSlotPrefillType('task');
+      setSlotOpen(true);
+    } else if (result.intent === 'schedule_post') {
+      navigate('/content', { state: { prefillDate: result.date, prefillTime: result.time } });
     }
   };
 
-  const prevMonth = () => {
-    if (view === 'month') {
-      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
-    } else if (view === 'week') {
-      const prevWeek = new Date(currentDate);
-      prevWeek.setDate(currentDate.getDate() - 7);
-      setCurrentDate(prevWeek);
-    } else {
-      const prevDay = new Date(currentDate);
-      prevDay.setDate(currentDate.getDate() - 1);
-      setCurrentDate(prevDay);
-    }
-  };
+  // ── Drag-and-drop ────────────────────────────────────────────────────────
 
   const handleDragStart = (e: React.DragEvent, event: Event) => {
     setDraggedEvent(event);
-    e.dataTransfer.setData('eventId', event.id);
-    e.dataTransfer.setData('eventType', event.type);
     e.dataTransfer.effectAllowed = 'move';
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
   };
 
   const handleDrop = async (e: React.DragEvent, targetDate: string) => {
     e.preventDefault();
     if (!draggedEvent) return;
-
-    const eventId = draggedEvent.id;
-    const eventType = draggedEvent.type;
-
+    const tableMap: Record<string, [string, string]> = {
+      release: ['releases', 'release_date'],
+      post:    ['content_items', 'scheduled_date'],
+      show:    ['shows', 'date'],
+      meeting: ['meetings', 'date'],
+      todo:    ['todos', 'due_date'],
+      goal:    ['goals', 'deadline'],
+    };
+    const [table, field] = tableMap[draggedEvent.type] ?? ['meetings', 'date'];
     try {
-      let table = '';
-      let dateField = 'date';
-
-      switch (eventType) {
-        case 'release': table = 'releases'; dateField = 'release_date'; break;
-        case 'post': table = 'content_items'; dateField = 'scheduled_date'; break;
-        case 'show': table = 'shows'; break;
-        case 'meeting': table = 'meetings'; break;
-        case 'todo': table = 'todos'; dateField = 'due_date'; break;
-        case 'goal': table = 'goals'; dateField = 'deadline'; break;
-      }
-
-      const updateData = { [dateField]: targetDate };
-      const { error } = await supabase.from(table).update(updateData).eq('id', eventId);
-      
-      if (error) throw error;
-      
+      await supabase.from(table).update({ [field]: targetDate }).eq('id', draggedEvent.id);
       fetchEvents();
-    } catch (err: any) {
-      console.error('Failed to move event:', err);
-      alert('Failed to move event: ' + err.message);
-    } finally {
+    } catch { /* ignore */ } finally {
       setDraggedEvent(null);
     }
   };
 
-  const handleSyncSoundCloud = async () => {
-    if (!scToken) {
-      scLogin();
-      return;
-    }
+  // ── Render helpers ───────────────────────────────────────────────────────
 
-    setIsSyncing(true);
-    try {
-      const tracks = await scFetchTracks();
-      if (tracks && tracks.length > 0) {
-        let addedCount = 0;
-        for (const track of tracks) {
-          // Check if release already exists by title
-          const { data: existing } = await supabase
-            .from('releases')
-            .select('id')
-            .eq('title', track.title)
-            .maybeSingle();
+  const renderEventPill = (event: Event, compact = false) => (
+    <div
+      key={event.id}
+      draggable
+      onDragStart={(e) => handleDragStart(e, event)}
+      onClick={(e) => { e.stopPropagation(); openDetail(event); }}
+      className={cn(
+        'truncate rounded-md px-1.5 py-0.5 text-[10px] font-bold cursor-pointer transition-all hover:opacity-90',
+        eventPillClass(event),
+        compact ? 'mb-0.5' : 'mb-1',
+      )}
+    >
+      {event.time && !event.isFullDay && (
+        <span className="mr-1 opacity-60">{event.time}</span>
+      )}
+      {event.zernioId && <Share2 className="mr-0.5 inline h-2 w-2 opacity-60" />}
+      {event.title}
+    </div>
+  );
 
-          if (!existing) {
-            const { error } = await supabase.from('releases').insert([{
-              title: track.title,
-              status: 'released',
-              release_date: track.created_at ? track.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
-              soundcloud_url: track.permalink_url,
-              assets: { 
-                cover_art_url: track.artwork_url || '/placeholder-cover.svg',
-                distribution: {
-                  soundcloud_url: track.permalink_url,
-                  release_date: track.created_at ? track.created_at.split('T')[0] : new Date().toISOString().split('T')[0]
-                }
-              },
-              performance: { 
-                streams: { spotify: 0, apple: 0, soundcloud: track.playback_count || 0, youtube: 0 },
-                engagement: { likes: track.favoritings_count || 0, saves: 0, reposts: track.reposts_count || 0 }
-              }
-            }]);
-            if (!error) addedCount++;
-          }
-        }
-        await fetchEvents();
-        alert(`Synced SoundCloud: Added ${addedCount} new releases to your calendar.`);
-      }
-    } catch (err) {
-      console.error('Failed to sync SoundCloud:', err);
-      alert('Failed to sync SoundCloud. Please try again.');
-    } finally {
-      setIsSyncing(false);
-    }
-  };
+  // ── Calendar values ──────────────────────────────────────────────────────
 
-  const handleSyncSpotify = async () => {
-    if (isSpAuthed === null) {
-      alert('Spotify authentication is still loading. Please wait a moment.');
-      return;
-    }
+  const daysInMonth   = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
+  const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
+  const weekDays      = getWeekDays(currentDate);
+  const monthName     = currentDate.toLocaleString('default', { month: 'long' });
+  const year          = currentDate.getFullYear();
+  const todayStr      = toDateStr(new Date());
 
-    if (!isSpAuthed) {
-      spLogin();
-      return;
-    }
-
-    if (!ARTIST_INFO.spotify_ids || ARTIST_INFO.spotify_ids.length === 0) {
-      alert('Spotify Artist IDs not configured in constants.ts');
-      return;
-    }
-
-    setIsSpotifySyncing(true);
-    try {
-      let totalAdded = 0;
-      let totalUpdated = 0;
-
-      for (const spotifyId of ARTIST_INFO.spotify_ids) {
-        const tracks = await spFetchTracks(spotifyId.trim());
-        if (tracks && tracks.length > 0) {
-          for (const track of tracks) {
-            // Check if release already exists by title
-            const { data: existing } = await supabase
-              .from('releases')
-              .select('id, distribution, performance, production')
-              .eq('title', track.name)
-              .maybeSingle();
-
-            const spotifyData = {
-              track_id: track.id,
-              audio_features: track.audio_features
-            };
-
-            if (!existing) {
-              const { error } = await supabase.from('releases').insert([{
-                title: track.name,
-                status: 'released',
-                release_date: track.album?.release_date,
-                assets: { 
-                  cover_art_url: track.album?.images?.[0]?.url || '/placeholder-cover.svg',
-                  distribution: {
-                    release_date: track.album?.release_date,
-                    spotify_url: track.external_urls?.spotify
-                  }
-                },
-                production: {
-                  bpm: Math.round(track.audio_features?.tempo || 0),
-                  key: track.audio_features?.key?.toString()
-                },
-                performance: { 
-                  streams: { spotify: track.popularity || 0, apple: 0, soundcloud: 0, youtube: 0 },
-                  engagement: { likes: 0, saves: 0, reposts: 0 }
-                },
-                spotify_data: spotifyData
-              }]);
-              if (!error) totalAdded++;
-            } else {
-              // Update existing release with Spotify data
-              await supabase.from('releases').update({
-                distribution: {
-                  ...existing.distribution,
-                  spotify_url: track.external_urls?.spotify
-                },
-                performance: {
-                  ...existing.performance,
-                  streams: {
-                    ...existing.performance?.streams,
-                    spotify: track.popularity || 0
-                  }
-                },
-                spotify_data: spotifyData,
-                production: {
-                  ...existing.production,
-                  bpm: existing.production?.bpm || Math.round(track.audio_features?.tempo || 0),
-                  key: existing.production?.key || track.audio_features?.key?.toString()
-                }
-              }).eq('id', existing.id);
-              totalUpdated++;
-            }
-          }
-        }
-      }
-      await fetchEvents();
-      alert(`Synced Spotify: Added ${totalAdded} new releases and updated ${totalUpdated} existing ones across ${ARTIST_INFO.spotify_ids.length} profiles.`);
-    } catch (err: any) {
-      console.error('Failed to sync Spotify:', err);
-      alert('Failed to sync Spotify: ' + err.message);
-    } finally {
-      setIsSpotifySyncing(false);
-    }
-  };
-
-  const monthName = currentDate.toLocaleString('default', { month: 'long' });
-  const year = currentDate.getFullYear();
-
-  const getWeekDays = () => {
-    const start = new Date(currentDate);
-    start.setDate(currentDate.getDate() - currentDate.getDay());
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      return d;
-    });
-  };
-
-  const filteredEvents = selectedTrackId === 'all'
-    ? events
-    : events.filter(e => e.releaseId === selectedTrackId);
-
-  const getEventsForDate = (date: Date) => {
-    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    return filteredEvents.filter(e => e.date === dateStr);
-  };
-
-  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  const padding = Array.from({ length: firstDayOfMonth }, (_, i) => null);
-
-  const getEventsForDay = (day: number) => {
-    const dateStr = `${year}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return filteredEvents.filter(e => e.date === dateStr);
-  };
-
-  const handleAddEvent = (day?: number, type?: 'release' | 'post' | 'show' | 'meeting' | 'todo' | 'goal') => {
-    if (day) {
-      const dateStr = `${year}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      setSelectedDate(dateStr);
-    }
-    setModalType(type);
-    setIsModalOpen(true);
-  };
+  const upcomingEvents = events
+    .filter((e) => e.date >= todayStr)
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? ''))
+    .slice(0, 8);
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-center gap-4 p-6">
-        <ApiErrorBanner error={error} onRetry={() => { setError(null); window.location.reload(); }} />
+      <div className="flex h-[60vh] flex-col items-center justify-center gap-4 p-6 text-center">
+        <ApiErrorBanner error={error} onRetry={() => { setError(null); fetchEvents(); }} />
       </div>
     );
   }
 
   return (
-    <div className="space-y-10">
-      <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-        <div className="text-center lg:text-left">
-          <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900">{monthName} {year}</h2>
-          <p className="text-slate-500 mt-2">Manage your releases, content, and career schedule.</p>
+    <div className="space-y-6">
+
+      {/* ── Header ───────────────────────────────────────────────────────── */}
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
+            {monthName} {year}
+          </h2>
+          <p className="mt-1 text-slate-500">Central planner — releases, posts, tasks, goals.</p>
         </div>
-        <div className="flex flex-wrap justify-center lg:justify-end items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl">
-              <Filter className="w-3.5 h-3.5 text-slate-500" />
-              <select 
-                value={selectedTrackId}
-                onChange={(e) => setSelectedTrackId(e.target.value)}
-                className="bg-transparent text-[10px] md:text-xs font-bold text-slate-600 focus:outline-none cursor-pointer max-w-[100px] md:max-w-none"
-              >
-                <option value="all">All Tracks</option>
-                {releases.map(release => (
-                  <option key={release.id} value={release.id}>{release.title}</option>
-                ))}
-              </select>
-            </div>
-            {selectedTrackId !== 'all' && (
-              <button 
-                onClick={() => setSelectedTrackId('all')}
-                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                title="Clear filter"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-          <button 
-            onClick={() => {
-              setCurrentDate(new Date());
-              const d = new Date();
-              setSelectedDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
-            }}
-            className="px-3 md:px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] md:text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all"
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={goToday}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
           >
             Today
           </button>
-          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+          <button onClick={() => navigate_(-1)} className="rounded-xl border border-slate-200 bg-white p-2 shadow-sm transition-colors hover:bg-slate-50">
+            <ChevronLeft className="h-4 w-4 text-slate-600" />
+          </button>
+          <button onClick={() => navigate_(1)} className="rounded-xl border border-slate-200 bg-white p-2 shadow-sm transition-colors hover:bg-slate-50">
+            <ChevronRight className="h-4 w-4 text-slate-600" />
+          </button>
+          {/* View switcher */}
+          <div className="flex rounded-xl border border-slate-200 bg-slate-100 p-1">
             {(['month', 'week', 'day'] as const).map((v) => (
               <button
                 key={v}
                 onClick={() => setView(v)}
                 className={cn(
-                  "px-3 md:px-4 py-1.5 rounded-lg text-[10px] md:text-xs font-bold transition-all uppercase tracking-widest",
-                  view === v ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                  'rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-all',
+                  view === v ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700',
                 )}
               >
                 {v}
               </button>
             ))}
           </div>
-          <button 
-            onClick={handleSyncSoundCloud}
-            disabled={isSyncing || isSpotifySyncing}
-            className="px-3 md:px-4 py-2 bg-orange-50 border border-orange-100 rounded-xl text-[10px] md:text-xs font-bold text-orange-600 hover:bg-orange-100 transition-all flex items-center gap-2"
+          <button
+            onClick={() => openSlot(selectedDate)}
+            className="btn-primary py-2 text-xs"
           >
-            {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Repeat className="w-4 h-4" />}
-            {scToken ? 'SC Sync' : 'SC Connect'}
-          </button>
-          <button 
-            onClick={handleSyncSpotify}
-            disabled={isSpotifySyncing || isSyncing}
-            className="px-3 md:px-4 py-2 bg-emerald-50 border border-emerald-100 rounded-xl text-[10px] md:text-xs font-bold text-emerald-600 hover:bg-emerald-100 transition-all flex items-center gap-2"
-          >
-            {isSpotifySyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Repeat className="w-4 h-4" />}
-            {isSpAuthed ? 'Spotify Sync' : 'Spotify Connect'}
-          </button>
-          <button className="btn-primary py-2 px-3 md:px-4 text-[10px] md:text-xs" onClick={() => handleAddEvent()}>
-            <Plus className="w-4 h-4" />
-            Add Event
+            <Plus className="h-4 w-4" /> New event
           </button>
         </div>
       </header>
 
+      {/* ── AI Quick-plan bar ─────────────────────────────────────────────── */}
+      <CalendarAIAssistant onIntent={handleAIIntent} />
+
+      {/* ── Main grid ────────────────────────────────────────────────────── */}
       {loading ? (
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+        <div className="flex h-64 items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          <div className="lg:col-span-3 glass-card overflow-hidden">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-              <h3 className="text-xl font-bold text-slate-900">
-                {view === 'month' ? `${monthName} ${year}` : 
-                 view === 'week' ? `Week of ${getWeekDays()[0].toLocaleDateString()}` :
-                 currentDate.toLocaleDateString()}
-              </h3>
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => {
-                    const today = new Date();
-                    setCurrentDate(today);
-                  }}
-                  className="px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-white rounded-lg transition-all border border-slate-200"
-                >
-                  Today
-                </button>
-                <button onClick={prevMonth} className="p-2 hover:bg-white rounded-lg transition-all border border-transparent hover:border-slate-200">
-                  <ChevronLeft className="w-5 h-5 text-slate-600" />
-                </button>
-                <button onClick={nextMonth} className="p-2 hover:bg-white rounded-lg transition-all border border-transparent hover:border-slate-200">
-                  <ChevronRight className="w-5 h-5 text-slate-600" />
-                </button>
-              </div>
-            </div>
+        <div className="grid gap-6 lg:grid-cols-[1fr_260px]">
 
+          {/* ── Calendar body ─────────────────────────────────────────────── */}
+          <div className="min-w-0 overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm">
+
+            {/* Month view */}
             {view === 'month' && (
               <>
                 <div className="grid grid-cols-7 border-b border-slate-100">
-                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                    <div key={day} className="py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                      {day}
+                  {DAY_LABELS.map((d) => (
+                    <div key={d} className="py-3 text-center text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      {d}
                     </div>
                   ))}
                 </div>
-
                 <div className="grid grid-cols-7">
-                  {padding.map((_, i) => (
-                    <div key={`pad-${i}`} className="h-32 border-b border-r border-slate-50 bg-slate-50/30" />
+                  {/* Padding cells */}
+                  {Array.from({ length: firstDayOfMonth }).map((_, i) => (
+                    <div key={`pad-${i}`} className="h-28 border-b border-r border-slate-50 bg-slate-50/30" />
                   ))}
-                  {days.map(day => {
+                  {/* Day cells */}
+                  {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
                     const dayEvents = getEventsForDay(day);
-                    const dateStr = `${year}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                    const isToday = new Date().getDate() === day && new Date().getMonth() === currentDate.getMonth() && new Date().getFullYear() === currentDate.getFullYear();
-                    
+                    const ds = `${year}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    const isToday = ds === todayStr;
                     return (
-                      <div 
-                        key={day} 
-                        onClick={() => setSelectedDate(dateStr)}
-                        onDoubleClick={() => handleAddEvent(day)}
-                        onDragOver={handleDragOver}
-                        onDrop={(e) => handleDrop(e, dateStr)}
+                      <div
+                        key={day}
                         className={cn(
-                          "h-32 border-b border-r border-slate-50 p-2 transition-colors group relative cursor-pointer",
-                          selectedDate === dateStr ? "bg-blue-50/30" : "hover:bg-slate-50/50"
+                          'group relative h-28 cursor-pointer border-b border-r border-slate-50 p-1.5 transition-colors',
+                          selectedDate === ds ? 'bg-blue-50/30' : 'hover:bg-slate-50/40',
                         )}
+                        onClick={() => setSelectedDate(ds)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => handleDrop(e, ds)}
                       >
-                        <span className={cn(
-                          "text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full transition-colors",
-                          isToday ? "bg-blue-600 text-white shadow-lg shadow-blue-200" : "text-slate-400 group-hover:text-slate-900"
-                        )}>
+                        <span
+                          className={cn(
+                            'flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold transition-colors',
+                            isToday ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 group-hover:text-slate-900',
+                          )}
+                        >
                           {day}
                         </span>
-                        <div className="mt-2 space-y-1">
-                          {dayEvents.map(event => (
-                            <div 
-                              key={event.id} 
-                              draggable
-                              onDragStart={(e) => handleDragStart(e, event)}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedEvent(event);
-                                setIsDetailModalOpen(true);
-                              }}
-                              className={cn(
-                                "text-[10px] p-1 rounded-md font-bold truncate border flex items-center gap-1 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.02] hover:shadow-sm",
-                                (event.type === 'release' || event.isFullDay) && !event.platform?.includes('SoundCloud') && "bg-blue-600 text-white border-blue-700 shadow-md py-1.5 px-2 -mx-1",
-                                (event.type === 'release' || event.isFullDay) && event.platform?.includes('SoundCloud') && "bg-orange-600 text-white border-orange-700 shadow-md py-1.5 px-2 -mx-1",
-                                !event.isFullDay && event.type === 'post' && !event.publishStatus && "bg-purple-50 text-purple-600 border-purple-100",
-                                !event.isFullDay && event.type === 'post' && event.publishStatus === 'draft' && "bg-slate-50 text-slate-600 border-slate-200",
-                                !event.isFullDay && event.type === 'post' && event.publishStatus === 'scheduled' && "bg-blue-50 text-blue-600 border-blue-200",
-                                !event.isFullDay && event.type === 'post' && event.publishStatus === 'published' && "bg-emerald-50 text-emerald-600 border-emerald-200",
-                                !event.isFullDay && event.type === 'post' && event.publishStatus === 'failed' && "bg-red-50 text-red-600 border-red-200",
-                                !event.isFullDay && event.type === 'post' && event.publishStatus === 'cancelled' && "bg-amber-50 text-amber-600 border-amber-200",
-                                !event.isFullDay && event.type === 'show' && "bg-rose-50 text-rose-600 border-rose-100",
-                                !event.isFullDay && event.type === 'meeting' && "bg-slate-100 text-slate-600 border-slate-200",
-                                !event.isFullDay && event.type === 'todo' && "bg-emerald-50 text-emerald-600 border-emerald-100",
-                                !event.isFullDay && event.type === 'goal' && "bg-amber-50 text-amber-600 border-amber-100"
-                              )}
-                            >
-                              {event.type === 'release' || event.isFullDay ? (
-                                <div className="flex items-center gap-2 w-full">
-                                  {event.type === 'release' ? <Music className="w-3 h-3 shrink-0" /> : <Zap className="w-3 h-3 shrink-0" />}
-                                  <span className="truncate uppercase tracking-wider">{event.type === 'release' ? 'RELEASE' : event.type}: {event.title}</span>
-                                  {event.isRecurring && <Repeat className="w-2.5 h-2.5 ml-auto shrink-0 opacity-70" />}
-                                </div>
-                              ) : (
-                                <>
-                                  {event.type === 'post' && event.publishStatus === 'failed' && <div className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0 animate-pulse" />}
-                                  {event.type === 'post' && event.publishStatus === 'scheduled' && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />}
-                                  {event.type === 'post' && event.publishStatus === 'published' && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />}
-                                  {event.type !== 'post' && event.priority === 'high' && <div className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0 animate-pulse" />}
-                                  {event.type !== 'post' && event.priority === 'medium' && <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 shrink-0" />}
-                                  <span className="truncate">{event.title}</span>
-                                  {event.isRecurring && <Repeat className="w-2.5 h-2.5 ml-auto shrink-0 text-slate-400" />}
-                                  {event.zernioId && <Share2 className="w-2 h-2 text-purple-500 ml-auto shrink-0" />}
-                                </>
-                              )}
-                            </div>
-                          ))}
+                        <div className="mt-1">
+                          {dayEvents.slice(0, 3).map((ev) => renderEventPill(ev, true))}
+                          {dayEvents.length > 3 && (
+                            <p className="text-[9px] font-bold text-slate-400">+{dayEvents.length - 3} more</p>
+                          )}
                         </div>
-                        <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Plus className="w-4 h-4 text-blue-400" />
-                        </div>
+                        {/* Empty-slot click target */}
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); openSlot(ds); }}
+                          className="absolute bottom-1.5 right-1.5 rounded-lg p-0.5 opacity-0 transition-opacity hover:bg-blue-100 group-hover:opacity-70"
+                        >
+                          <Plus className="h-3 w-3 text-blue-500" />
+                        </button>
                       </div>
                     );
                   })}
@@ -761,325 +533,290 @@ export function Calendar() {
               </>
             )}
 
+            {/* Week view — time grid */}
             {view === 'week' && (
-              <div className="grid grid-cols-7 min-h-[400px]">
-                {getWeekDays().map((date, i) => {
-                  const dayEvents = getEventsForDate(date);
-                  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-                  const isToday = date.toDateString() === new Date().toDateString();
-                  
-                  return (
-                    <div 
-                      key={i} 
-                      onClick={() => setSelectedDate(dateStr)}
-                      onDoubleClick={() => handleAddEvent(undefined, undefined)}
-                      onDragOver={handleDragOver}
-                      onDrop={(e) => handleDrop(e, dateStr)}
-                      className={cn(
-                        "border-r border-slate-100 p-4 transition-colors group cursor-pointer",
-                        selectedDate === dateStr ? "bg-blue-50/30" : "hover:bg-slate-50/50"
-                      )}
-                    >
-                      <div className="text-center mb-4">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                          {date.toLocaleDateString('default', { weekday: 'short' })}
+              <div>
+                {/* Day headers */}
+                <div
+                  className="grid border-b border-slate-100 bg-white"
+                  style={{ gridTemplateColumns: '52px repeat(7, 1fr)' }}
+                >
+                  <div className="border-r border-slate-100" />
+                  {weekDays.map((day, i) => {
+                    const isToday = toDateStr(day) === todayStr;
+                    return (
+                      <div key={i} className="flex flex-col items-center py-3 border-r border-slate-100 last:border-r-0">
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                          {DAY_LABELS[day.getDay()]}
                         </p>
-                        <span className={cn(
-                          "text-lg font-bold w-10 h-10 flex items-center justify-center rounded-full mx-auto transition-colors",
-                          isToday ? "bg-blue-600 text-white shadow-lg shadow-blue-200" : "text-slate-900 group-hover:text-blue-600"
-                        )}>
-                          {date.getDate()}
+                        <span
+                          className={cn(
+                            'mt-1 flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold',
+                            isToday ? 'bg-blue-600 text-white shadow-md' : 'text-slate-900',
+                          )}
+                        >
+                          {day.getDate()}
                         </span>
                       </div>
-                      <div className="space-y-2">
-                        {dayEvents.map(event => (
-                          <div 
-                            key={event.id} 
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, event)}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedEvent(event);
-                              setIsDetailModalOpen(true);
-                            }}
-                            className={cn(
-                              "text-[10px] p-2 rounded-xl font-bold border flex flex-col gap-1 cursor-grab active:cursor-grabbing shadow-sm transition-all hover:scale-[1.02] hover:shadow-md",
-                              (event.type === 'release' || event.isFullDay) && !event.platform?.includes('SoundCloud') && "bg-blue-600 text-white border-blue-700 p-3 -mx-1",
-                              (event.type === 'release' || event.isFullDay) && event.platform?.includes('SoundCloud') && "bg-orange-600 text-white border-orange-700 p-3 -mx-1",
-                              !event.isFullDay && event.type === 'post' && !event.publishStatus && "bg-purple-50 text-purple-600 border-purple-100",
-                              !event.isFullDay && event.type === 'post' && event.publishStatus === 'draft' && "bg-slate-50 text-slate-600 border-slate-200",
-                              !event.isFullDay && event.type === 'post' && event.publishStatus === 'scheduled' && "bg-blue-50 text-blue-600 border-blue-200",
-                              !event.isFullDay && event.type === 'post' && event.publishStatus === 'published' && "bg-emerald-50 text-emerald-600 border-emerald-200",
-                              !event.isFullDay && event.type === 'post' && event.publishStatus === 'failed' && "bg-red-50 text-red-600 border-red-200",
-                              !event.isFullDay && event.type === 'post' && event.publishStatus === 'cancelled' && "bg-amber-50 text-amber-600 border-amber-200",
-                              !event.isFullDay && event.type === 'show' && "bg-rose-50 text-rose-600 border-rose-100",
-                              !event.isFullDay && event.type === 'meeting' && "bg-slate-100 text-slate-600 border-slate-200",
-                              !event.isFullDay && event.type === 'todo' && "bg-emerald-50 text-emerald-600 border-emerald-100",
-                              !event.isFullDay && event.type === 'goal' && "bg-amber-50 text-amber-600 border-amber-100"
-                            )}
+                    );
+                  })}
+                </div>
+
+                {/* All-day row */}
+                <div
+                  className="grid border-b border-slate-200 bg-slate-50/40"
+                  style={{ gridTemplateColumns: '52px repeat(7, 1fr)' }}
+                >
+                  <div className="flex items-center justify-end border-r border-slate-100 pr-2 py-1">
+                    <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400">All day</span>
+                  </div>
+                  {weekDays.map((day, i) => {
+                    const allDay = getEventsForDate(day).filter((e) => e.isFullDay || e.type === 'release');
+                    return (
+                      <div
+                        key={i}
+                        className="min-h-[32px] cursor-pointer border-r border-slate-100 last:border-r-0 p-0.5 hover:bg-blue-50/30"
+                        onClick={() => openSlot(toDateStr(day))}
+                      >
+                        {allDay.map((ev) => (
+                          <div
+                            key={ev.id}
+                            onClick={(e) => { e.stopPropagation(); openDetail(ev); }}
+                            className={cn('mb-0.5 cursor-pointer truncate rounded px-1.5 py-0.5 text-[9px] font-bold', eventPillClass(ev))}
                           >
-                            {event.type === 'release' || event.isFullDay ? (
-                              <div className="flex flex-col gap-2">
-                                <div className="flex items-center gap-2">
-                                  {event.type === 'release' ? <Music className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
-                                  <span className="text-xs uppercase tracking-widest">{event.type === 'release' ? 'RELEASE DAY' : `${event.type.toUpperCase()} DAY`}</span>
-                                  {event.isRecurring && <Repeat className="w-3.5 h-3.5 ml-auto opacity-70" />}
-                                </div>
-                                <p className="text-sm leading-tight">{event.title}</p>
-                                {event.time && !event.isFullDay && <p className="text-[10px] opacity-80">{event.time}</p>}
-                              </div>
-                            ) : (
-                              <>
-                                <div className="flex items-center gap-1">
-                                  {event.priority === 'high' && <div className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />}
-                                  <span className="truncate">{event.title}</span>
-                                  {event.isRecurring && <Repeat className="w-2.5 h-2.5 ml-auto text-slate-400" />}
-                                  {event.zernioId && <Share2 className="w-2 h-2 text-purple-500 ml-auto shrink-0" />}
-                                </div>
-                                {event.platform && <span className="text-[8px] opacity-60 uppercase">{event.platform}</span>}
-                                {event.time && <span className="text-[8px] opacity-60">{event.time}</span>}
-                              </>
-                            )}
+                            {ev.title}
                           </div>
                         ))}
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+
+                {/* Scrollable time grid */}
+                <div className="overflow-y-auto" style={{ maxHeight: '560px' }}>
+                  {HOURS.map((h) => {
+                    const isBest = BEST_POST_HOURS.has(h);
+                    return (
+                      <div
+                        key={h}
+                        className="grid"
+                        style={{ gridTemplateColumns: '52px repeat(7, 1fr)' }}
+                      >
+                        {/* Hour label */}
+                        <div className="flex items-start justify-end border-r border-slate-100 pr-2 pt-1">
+                          <span className="text-[9px] font-bold text-slate-400">{formatHour(h)}</span>
+                        </div>
+                        {/* Day cells */}
+                        {weekDays.map((day, i) => {
+                          const hevents = getEventsForDate(day).filter((e) => {
+                            if (e.isFullDay || e.type === 'release') return false;
+                            const eh = e.time ? parseInt(e.time.split(':')[0], 10) : -1;
+                            return eh === h;
+                          });
+                          return (
+                            <div
+                              key={i}
+                              className={cn(
+                                'group relative h-16 cursor-pointer border-b border-r border-slate-50 last:border-r-0 p-0.5 transition-colors',
+                                isBest ? 'bg-amber-50/40 hover:bg-amber-50/70' : 'hover:bg-blue-50/20',
+                              )}
+                              onClick={() => openSlot(toDateStr(day), `${String(h).padStart(2, '0')}:00`)}
+                            >
+                              {/* Best-time icon */}
+                              {isBest && hevents.length === 0 && (
+                                <Zap className="absolute right-1 top-1 h-2.5 w-2.5 text-amber-300/80 opacity-70" />
+                              )}
+                              {/* Events */}
+                              {hevents.map((ev) => (
+                                <div
+                                  key={ev.id}
+                                  onClick={(e) => { e.stopPropagation(); openDetail(ev); }}
+                                  className={cn('mb-0.5 truncate rounded px-1.5 py-0.5 text-[9px] font-bold cursor-pointer', eventPillClass(ev))}
+                                >
+                                  {ev.time} {ev.title}
+                                </div>
+                              ))}
+                              {/* Plus hint */}
+                              <Plus className="absolute bottom-0.5 right-0.5 h-2.5 w-2.5 text-slate-300 opacity-0 transition-opacity group-hover:opacity-60" />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
+            {/* Day view — time grid */}
             {view === 'day' && (
-              <div className="p-8 min-h-[400px]">
-                <div className="flex items-center gap-4 mb-8">
+              <div>
+                {/* Day header */}
+                <div className="flex items-center gap-5 border-b border-slate-100 px-6 py-5">
                   <span className="text-5xl font-black text-slate-900">{currentDate.getDate()}</span>
                   <div>
-                    <p className="text-xl font-bold text-slate-900">{currentDate.toLocaleDateString('default', { weekday: 'long' })}</p>
+                    <p className="text-xl font-bold text-slate-900">
+                      {currentDate.toLocaleDateString('default', { weekday: 'long' })}
+                    </p>
                     <p className="text-slate-500">{monthName} {year}</p>
                   </div>
                 </div>
-                <div className="space-y-4">
-                  {getEventsForDate(currentDate)
-                    .sort((a, b) => (a.time || '00:00').localeCompare(b.time || '00:00'))
-                    .map(event => (
-                    <div 
-                      key={event.id} 
-                      className={cn(
-                        "p-4 rounded-2xl border flex items-center justify-between group",
-                        event.type === 'release' && "bg-blue-50 border-blue-100",
-                        event.type === 'post' && "bg-purple-50 border-purple-100",
-                        event.type === 'show' && "bg-rose-50 border-rose-100",
-                        event.type === 'meeting' && "bg-slate-50 border-slate-200",
-                        event.type === 'todo' && "bg-emerald-50 border-emerald-100",
-                        event.type === 'goal' && "bg-amber-50 border-amber-100"
-                      )}
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="text-xs font-bold text-slate-400 w-12 text-right">
-                          {event.time || '--:--'}
+
+                {/* All-day events */}
+                {(() => {
+                  const allDay = getEventsForDate(currentDate).filter((e) => e.isFullDay || e.type === 'release');
+                  if (!allDay.length) return null;
+                  return (
+                    <div className="flex flex-wrap gap-2 border-b border-slate-100 bg-slate-50/40 px-6 py-2">
+                      {allDay.map((ev) => (
+                        <div
+                          key={ev.id}
+                          onClick={() => openDetail(ev)}
+                          className={cn('cursor-pointer rounded-lg px-3 py-1 text-xs font-bold', eventPillClass(ev))}
+                        >
+                          {ev.title}
                         </div>
-                        <div className={cn(
-                          "w-12 h-12 rounded-xl flex items-center justify-center shadow-sm",
-                          event.type === 'release' && !event.platform?.includes('SoundCloud') && "bg-blue-600 text-white",
-                          event.type === 'release' && event.platform?.includes('SoundCloud') && "bg-orange-600 text-white",
-                          event.type === 'post' && "bg-purple-600 text-white",
-                          event.type === 'show' && "bg-rose-600 text-white",
-                          event.type === 'meeting' && "bg-slate-600 text-white",
-                          event.type === 'todo' && "bg-emerald-600 text-white",
-                          event.type === 'goal' && "bg-amber-600 text-white"
-                        )}>
-                          {event.type === 'release' && <Music className="w-6 h-6" />}
-                          {event.type === 'post' && <Video className="w-6 h-6" />}
-                          {event.type === 'show' && <CalendarIcon className="w-6 h-6" />}
-                          {event.type === 'meeting' && <Clock className="w-6 h-6" />}
-                          {event.type === 'todo' && <CheckSquare className="w-6 h-6" />}
-                          {event.type === 'goal' && <Target className="w-6 h-6" />}
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                {/* Scrollable time grid */}
+                <div className="overflow-y-auto" style={{ maxHeight: '600px' }}>
+                  {HOURS.map((h) => {
+                    const isBest = BEST_POST_HOURS.has(h);
+                    const hevents = getEventsForDate(currentDate).filter((e) => {
+                      if (e.isFullDay || e.type === 'release') return false;
+                      const eh = e.time ? parseInt(e.time.split(':')[0], 10) : -1;
+                      return eh === h;
+                    });
+                    return (
+                      <div key={h} className="flex">
+                        {/* Hour label */}
+                        <div className="flex w-16 shrink-0 items-start justify-end border-r border-slate-100 pr-3 pt-2">
+                          <span className="text-[10px] font-bold text-slate-400">{formatHour(h)}</span>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-bold text-slate-900">{event.title}</p>
-                            {event.zernioId && (
-                              <span className="flex items-center gap-1 px-1.5 py-0.5 bg-purple-100 text-purple-600 text-[8px] font-bold rounded uppercase tracking-widest">
-                                <Share2 className="w-2 h-2" />
-                                Zernio
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-slate-500 uppercase tracking-widest font-bold">
-                            {event.type} {event.platform ? `• ${event.platform}` : ''}
-                          </p>
+                        {/* Content */}
+                        <div
+                          className={cn(
+                            'group relative min-h-[64px] flex-1 cursor-pointer border-b border-slate-50 px-3 py-1.5 transition-colors',
+                            isBest ? 'bg-amber-50/40 hover:bg-amber-50' : 'hover:bg-blue-50/20',
+                          )}
+                          onClick={() => openSlot(toDateStr(currentDate), `${String(h).padStart(2, '0')}:00`)}
+                        >
+                          {isBest && hevents.length === 0 && (
+                            <div className="absolute right-4 top-2 flex items-center gap-1">
+                              <Zap className="h-3 w-3 text-amber-400" />
+                              <span className="text-[9px] font-bold text-amber-500">Best time</span>
+                            </div>
+                          )}
+                          {hevents.map((ev) => {
+                            const typeIcon =
+                              ev.type === 'post'    ? <Video className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                            : ev.type === 'meeting' ? <Clock className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                            : ev.type === 'todo'    ? <CheckSquare className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                            : ev.type === 'goal'    ? <Target className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                            :                        <CalendarIcon className="h-3.5 w-3.5 shrink-0 opacity-60" />;
+                            return (
+                              <div
+                                key={ev.id}
+                                onClick={(e) => { e.stopPropagation(); openDetail(ev); }}
+                                className={cn('mb-1.5 flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold', eventPillClass(ev))}
+                              >
+                                {typeIcon}
+                                <span className="flex-1">{ev.time} — {ev.title}</span>
+                                {ev.platform && (
+                                  <span className="shrink-0 text-[9px] uppercase opacity-60">{ev.platform}</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {hevents.length === 0 && (
+                            <Plus className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300 opacity-0 transition-opacity group-hover:opacity-60" />
+                          )}
                         </div>
                       </div>
-                      {event.priority === 'high' && (
-                        <span className="px-3 py-1 bg-red-100 text-red-600 text-[10px] font-black uppercase rounded-full">High Priority</span>
-                      )}
-                    </div>
-                  ))}
-                  {getEventsForDate(currentDate).length === 0 && (
-                    <div className="text-center py-20 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
-                      <CalendarIcon className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                      <p className="text-slate-500 font-medium">No events scheduled for today</p>
-                      <button 
-                        onClick={() => {
-                          const d = currentDate;
-                          setSelectedDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
-                          setIsModalOpen(true);
-                        }}
-                        className="mt-4 text-blue-600 font-bold text-sm hover:underline"
-                      >
-                        Add something
-                      </button>
-                    </div>
-                  )}
+                    );
+                  })}
                 </div>
               </div>
             )}
           </div>
 
-          <div className="space-y-8">
-            <section className="glass-card p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-bold flex items-center gap-2 text-slate-900">
-                  <CheckSquare className="w-5 h-5 text-emerald-500" />
-                  Daily To-Do
-                </h3>
-                <button 
-                  onClick={() => handleAddEvent(undefined, 'todo')}
-                  className="p-1.5 hover:bg-emerald-50 rounded-lg text-emerald-600 transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="space-y-3">
-                {filteredEvents
-                  .filter(e => e.type === 'todo' && e.date === selectedDate)
-                  .map(todo => (
-                    <div 
-                      key={todo.id} 
-                      onClick={() => {
-                        setSelectedEvent(todo);
-                        setIsDetailModalOpen(true);
-                      }}
-                      className="flex items-start gap-3 p-3 bg-white rounded-xl border border-slate-100 group hover:border-emerald-100 transition-all cursor-pointer"
-                    >
-                      <button className="mt-0.5 w-5 h-5 rounded-md border-2 border-slate-200 flex items-center justify-center hover:border-emerald-500 transition-colors">
-                        <div className="w-2.5 h-2.5 rounded-sm bg-emerald-500 opacity-0 group-hover:opacity-20" />
-                      </button>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-slate-900 truncate">{todo.title}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className={cn(
-                            "text-[8px] font-black uppercase px-1.5 py-0.5 rounded",
-                            todo.priority === 'high' ? "bg-red-100 text-red-600" :
-                            todo.priority === 'medium' ? "bg-amber-100 text-amber-600" :
-                            "bg-slate-100 text-slate-500"
-                          )}>
-                            {todo.priority || 'medium'}
-                          </span>
-                          {todo.time && <span className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">{todo.time}</span>}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                {filteredEvents.filter(e => e.type === 'todo' && e.date === selectedDate).length === 0 && (
-                  <div className="text-center py-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">No tasks for this day</p>
-                  </div>
-                )}
-              </div>
-            </section>
+          {/* ── Right sidebar ────────────────────────────────────────────── */}
+          <div className="space-y-6">
+            <CalendarInsightsPanel events={events} currentDate={currentDate} />
 
-            <section className="glass-card p-6">
-              <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-900">
-                <Clock className="w-5 h-5 text-blue-500" />
-                Upcoming
-              </h3>
-              <div className="space-y-4">
-                {filteredEvents
-                  .filter(e => new Date(e.date) >= new Date())
-                  .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-                  .slice(0, 6)
-                  .map(event => (
-                  <div 
-                    key={event.id} 
-                    onClick={() => {
-                      setSelectedEvent(event);
-                      setIsDetailModalOpen(true);
-                    }}
-                    className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 hover:bg-white transition-all group"
-                  >
-                    <div className={cn(
-                      "w-10 h-10 rounded-lg flex items-center justify-center shadow-sm transition-transform group-hover:scale-110",
-                      event.type === 'release' && "bg-blue-100 text-blue-600",
-                      event.type === 'post' && "bg-purple-100 text-purple-600",
-                      event.type === 'show' && "bg-rose-100 text-rose-600",
-                      event.type === 'meeting' && "bg-slate-200 text-slate-600",
-                      event.type === 'todo' && "bg-emerald-100 text-emerald-600",
-                      event.type === 'goal' && "bg-amber-100 text-amber-600"
-                    )}>
-                      {event.type === 'release' && <Music className="w-5 h-5" />}
-                      {event.type === 'post' && <Video className="w-5 h-5" />}
-                      {event.type === 'show' && <CalendarIcon className="w-5 h-5" />}
-                      {event.type === 'meeting' && <Clock className="w-5 h-5" />}
-                      {event.type === 'todo' && <CheckSquare className="w-5 h-5" />}
-                      {event.type === 'goal' && <Target className="w-5 h-5" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-sm font-bold text-slate-900 truncate">{event.title}</p>
-                        {event.priority === 'high' && (
-                          <span className="px-1 py-0.5 bg-red-100 text-red-600 text-[8px] font-black uppercase rounded leading-none">High</span>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{event.date}</p>
-                    </div>
-                  </div>
-                ))}
-                {filteredEvents.length === 0 && (
-                  <p className="text-xs text-slate-400 text-center py-4">No upcoming events.</p>
-                )}
-              </div>
-            </section>
-
-            <section className="glass-card p-6 bg-blue-50 border-blue-100">
-              <h3 className="text-lg font-bold mb-2 text-slate-900">Post Status Legend</h3>
-              <p className="text-xs text-slate-500 mb-4">Color coding for your content posts.</p>
+            {/* Upcoming events */}
+            <div className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm">
+              <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">Upcoming</h3>
               <div className="space-y-2">
-                {[
-                  { label: 'Draft', color: 'bg-slate-400' },
-                  { label: 'Scheduled', color: 'bg-blue-500' },
-                  { label: 'Published', color: 'bg-emerald-500' },
-                  { label: 'Failed', color: 'bg-red-500' },
-                  { label: 'Cancelled', color: 'bg-amber-500' },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-blue-100 shadow-sm">
-                    <div className={cn("w-2.5 h-2.5 rounded-full shrink-0", item.color)} />
-                    <span className="text-xs font-bold text-slate-700">{item.label}</span>
-                  </div>
-                ))}
+                {upcomingEvents.length === 0 && (
+                  <p className="text-xs text-slate-400">No upcoming events.</p>
+                )}
+                {upcomingEvents.map((event) => {
+                  const typeIcon =
+                    event.type === 'release' ? <Music className="h-4 w-4" />
+                  : event.type === 'post'    ? <Video className="h-4 w-4" />
+                  : event.type === 'todo'    ? <CheckSquare className="h-4 w-4" />
+                  : event.type === 'goal'    ? <Target className="h-4 w-4" />
+                  :                           <Clock className="h-4 w-4" />;
+                  const iconBg =
+                    event.type === 'release' ? 'bg-blue-100 text-blue-600'
+                  : event.type === 'post'    ? 'bg-purple-100 text-purple-600'
+                  : event.type === 'todo'    ? 'bg-emerald-100 text-emerald-600'
+                  : event.type === 'goal'    ? 'bg-amber-100 text-amber-600'
+                  :                           'bg-slate-100 text-slate-600';
+                  return (
+                    <button
+                      key={event.id}
+                      type="button"
+                      onClick={() => openDetail(event)}
+                      className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-slate-50"
+                    >
+                      <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', iconBg)}>
+                        {typeIcon}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-bold text-slate-900">{event.title}</p>
+                        <p className="text-[10px] text-slate-400">
+                          {event.date}{event.time ? ` · ${event.time}` : ''}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-            </section>
+            </div>
           </div>
         </div>
       )}
-      <CalendarEventModal 
+
+      {/* ── Slot drawer ──────────────────────────────────────────────────── */}
+      <CalendarSlotDrawer
+        open={slotOpen}
+        date={slotDate}
+        time={slotTime}
+        prefillTitle={slotPrefillTitle}
+        prefillType={slotPrefillType}
+        onClose={() => setSlotOpen(false)}
+        onCreated={() => { setSlotOpen(false); fetchEvents(); }}
+      />
+
+      {/* ── Full event creation modal ────────────────────────────────────── */}
+      <CalendarEventModal
         isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setModalType(undefined);
-        }}
+        onClose={() => { setIsModalOpen(false); setModalType(undefined); }}
         onSave={fetchEvents}
         initialDate={selectedDate}
         initialType={modalType}
       />
 
+      {/* ── Event detail modal ───────────────────────────────────────────── */}
       {selectedEvent && (
         <CalendarEventDetailModal
           isOpen={isDetailModalOpen}
-          onClose={() => {
-            setIsDetailModalOpen(false);
-            setSelectedEvent(null);
-          }}
+          onClose={() => { setIsDetailModalOpen(false); setSelectedEvent(null); }}
           event={selectedEvent}
           onDelete={fetchEvents}
           onUpdate={fetchEvents}
