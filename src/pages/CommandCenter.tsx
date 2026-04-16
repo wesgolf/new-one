@@ -20,6 +20,7 @@ import { ActiveCampaigns } from '../components/dashboard/ActiveCampaigns';
 import { DashCard } from '../components/dashboard/DashCard';
 import { GlobalAssistantDrawer } from '../components/GlobalAssistantDrawer';
 import { IntegrationStatusCard } from '../components/dashboard/IntegrationStatusCard';
+import { MyTasksWidget } from '../components/dashboard/MyTasksWidget';
 import { syncService } from '../services/syncService';
 import type { SinceLastLoginDelta } from '../hooks/useDashboard';
 
@@ -151,6 +152,7 @@ export function CommandCenter() {
             </div>
             <div className="flex flex-col gap-6">
               <UpcomingContent items={upcomingItems} loading={loading} />
+              <MyTasksWidget />
               <IntegrationStatusCard showLog />
               <ManagerLinks />
             </div>
@@ -166,6 +168,7 @@ export function CommandCenter() {
           </div>
           <div className="flex flex-col gap-6">
             <UpcomingContent items={upcomingItems} loading={loading} />
+            <MyTasksWidget />
             <IntegrationStatusCard />
             <ArtistLinks />
           </div>

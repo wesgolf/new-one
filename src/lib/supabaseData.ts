@@ -80,6 +80,24 @@ export async function fetchTasks(): Promise<TaskRecord[]> {
   }));
 }
 
+/** Fetch active (non-done) tasks assigned to a specific user, ordered by due date. */
+export async function fetchMyTasks(userId: string): Promise<TaskRecord[]> {
+  try {
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('assigned_to', userId)
+      .order('due_date', { ascending: true });
+    if (error) {
+      if (isMissingTableError(error)) return [];
+      throw error;
+    }
+    return (data || []) as TaskRecord[];
+  } catch {
+    return [];
+  }
+}
+
 export async function saveTask(task: Partial<TaskRecord>) {
   const user = await getCurrentAuthUser();
   const payload = {

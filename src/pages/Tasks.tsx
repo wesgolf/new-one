@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { format, isPast, isToday, parseISO } from 'date-fns';
-import { CheckCircle2, Circle, Filter, Plus, Search, User2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Circle, Clock, Filter, Plus, Search, User2 } from 'lucide-react';
 import { fetchTasks, safeProfiles, saveTask } from '../lib/supabaseData';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import { subscribeAssistantActions } from '../lib/commandBus';
@@ -364,8 +364,19 @@ export function Tasks() {
                           {task.priority}
                         </span>
                       </td>
-                      <td className="px-6 py-5 text-sm text-text-secondary">
-                        {task.due_date ? format(parseISO(task.due_date), 'MMM d, h:mm a') : 'No due date'}
+                      <td className="px-6 py-5 text-sm">
+                        {task.due_date ? (() => {
+                          const d = parseISO(task.due_date);
+                          const overdue = isPast(d) && !isToday(d) && task.status !== 'done';
+                          const today = isToday(d) && task.status !== 'done';
+                          return (
+                            <span className={overdue ? 'text-red-600 font-semibold' : today ? 'text-amber-600 font-semibold' : 'text-text-secondary'}>
+                              {overdue && <AlertCircle className="inline mr-1 h-3.5 w-3.5 -mt-px" />}
+                              {today && <Clock className="inline mr-1 h-3.5 w-3.5 -mt-px" />}
+                              {format(d, 'MMM d, h:mm a')}
+                            </span>
+                          );
+                        })() : <span className="text-text-muted">No due date</span>}
                       </td>
                       <td className="px-6 py-5">
                         <div className="flex flex-wrap gap-2">
@@ -383,12 +394,12 @@ export function Tasks() {
                         </div>
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                  );  
+                })}  
+              </tbody>  
+            </table>  
+          </div>  
+        )}  
       </section>
 
       <TaskModal
