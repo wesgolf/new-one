@@ -28,6 +28,7 @@ import { ApiErrorBanner } from '../components/ApiErrorBanner';
 import { ReleaseModal } from '../components/ReleaseModal';
 import { IdeaModal } from '../components/IdeaModal';
 import { PromoteModal } from '../components/PromoteModal';
+import { useCurrentUserRole } from '../hooks/useCurrentUserRole';
 
 const statusColors: Record<string, { bg: string, text: string, border: string, icon: any }> = {
   idea: { bg: 'bg-slate-100', text: 'text-slate-500', border: 'border-slate-200', icon: Circle },
@@ -38,6 +39,7 @@ const statusColors: Record<string, { bg: string, text: string, border: string, i
 
 export function Ideas() {
   const { data: rawReleases, loading, error, addItem, updateItem, deleteItem } = useArtistData<Release>('releases');
+  const { canCreateTrack } = useCurrentUserRole();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isIdeaModalOpen, setIsIdeaModalOpen] = useState(false);
   const [isPromoteModalOpen, setIsPromoteModalOpen] = useState(false);
@@ -106,6 +108,7 @@ export function Ideas() {
             <Share2 className="w-4 h-4" />
             Share Portal
           </button>
+          {canCreateTrack && (
           <button 
             onClick={() => {
               setSelectedRelease(null);
@@ -116,6 +119,7 @@ export function Ideas() {
             <Plus className="w-4 h-4" />
             New Idea
           </button>
+          )}
         </div>
       </header>
 

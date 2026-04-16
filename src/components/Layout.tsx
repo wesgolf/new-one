@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { GlobalSearch } from './GlobalSearch';
+import { useCurrentUserRole } from '../hooks/useCurrentUserRole';
 
 type DropdownChild = {
   label: string;
@@ -121,6 +122,7 @@ function NavDropdown({ label, children }: { label: string; children: DropdownChi
 export function Layout() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { roleDisplayName, isArtist, isManager } = useCurrentUserRole();
 
   const handleLogout = () => {
     localStorage.removeItem('artist_os_authorized');
@@ -170,6 +172,18 @@ export function Layout() {
 
           {/* Right cluster */}
           <div className="flex items-center gap-1">
+            {roleDisplayName && (
+              <span className={cn(
+                'hidden md:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border mr-1',
+                isArtist
+                  ? 'bg-brand/10 text-brand border-brand/20'
+                  : isManager
+                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                  : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+              )}>
+                {roleDisplayName}
+              </span>
+            )}
             <GlobalSearch compact />
             <button
               onClick={handleLogout}

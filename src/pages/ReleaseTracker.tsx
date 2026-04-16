@@ -39,6 +39,7 @@ import { LinkedContentModal } from '../components/LinkedContentModal';
 import { ARTIST_INFO } from '../constants';
 import { supabase } from '../lib/supabase';
 import { ApiErrorBanner } from '../components/ApiErrorBanner';
+import { useCurrentUserRole } from '../hooks/useCurrentUserRole';
 
   const statusColors: Record<ReleaseStatus, { bg: string, text: string, border: string, icon: any }> = {
   idea: { bg: 'bg-slate-100', text: 'text-slate-500', border: 'border-slate-200', icon: Circle },
@@ -75,6 +76,7 @@ export function ReleaseTracker() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [isWipeConfirmOpen, setIsWipeConfirmOpen] = useState(false);
+  const { canCreateTrack } = useCurrentUserRole();
 
   // Auto-hide notification
   useEffect(() => {
@@ -533,7 +535,7 @@ export function ReleaseTracker() {
               </div>
             )}
           </div>
-          <button className="flex-1 sm:flex-none btn-primary shadow-lg shadow-blue-200" onClick={handleAddRelease}>
+          <button className="flex-1 sm:flex-none btn-primary shadow-lg shadow-blue-200" onClick={handleAddRelease} disabled={!canCreateTrack} style={canCreateTrack ? {} : { display: 'none' }}>
             <Plus className="w-4 h-4" />
             New Track
           </button>
