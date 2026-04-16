@@ -5,7 +5,7 @@ import {
   CalendarPlus,
   CheckSquare,
   ChevronRight,
-  MessageSquareMore,
+  LayoutPanelRight,
   Music2,
   Send,
   Sparkles,
@@ -130,7 +130,7 @@ export function GlobalAssistantDrawer() {
         className="fixed bottom-24 right-4 z-40 inline-flex h-14 w-14 items-center justify-center rounded-full bg-slate-950 text-white shadow-xl shadow-slate-900/20 hover:scale-[1.02]"
         aria-label="Open assistant"
       >
-        <MessageSquareMore className="h-6 w-6" />
+        <LayoutPanelRight className="h-6 w-6" />
       </button>
 
       {open && (

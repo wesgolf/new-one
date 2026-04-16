@@ -6,16 +6,13 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { NotFound } from './pages/NotFound';
 import { Unauthorized } from './pages/Unauthorized';
-import { PublicHub } from './pages/PublicHub';
 import { CommandCenter } from './pages/CommandCenter';
 import { ReleaseTracker } from './pages/ReleaseTracker';
-import { ReleaseDetail } from './pages/ReleaseDetail';
 import { Ideas } from './pages/Ideas';
 import { ContentEngine } from './pages/ContentEngine';
 import { Analytics } from './pages/Analytics';
 import { Calendar } from './pages/Calendar';
 import { GoalTracker } from './pages/GoalTracker';
-import { Tasks } from './pages/Tasks';
 import { SpotifyCallback } from './pages/SpotifyCallback';
 import { SoundCloudCallback } from './pages/SoundCloudCallback';
 import { BrandVault } from './pages/BrandVault';
@@ -31,9 +28,6 @@ export default function App() {
       <Routes>
         {/* Public Routes */}
         <Route path="/collab" element={<CollabPortal />} />
-        <Route path="/collab/:shareId" element={<CollabPortal />} />
-        <Route path="/hub" element={<PublicHub />} />
-        <Route path="/hub/releases/:releaseId" element={<ReleaseDetail publicMode />} />
         <Route path="/unauthorized" element={<Unauthorized />} />
 
         {/* Protected Routes with Auth */}
@@ -45,10 +39,8 @@ export default function App() {
                 <Routes>
                   <Route element={<Layout />}>
                     <Route path="/" element={<CommandCenter />} />
-                    <Route path="/tasks" element={<ErrorBoundary><Tasks /></ErrorBoundary>} />
                     <Route path="/ideas" element={<ErrorBoundary><Ideas /></ErrorBoundary>} />
                     <Route path="/releases" element={<ErrorBoundary><ReleaseTracker /></ErrorBoundary>} />
-                    <Route path="/releases/:releaseId" element={<ErrorBoundary><ReleaseDetail /></ErrorBoundary>} />
                     <Route path="/content" element={<ContentEngine />} />
                     <Route path="/analytics" element={<ErrorBoundary><Analytics /></ErrorBoundary>} />
                     <Route path="/calendar" element={<ErrorBoundary><Calendar /></ErrorBoundary>} />

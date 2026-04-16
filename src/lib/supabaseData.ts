@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { getCurrentAuthUser, getCurrentUserWithProfile } from './auth';
+import { getCurrentAuthUser } from './auth';
 import type {
   GoalEntry,
   GoalRecord,
@@ -163,10 +163,6 @@ export async function fetchIdeaComments(ideaId: string): Promise<IdeaComment[]> 
 
 export async function saveIdea(idea: Partial<IdeaRecord>) {
   const user = await getCurrentAuthUser();
-  const currentUser = await getCurrentUserWithProfile();
-  if (!idea.id && currentUser?.profile?.role === 'manager') {
-    throw new Error('Managers can review ideas but cannot create new tracks.');
-  }
   const payload = {
     ...idea,
     created_by: idea.created_by || user?.id || null,

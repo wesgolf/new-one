@@ -59,14 +59,6 @@ export const canAssignTasks = (role: UserRoleType | null | undefined): boolean =
   return isManager(role);
 };
 
-export const canViewAssignments = (role: UserRoleType | null | undefined): boolean => {
-  return isArtistOrManager(role);
-};
-
-export const canReviewIdeas = (role: UserRoleType | null | undefined): boolean => {
-  return isArtistOrManager(role);
-};
-
 export const canViewAnalytics = (role: UserRoleType | null | undefined): boolean => {
   // Both can view analytics
   return isArtistOrManager(role);

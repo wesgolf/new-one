@@ -162,30 +162,26 @@ async function upsertIntegrationStatus(
 ) {
   if (!supabaseAdmin) return null;
 
-  try {
-    const { data: existing } = await supabaseAdmin
-      .from('integration_accounts')
-      .select('*')
-      .eq('provider', provider)
-      .limit(1)
-      .maybeSingle();
+  const { data: existing } = await supabaseAdmin
+    .from('integration_accounts')
+    .select('*')
+    .eq('provider', provider)
+    .limit(1)
+    .maybeSingle();
 
-    const payload = {
-      ...(existing || {}),
-      provider,
-      updated_at: new Date().toISOString(),
-      ...patch,
-    };
+  const payload = {
+    ...(existing || {}),
+    provider,
+    updated_at: new Date().toISOString(),
+    ...patch,
+  };
 
-    const { error } = await supabaseAdmin
-      .from('integration_accounts')
-      .upsert([payload], { onConflict: 'provider,user_id' });
+  const { error } = await supabaseAdmin
+    .from('integration_accounts')
+    .upsert([payload], { onConflict: 'provider,user_id' });
 
-    if (error) {
-      console.warn(`Failed to upsert integration account for ${provider}:`, error.message);
-    }
-  } catch (error: any) {
-    console.warn(`Integration account table unavailable for ${provider}:`, error.message);
+  if (error) {
+    console.warn(`Failed to upsert integration account for ${provider}:`, error.message);
   }
 }
 
@@ -378,22 +374,15 @@ async function startServer() {
       });
     }
 
-    try {
-      const [integrationsRes, jobsRes] = await Promise.all([
-        supabaseAdmin.from('integration_accounts').select('*').order('updated_at', { ascending: false }),
-        supabaseAdmin.from('sync_jobs').select('*').order('created_at', { ascending: false }).limit(12),
-      ]);
+    const [integrationsRes, jobsRes] = await Promise.all([
+      supabaseAdmin.from('integration_accounts').select('*').order('updated_at', { ascending: false }),
+      supabaseAdmin.from('sync_jobs').select('*').order('created_at', { ascending: false }).limit(12),
+    ]);
 
-      res.json({
-        integrations: integrationsRes.data || [],
-        recentJobs: jobsRes.data || [],
-      });
-    } catch {
-      res.json({
-        integrations: [],
-        recentJobs: inMemoryJobs.slice(0, 10),
-      });
-    }
+    res.json({
+      integrations: integrationsRes.data || [],
+      recentJobs: jobsRes.data || [],
+    });
   });
 
   app.get('/api/sync/jobs', async (req, res) => {
@@ -402,21 +391,17 @@ async function startServer() {
       return res.json(inMemoryJobs.slice(0, limit));
     }
 
-    try {
-      const { data, error } = await supabaseAdmin
-        .from('sync_jobs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(limit);
+    const { data, error } = await supabaseAdmin
+      .from('sync_jobs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
-      if (error) {
-        return res.json(inMemoryJobs.slice(0, limit));
-      }
-
-      return res.json(data || []);
-    } catch {
-      return res.json(inMemoryJobs.slice(0, limit));
+    if (error) {
+      return res.status(500).json({ error: error.message });
     }
+
+    res.json(data || []);
   });
 
   app.post('/api/sync/run', async (req, res) => {
