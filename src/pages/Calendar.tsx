@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabase } from '../lib/supabase';
+import { ApiErrorBanner } from '../components/ApiErrorBanner';
 import { CalendarEventModal } from '../components/CalendarEventModal';
 import { CalendarEventDetailModal } from '../components/CalendarEventDetailModal';
 import { Release } from '../types';
@@ -60,7 +61,7 @@ export function Calendar() {
   const [releases, setReleases] = useState<Release[]>([]);
   const [selectedTrackId, setSelectedTrackId] = useState<string>('all');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
@@ -272,8 +273,8 @@ export function Calendar() {
       const allEvents = expandRecurringEvents(rawEvents);
       setEvents(allEvents);
       setReleases(releases || []);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       setLoading(false);
     }
@@ -548,9 +549,8 @@ export function Calendar() {
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-center">
-        <p className="text-red-500 font-bold mb-4">Error loading calendar</p>
-        <p className="text-slate-500 text-sm max-w-md">{error}</p>
+      <div className="flex flex-col items-center justify-center h-[60vh] text-center gap-4 p-6">
+        <ApiErrorBanner error={error} onRetry={() => { setError(null); window.location.reload(); }} />
       </div>
     );
   }

@@ -46,6 +46,7 @@ import { AlertsPanel } from '../components/AlertsPanel';
 import { Toast, ToastType } from '../components/Toast';
 import { GoalModal } from '../components/GoalModal';
 import { zernioAdapter } from '../content/services/zernioAdapter';
+import { ApiErrorBanner } from '../components/ApiErrorBanner';
 
 export function CommandCenter() {
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
@@ -66,6 +67,7 @@ export function CommandCenter() {
   const [upcoming, setUpcoming] = useState<{ label: string; date: string; title: string; type: string }[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<Error | null>(null);
   const [releases, setReleases] = useState<any[]>([]);
   const [content, setContent] = useState<any[]>([]);
   const [focusTrack, setFocusTrack] = useState<any>(null);
@@ -237,7 +239,7 @@ export function CommandCenter() {
 
       setUrgentActions(urgent);
     } catch (err) {
-      console.error('Error fetching dashboard data:', err);
+      setFetchError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       setLoading(false);
     }
@@ -312,6 +314,8 @@ export function CommandCenter() {
           />
         )}
       </AnimatePresence>
+
+      <ApiErrorBanner error={fetchError} onRetry={fetchData} onDismiss={() => setFetchError(null)} />
 
       {!token && (
         <div 

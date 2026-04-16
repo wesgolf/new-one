@@ -24,6 +24,7 @@ import {
 import { Release, ReleaseStatus } from '../types';
 import { useArtistData } from '../hooks/useArtistData';
 import { cn } from '../lib/utils';
+import { ApiErrorBanner } from '../components/ApiErrorBanner';
 import { ReleaseModal } from '../components/ReleaseModal';
 import { IdeaModal } from '../components/IdeaModal';
 import { PromoteModal } from '../components/PromoteModal';
@@ -36,7 +37,7 @@ const statusColors: Record<string, { bg: string, text: string, border: string, i
 };
 
 export function Ideas() {
-  const { data: rawReleases, loading, addItem, updateItem, deleteItem } = useArtistData<Release>('releases');
+  const { data: rawReleases, loading, error, addItem, updateItem, deleteItem } = useArtistData<Release>('releases');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isIdeaModalOpen, setIsIdeaModalOpen] = useState(false);
   const [isPromoteModalOpen, setIsPromoteModalOpen] = useState(false);
@@ -91,6 +92,7 @@ export function Ideas() {
 
   return (
     <div className="space-y-10">
+      <ApiErrorBanner error={error} />
       <header className="flex flex-col sm:flex-row items-center justify-between gap-6">
         <div>
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900">Track Ideas & WIPs</h2>

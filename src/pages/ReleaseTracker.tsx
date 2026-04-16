@@ -38,6 +38,7 @@ import { ReleasePreviewModal } from '../components/ReleasePreviewModal';
 import { LinkedContentModal } from '../components/LinkedContentModal';
 import { ARTIST_INFO } from '../constants';
 import { supabase } from '../lib/supabase';
+import { ApiErrorBanner } from '../components/ApiErrorBanner';
 
   const statusColors: Record<ReleaseStatus, { bg: string, text: string, border: string, icon: any }> = {
   idea: { bg: 'bg-slate-100', text: 'text-slate-500', border: 'border-slate-200', icon: Circle },
@@ -400,9 +401,8 @@ export function ReleaseTracker() {
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-center">
-        <p className="text-red-500 font-bold mb-4">Error loading releases</p>
-        <p className="text-slate-500 text-sm max-w-md">{error}</p>
+      <div className="flex flex-col items-center justify-center h-[60vh] text-center gap-4 p-6">
+        <ApiErrorBanner error={error} onRetry={() => window.location.reload()} />
       </div>
     );
   }
