@@ -1,18 +1,17 @@
 import { ContentItem, ZernioPostResponse, ContentAnalytics, Platform, ContentStatus, BestPostingTime, PublishLog } from '../types';
 import { supabase } from '../../lib/supabase';
+import { createApiFetcher } from '../../lib/api';
 
 const ZERNIO_API_BASE = 'https://zernio.com/api/v1';
 
-const getHeaders = () => {
-  const apiKey = import.meta.env.VITE_ZERNIO_API_KEY;
-  if (!apiKey) {
-    console.warn('VITE_ZERNIO_API_KEY is missing. Zernio API calls will fail.');
-  }
-  return {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${apiKey || ''}`
-  };
-};
+// Bound fetcher — shares Accept/Authorization headers across all Zernio requests.
+// Content-Type is added automatically by fetchJson when a body is present.
+// import.meta.env values are static at build time so this is safe to create at module level.
+const zernioFetch = createApiFetcher(ZERNIO_API_BASE, {
+  headers: {
+    Authorization: `Bearer ${import.meta.env.VITE_ZERNIO_API_KEY || ''}`,
+  },
+});
 
 function buildZernioPayload(item: ContentItem, accountId: string, isScheduling: boolean, scheduledAt?: string) {
   const platformKey = item.platform.toLowerCase();
@@ -108,10 +107,7 @@ async function logPublishAction(
 export const zernioAdapter = {
   async configCheck(): Promise<any> {
     try {
-      const response = await fetch(`${ZERNIO_API_BASE}/accounts`, {
-        headers: getHeaders()
-      });
-      if (!response.ok) throw new Error('API Key invalid or network error');
+      await zernioFetch('/accounts');
       return { status: 'ok' };
     } catch (error) {
       console.error('Zernio: Config check failed', error);
@@ -121,16 +117,7 @@ export const zernioAdapter = {
 
   async fetchAccounts(): Promise<any[]> {
     try {
-      const response = await fetch(`${ZERNIO_API_BASE}/accounts`, {
-        headers: getHeaders()
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.message || `Zernio API error: ${response.statusText}`);
-      }
-      const data = await response.json();
-      
+      const data = await zernioFetch<any>('/accounts');
       const accounts = Array.isArray(data) ? data : (data?.accounts || []);
       return accounts.map((a: any) => ({
         ...a,
@@ -153,19 +140,12 @@ export const zernioAdapter = {
         throw new Error(`No connected Zernio account found for platform: ${item.platform}`);
       }
 
-      const response = await fetch(`${ZERNIO_API_BASE}/posts`, {
+      const data = await zernioFetch<any>('/posts', {
         method: 'POST',
-        headers: getHeaders(),
         body: JSON.stringify(buildZernioPayload(item, account.id || account._id, false))
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`Zernio API error: ${response.statusText} ${JSON.stringify(errorData)}`);
-      }
-
-      const data = await response.json();
-      const post = data.post || data;
+      const post = data?.post || data;
       const result: ZernioPostResponse = {
         id: post.id || post._id || post.job_id,
         status: 'success',
@@ -194,19 +174,12 @@ export const zernioAdapter = {
         throw new Error(`No connected Zernio account found for platform: ${item.platform}`);
       }
 
-      const response = await fetch(`${ZERNIO_API_BASE}/posts`, {
+      const data = await zernioFetch<any>('/posts', {
         method: 'POST',
-        headers: getHeaders(),
         body: JSON.stringify(buildZernioPayload(item, account.id || account._id, true, scheduledAt))
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`Zernio API error: ${response.statusText} ${JSON.stringify(errorData)}`);
-      }
-
-      const data = await response.json();
-      const post = data.post || data;
+      const post = data?.post || data;
       const result: ZernioPostResponse = {
         id: post.job_id || post.id || post._id,
         status: 'success'
@@ -232,15 +205,7 @@ export const zernioAdapter = {
         return true;
       }
 
-      const response = await fetch(`${ZERNIO_API_BASE}/posts/${postId}`, {
-        method: 'DELETE',
-        headers: getHeaders()
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.message || `Zernio API error: ${response.statusText}`);
-      }
+      await zernioFetch(`/posts/${postId}`, { method: 'DELETE' });
 
       await logPublishAction(item.id, 'cancel', item.platform, 'success');
       return true;
@@ -260,16 +225,7 @@ export const zernioAdapter = {
         return true;
       }
 
-      const response = await fetch(`${ZERNIO_API_BASE}/posts/${postId}`, {
-        method: 'DELETE',
-        headers: getHeaders()
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.message || `Zernio API error: ${response.statusText}`);
-      }
-
+      await zernioFetch(`/posts/${postId}`, { method: 'DELETE' });
       return true;
     } catch (error) {
       console.error('Zernio: Delete post failed', error);
@@ -278,15 +234,8 @@ export const zernioAdapter = {
   },
 
   async getSocialAccounts(): Promise<any[]> {
-    const response = await fetch(`${ZERNIO_API_BASE}/accounts`, {
-      headers: getHeaders()
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || err.message || `${response.status}`);
-    }
-    const data = await response.json();
-    const accounts = Array.isArray(data) ? data : (data.accounts || []);
+    const data = await zernioFetch<any>('/accounts');
+    const accounts = Array.isArray(data) ? data : (data?.accounts || []);
     return accounts.map((a: any) => ({ ...a, id: a.id || a._id }));
   },
 
@@ -298,20 +247,10 @@ export const zernioAdapter = {
     }
 
     try {
-      const url = `${ZERNIO_API_BASE}/analytics/best-time?platform=${platform.toLowerCase()}`;
-      console.log(`[Zernio BestTimes] GET ${url}`);
+      console.log(`[Zernio BestTimes] GET /analytics/best-time?platform=${platform.toLowerCase()}`);
 
-      const response = await fetch(url, { headers: getHeaders() });
-      console.log(`[Zernio BestTimes] Response status: ${response.status}`);
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        console.warn(`[Zernio BestTimes] Request failed (${response.status}):`, errData);
-        return this.mockBestPostingTimes(platform);
-      }
-
-      const data = await response.json();
-      const slots: any[] = data.slots || [];
+      const data = await zernioFetch<any>(`/analytics/best-time?platform=${platform.toLowerCase()}`);
+      const slots: any[] = data?.slots || [];
       console.log(`[Zernio BestTimes] Raw slots (${slots.length}):`, slots);
 
       if (!slots.length) {
@@ -358,17 +297,8 @@ export const zernioAdapter = {
 
   async fetchPosts(): Promise<ContentItem[]> {
     try {
-      const response = await fetch(`${ZERNIO_API_BASE}/posts`, {
-        headers: getHeaders()
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.message || `Zernio API error: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      const posts = Array.isArray(data) ? data : (data.posts || []);
+      const data = await zernioFetch<any>('/posts');
+      const posts = Array.isArray(data) ? data : (data?.posts || []);
       
       return posts.map((post: any) => ({
         id: post.id || post._id,
@@ -399,17 +329,8 @@ export const zernioAdapter = {
 
   async fetchAnalytics(): Promise<ContentAnalytics[]> {
     try {
-      const response = await fetch(`${ZERNIO_API_BASE}/analytics`, {
-        headers: getHeaders()
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.message || `Zernio API error: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      const analytics = Array.isArray(data) ? data : (data.analytics || data.posts || []);
+      const data = await zernioFetch<any>('/analytics');
+      const analytics = Array.isArray(data) ? data : (data?.analytics || data?.posts || []);
       
       return analytics.map((ana: any) => ({
         id: ana.id || ana._id,

@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
-import { Activity, Globe, Music, TrendingUp, AlertCircle, RefreshCw, LogIn, Share2, Heart, Play } from 'lucide-react';
+import { Activity, Globe, Music, TrendingUp, RefreshCw, LogIn, Share2, Heart, Play } from 'lucide-react';
 import { spotifyFetch, redirectToSpotifyAuth, getSpotifyToken } from '../lib/spotify';
 import { useSoundCloud } from '../hooks/useSoundCloud';
 import { useArtistData } from '../hooks/useArtistData';
+import { fetchJson, ApiContentTypeError, ApiHttpError } from '../lib/api';
+import { ApiErrorBanner } from './ApiErrorBanner';
 import { Release } from '../types';
 import { ARTIST_INFO } from '../constants';
 import { cn } from '../lib/utils';
@@ -24,23 +26,29 @@ export const AnalyticsDashboard: React.FC = () => {
   const [soundcloudMe, setSoundcloudMe] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
   const [isSpotifyAuthed, setIsSpotifyAuthed] = useState(false);
 
   const { token: scToken, login: scLogin, fetchMe: scFetchMe } = useSoundCloud();
   const { data: releases, loading: releasesLoading } = useArtistData<Release>('releases');
 
-  const fetchMetrics = async () => {
+  const fetchMetrics = useCallback(async () => {
+    const controller = new AbortController();
     try {
       setLoading(true);
-      const response = await fetch('/api/analytics/latest');
-      if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
-        // Analytics backend unavailable (static deploy) — proceed without server metrics
-        setLoading(false);
-        return;
+      setError(null);
+
+      // Fetch server-side analytics — silently skip if backend unavailable (static deploy)
+      try {
+        const data = await fetchJson<Metric[]>('/api/analytics/latest', { signal: controller.signal });
+        setMetrics(data ?? []);
+      } catch (apiErr) {
+        if (apiErr instanceof ApiContentTypeError || apiErr instanceof ApiHttpError) {
+          // No analytics backend in this environment — continue with client-side data only
+        } else {
+          throw apiErr;
+        }
       }
-      const data = await response.json();
-      setMetrics(data);
 
       // Fetch Spotify data if authed
       const token = await getSpotifyToken();
@@ -68,28 +76,24 @@ export const AnalyticsDashboard: React.FC = () => {
         setSoundcloudMe(me);
       }
     } catch (err: any) {
-      setError(err.message);
+      setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       setLoading(false);
     }
-  };
+  }, [scToken]);
 
   useEffect(() => {
     fetchMetrics();
-  }, [scToken]);
+  }, [fetchMetrics]);
 
   const handleManualSync = async () => {
     try {
       setSyncing(true);
-      const response = await fetch('/api/analytics/trigger', { method: 'POST' });
-      if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
-        throw new Error('Analytics sync is not available in this environment');
-      }
-      const data = await response.json();
-      if (data.error) throw new Error(data.error);
+      setError(null);
+      await fetchJson('/api/analytics/trigger', { method: 'POST' });
       await fetchMetrics();
     } catch (err: any) {
-      setError(err.message);
+      setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       setSyncing(false);
     }
@@ -139,10 +143,11 @@ export const AnalyticsDashboard: React.FC = () => {
       </div>
 
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3 text-red-700">
-          <AlertCircle className="w-5 h-5" />
-          <p>{error}</p>
-        </div>
+        <ApiErrorBanner
+          error={error}
+          onRetry={fetchMetrics}
+          onDismiss={() => setError(null)}
+        />
       )}
 
       {/* Stats Overview */}

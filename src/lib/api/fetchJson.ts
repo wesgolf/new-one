@@ -40,7 +40,11 @@ export async function fetchJson<T = unknown>(
     const response = await fetch(url, {
       ...fetchOptions,
       headers: {
-        'Content-Type': 'application/json',
+        // Always signal we accept JSON back
+        'Accept': 'application/json',
+        // Only add Content-Type for requests that carry a body and haven't already set it
+        ...(fetchOptions.body != null ? { 'Content-Type': 'application/json' } : {}),
+        // Caller-supplied headers win over the defaults above
         ...fetchOptions.headers,
       },
     });
@@ -64,6 +68,14 @@ export async function fetchJson<T = unknown>(
         response.statusText,
         body
       );
+    }
+
+    // Responses with no body (204 No Content, empty Content-Length) — return null without parsing
+    if (
+      response.status === 204 ||
+      response.headers.get('content-length') === '0'
+    ) {
+      return null as unknown as T;
     }
 
     // Check content-type

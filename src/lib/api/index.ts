@@ -12,3 +12,5 @@ export {
   isApiError,
   type ApiError,
 } from './errors';
+export { useApiFetch } from './useApiFetch';
+export type { UseApiFetchOptions, UseApiFetchResult } from './useApiFetch';

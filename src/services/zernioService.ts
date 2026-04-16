@@ -1,5 +1,6 @@
 import { PlatformPost } from '../content/types';
 import { PublishResult } from './publishService';
+import { fetchJson } from '../lib/api';
 
 const ZERNIO_API_BASE = 'https://zernio.com/api/v1';
 
@@ -86,20 +87,13 @@ function buildPayload(post: PlatformPost, mediaUrl?: string, scheduledAt?: strin
 }
 
 async function postToZernio(payload: Record<string, any>): Promise<PublishResult> {
-  const response = await fetch(`${ZERNIO_API_BASE}/posts`, {
+  const data = await fetchJson<any>(`${ZERNIO_API_BASE}/posts`, {
     method: 'POST',
     headers: getHeaders(),
     body: JSON.stringify(payload),
   });
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(`Zernio API error: ${response.statusText} ${JSON.stringify(errorData)}`);
-  }
-
-  const data = await response.json();
-  const post = data.post || data;
-
+  const post = data?.post || data;
   return {
     success: true,
     externalPostId: post.id || post._id || post.job_id,
