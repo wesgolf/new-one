@@ -1,369 +1,434 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { formatDistanceToNowStrict } from 'date-fns';
-import { AudioLines, CloudUpload, Link2, Lock, Plus, Search, Share2 } from 'lucide-react';
-import { AudioReviewModal } from '../components/AudioReviewModal';
-import { fetchIdeaAssets, fetchIdeaComments, fetchIdeas, saveIdea, saveIdeaAsset, uploadIdeaAudio } from '../lib/supabaseData';
-import { useCurrentUserRole } from '../hooks/useCurrentUserRole';
-import { canCreateTrack, isManager } from '../types/roles';
-import type { IdeaAsset, IdeaComment, IdeaRecord } from '../types/domain';
+import React, { useState, useMemo } from 'react';
+import { 
+  Plus, 
+  Search, 
+  Circle, 
+  Loader2, 
+  Star, 
+  CheckCircle2,
+  Trash2,
+  Edit2,
+  Music,
+  Zap,
+  ArrowRight,
+  ChevronDown,
+  Filter,
+  Sparkles,
+  Flame,
+  Youtube,
+  Cloud,
+  Share2,
+  AlertTriangle,
+  History
+} from 'lucide-react';
+import { Release, ReleaseStatus } from '../types';
+import { useArtistData } from '../hooks/useArtistData';
+import { cn } from '../lib/utils';
+import { ReleaseModal } from '../components/ReleaseModal';
+import { IdeaModal } from '../components/IdeaModal';
+import { PromoteModal } from '../components/PromoteModal';
 
-const LAST_LOGIN_KEY = 'artist_os_last_login';
-
-const STATUS_OPTIONS = ['idea', 'production', 'review', 'release_candidate'];
-
-function IdeaModal({
-  open,
-  idea,
-  onClose,
-  onSaved,
-}: {
-  open: boolean;
-  idea: Partial<IdeaRecord> | null;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [form, setForm] = useState<Partial<IdeaRecord>>({
-    status: 'idea',
-    is_collab: false,
-    is_public: false,
-  });
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      setForm(
-        idea || {
-          status: 'idea',
-          is_collab: false,
-          is_public: false,
-        }
-      );
-    }
-  }, [open, idea]);
-
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-2xl rounded-[2rem] border border-border bg-white p-6 shadow-2xl">
-        <div className="mb-5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">Ideas</p>
-          <h3 className="mt-2 text-2xl font-bold text-text-primary">{form.id ? 'Edit idea' : 'Create idea'}</h3>
-        </div>
-        <form
-          className="space-y-4"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            setSaving(true);
-            try {
-              await saveIdea(form);
-              onSaved();
-              onClose();
-            } finally {
-              setSaving(false);
-            }
-          }}
-        >
-          <label className="block">
-            <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">Title</span>
-            <input
-              required
-              className="input-base"
-              value={form.title || ''}
-              onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-            />
-          </label>
-          <label className="block">
-            <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">Description</span>
-            <textarea
-              className="min-h-28 w-full rounded-2xl border border-border bg-slate-50 px-4 py-3 text-sm text-text-primary outline-none"
-              value={form.description || ''}
-              onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-            />
-          </label>
-          <div className="grid gap-4 md:grid-cols-3">
-            <label className="block">
-              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">Status</span>
-              <select
-                className="input-base"
-                value={form.status || 'idea'}
-                onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}
-              >
-                {STATUS_OPTIONS.map((status) => (
-                  <option key={status} value={status}>
-                    {status.replace('_', ' ')}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex items-center gap-3 rounded-2xl border border-border bg-slate-50 px-4 py-3">
-              <input
-                type="checkbox"
-                checked={Boolean(form.is_collab)}
-                onChange={(event) => setForm((current) => ({ ...current, is_collab: event.target.checked }))}
-              />
-              <span className="text-sm font-medium text-text-primary">Collaboration track</span>
-            </label>
-            <label className="flex items-center gap-3 rounded-2xl border border-border bg-slate-50 px-4 py-3">
-              <input
-                type="checkbox"
-                checked={Boolean(form.is_public)}
-                onChange={(event) => setForm((current) => ({ ...current, is_public: event.target.checked }))}
-              />
-              <span className="text-sm font-medium text-text-primary">Enable share portal</span>
-            </label>
-          </div>
-
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="btn-secondary">
-              Cancel
-            </button>
-            <button type="submit" disabled={saving} className="btn-primary">
-              {saving ? 'Saving...' : 'Save idea'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
+const statusColors: Record<string, { bg: string, text: string, border: string, icon: any }> = {
+  idea: { bg: 'bg-slate-100', text: 'text-slate-500', border: 'border-slate-200', icon: Circle },
+  production: { bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-100', icon: Loader2 },
+  mastered: { bg: 'bg-purple-50', text: 'text-purple-600', border: 'border-purple-100', icon: Star },
+  ready: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', icon: CheckCircle2 },
+};
 
 export function Ideas() {
-  const role = useCurrentUserRole();
-  const canAdd = canCreateTrack(role);
-  const managerView = isManager(role);
-  const [ideas, setIdeas] = useState<IdeaRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [collabFilter, setCollabFilter] = useState<'all' | 'collab' | 'solo'>('all');
-  const [sortBy, setSortBy] = useState<'updated' | 'created'>('updated');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [selectedIdea, setSelectedIdea] = useState<Partial<IdeaRecord> | null>(null);
-  const [reviewIdea, setReviewIdea] = useState<IdeaRecord | null>(null);
-  const [ideaAssets, setIdeaAssets] = useState<Record<string, IdeaAsset[]>>({});
-  const [ideaComments, setIdeaComments] = useState<Record<string, IdeaComment[]>>({});
+  const { data: rawReleases, loading, addItem, updateItem, deleteItem } = useArtistData<Release>('releases');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isIdeaModalOpen, setIsIdeaModalOpen] = useState(false);
+  const [isPromoteModalOpen, setIsPromoteModalOpen] = useState(false);
+  const [selectedRelease, setSelectedRelease] = useState<Release | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const rows = await fetchIdeas();
-      setIdeas(rows);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  const loadReviewData = async (idea: IdeaRecord) => {
-    const [assets, comments] = await Promise.all([fetchIdeaAssets(idea.id), fetchIdeaComments(idea.id)]);
-    setIdeaAssets((current) => ({ ...current, [idea.id]: assets }));
-    setIdeaComments((current) => ({ ...current, [idea.id]: comments }));
-  };
-
-  const lastLogin = localStorage.getItem(LAST_LOGIN_KEY);
-  const filteredIdeas = useMemo(() => {
-    const rows = ideas
-      .filter((idea) => statusFilter === 'all' || idea.status === statusFilter)
-      .filter((idea) => {
-        if (collabFilter === 'all') return true;
-        return collabFilter === 'collab' ? Boolean(idea.is_collab) : !idea.is_collab;
-      })
-      .filter((idea) => idea.title.toLowerCase().includes(search.toLowerCase()) || (idea.description || '').toLowerCase().includes(search.toLowerCase()))
-      .sort((a, b) => {
-        const first = sortBy === 'updated' ? a.updated_at || a.created_at || '' : a.created_at || '';
-        const second = sortBy === 'updated' ? b.updated_at || b.created_at || '' : b.created_at || '';
-        return new Date(second).getTime() - new Date(first).getTime();
+  const ideas = useMemo(() => {
+    return rawReleases
+      .filter(r => ['idea', 'production', 'mastered', 'ready'].includes(r.status))
+      .map(r => {
+        const raw = r as any;
+        const assets = raw.assets || {};
+        return {
+          ...r,
+          type: raw.type || assets.type || 'Original',
+          production: raw.production || assets.production || { project_file_url: '', stems_url: '' },
+          distribution: raw.distribution || assets.distribution || {},
+          marketing: raw.marketing || assets.marketing || {},
+          performance: raw.performance || {
+            streams: { spotify: 0, apple: 0, soundcloud: 0, youtube: 0 },
+            engagement: { likes: 0, saves: 0, reposts: 0 },
+            growth_rate: 0,
+            engagement_rate: 0
+          }
+        } as Release;
       });
+  }, [rawReleases]);
 
-    return rows;
-  }, [ideas, statusFilter, collabFilter, search, sortBy]);
+  const filteredIdeas = ideas
+    .filter(r => statusFilter === 'all' || r.status === statusFilter)
+    .filter(r => r.title.toLowerCase().includes(searchQuery.toLowerCase()));
+
+  const handlePromote = async (release: Release) => {
+    setSelectedRelease(release);
+    setIsPromoteModalOpen(true);
+  };
+
+  const finalizePromotion = async (options: { uploadSoundCloud: boolean; uploadYouTube: boolean }) => {
+    if (!selectedRelease) return;
+    
+    // Update status to 'ready' (or 'scheduled' if we want to be more specific)
+    // For now, let's keep it as 'ready' but open the full release modal for final details
+    setIsPromoteModalOpen(false);
+    setIsModalOpen(true);
+  };
+
+  const handleScheduleRemix = (release: Release) => {
+    // Logic for scheduling to SoundCloud/YouTube
+    alert(`Scheduling remix "${release.title}" to SoundCloud and YouTube... (Integration pending assets)`);
+  };
 
   return (
-    <div className="space-y-8 pb-20">
-      <header className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+    <div className="space-y-10">
+      <header className="flex flex-col sm:flex-row items-center justify-between gap-6">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-text-tertiary">Creative workflow</p>
-          <h1 className="mt-2 text-4xl font-bold text-text-primary">Ideas and audio review</h1>
-          <p className="mt-2 max-w-2xl text-text-secondary">
-            MP3-first collaboration, optional Dropbox or project links, timestamped review notes, and a shareable portal route that survives direct navigation.
-          </p>
+          <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900">Track Ideas & WIPs</h2>
+          <p className="text-slate-500 mt-2">Manage your creative pipeline from spark to master.</p>
         </div>
-        <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-          {!canAdd && (
-            <div className="inline-flex items-center gap-2 rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-              <Lock className="h-4 w-4" />
-              Managers can review and comment, but only artists can create tracks.
-            </div>
-          )}
-          <button
-            type="button"
-            disabled={!canAdd}
-            onClick={() => {
-              setSelectedIdea(null);
-              setModalOpen(true);
-            }}
-            className="btn-primary disabled:cursor-not-allowed disabled:opacity-50"
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => window.open('/collab', '_blank')}
+            className="flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all shadow-sm"
           >
-            <Plus className="h-4 w-4" />
+            <Share2 className="w-4 h-4" />
+            Share Portal
+          </button>
+          <button 
+            onClick={() => {
+              setSelectedRelease(null);
+              setIsIdeaModalOpen(true);
+            }}
+            className="btn-primary shadow-lg shadow-blue-200"
+          >
+            <Plus className="w-4 h-4" />
             New Idea
           </button>
         </div>
       </header>
 
-      <section className="grid gap-4 rounded-[2rem] border border-border bg-white p-5 shadow-sm lg:grid-cols-[1.3fr_repeat(4,minmax(0,1fr))]">
-        <label className="relative block">
-          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search titles or notes" className="input-base pl-11" />
-        </label>
-        <select className="input-base" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-          <option value="all">All statuses</option>
-          {STATUS_OPTIONS.map((status) => (
-            <option key={status} value={status}>
-              {status.replace('_', ' ')}
-            </option>
+      {/* Workflow Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        {['idea', 'production', 'mastered', 'ready'].map(status => (
+          <div key={status} className="glass-card p-4 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{status}</p>
+              <p className="text-2xl font-bold text-slate-900">
+                {ideas.filter(i => i.status === status).length}
+              </p>
+            </div>
+            <div className={cn("p-2 rounded-xl", statusColors[status].bg, statusColors[status].text)}>
+              {React.createElement(statusColors[status].icon, { className: "w-5 h-5" })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col lg:flex-row items-center gap-6">
+        <div className="relative flex-1">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+          <input 
+            type="text" 
+            placeholder="Search ideas..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-white border border-slate-200 rounded-2xl py-4 pl-12 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm"
+          />
+        </div>
+        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-2xl border border-slate-200 shadow-inner overflow-x-auto no-scrollbar max-w-full">
+          {['all', 'idea', 'production', 'mastered', 'ready'].map((s) => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={cn(
+                "px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all whitespace-nowrap",
+                statusFilter === s 
+                  ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200" 
+                  : "text-slate-500 hover:text-slate-900"
+              )}
+            >
+              {s}
+            </button>
           ))}
-        </select>
-        <select className="input-base" value={collabFilter} onChange={(event) => setCollabFilter(event.target.value as any)}>
-          <option value="all">Collab + solo</option>
-          <option value="collab">Collab only</option>
-          <option value="solo">Solo only</option>
-        </select>
-        <select className="input-base" value={sortBy} onChange={(event) => setSortBy(event.target.value as any)}>
-          <option value="updated">Updated newest</option>
-          <option value="created">Created newest</option>
-        </select>
-        <div className="flex items-center rounded-2xl border border-border bg-slate-50 px-4 py-3 text-sm text-text-secondary">
-          {managerView ? 'Manager review mode' : 'Artist creation mode'}
         </div>
-      </section>
+      </div>
 
-      {loading ? (
-        <div className="rounded-[2rem] border border-border bg-white p-8 text-sm text-text-secondary shadow-sm">
-          Loading ideas...
-        </div>
-      ) : (
-        <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {filteredIdeas.map((idea) => {
-            const isNew = lastLogin && idea.created_at ? new Date(idea.created_at) > new Date(lastLogin) : false;
-            const assets = ideaAssets[idea.id] || [];
-            const comments = ideaComments[idea.id] || [];
-            const audioCount = assets.filter((asset) => asset.asset_type === 'audio').length;
-
-            return (
-              <article key={idea.id} className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="badge badge-primary">{idea.status.replace('_', ' ')}</span>
-                      {idea.is_collab ? <span className="badge badge-success">Collab</span> : <span className="badge">Solo</span>}
-                      {isNew ? <span className="badge badge-warning">New since last login</span> : null}
+      {/* Ideas Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filteredIdeas.map((idea) => (
+          <div 
+            key={idea.id} 
+            onClick={() => {
+              setSelectedRelease(idea);
+              setIsIdeaModalOpen(true);
+            }}
+            className="glass-card group hover:border-blue-200 transition-all duration-300 cursor-pointer"
+          >
+            <div className="p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex flex-col gap-2">
+                  <div className={cn(
+                    "px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 border w-fit",
+                    statusColors[idea.status].bg, statusColors[idea.status].text, statusColors[idea.status].border
+                  )}>
+                    {React.createElement(statusColors[idea.status].icon, { className: "w-3 h-3" })}
+                    {idea.status}
+                  </div>
+                  
+                  {/* Urgency Indicators */}
+                  {idea.status === 'ready' && (
+                    <div className="flex items-center gap-1.5 px-2 py-1 bg-rose-50 text-rose-600 rounded-lg text-[8px] font-bold uppercase tracking-widest border border-rose-100 animate-pulse">
+                      <AlertTriangle className="w-2.5 h-2.5" />
+                      Urgent: Promote Now
                     </div>
-                    <h3 className="mt-3 text-2xl font-bold text-text-primary">{idea.title}</h3>
-                  </div>
-                  {idea.is_public ? (
-                    <a className="btn-secondary" href={`/collab/${idea.share_slug || idea.id}`} target="_blank" rel="noreferrer">
-                      <Share2 className="h-4 w-4" />
-                      Portal
-                    </a>
-                  ) : null}
-                </div>
-
-                <p className="mt-4 min-h-16 text-sm leading-6 text-text-secondary">
-                  {idea.description || 'No description added yet.'}
-                </p>
-
-                <div className="mt-5 grid grid-cols-2 gap-3">
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">Audio assets</p>
-                    <p className="mt-2 text-sm font-semibold text-text-primary">{audioCount}</p>
-                  </div>
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">Comments</p>
-                    <p className="mt-2 text-sm font-semibold text-text-primary">{comments.length}</p>
-                  </div>
-                </div>
-
-                <div className="mt-5 text-xs text-text-tertiary">
-                  Updated {idea.updated_at ? formatDistanceToNowStrict(new Date(idea.updated_at), { addSuffix: true }) : 'recently'}
-                </div>
-
-                <div className="mt-5 flex flex-wrap gap-3">
-                  {!managerView && (
-                    <label className="btn-secondary cursor-pointer">
-                      <CloudUpload className="h-4 w-4" />
-                      Upload MP3
-                      <input
-                        type="file"
-                        accept=".mp3,audio/mpeg"
-                        className="hidden"
-                        onChange={async (event) => {
-                          const file = event.target.files?.[0];
-                          if (!file) return;
-                          if (file.type !== 'audio/mpeg' || file.size > 20 * 1024 * 1024) {
-                            alert('Only MP3 files up to 20MB are supported.');
-                            event.target.value = '';
-                            return;
-                          }
-                          await uploadIdeaAudio(file, idea.id);
-                          await loadReviewData(idea);
-                          event.target.value = '';
-                        }}
-                      />
-                    </label>
                   )}
-
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={async () => {
-                      const href = window.prompt('Paste a Dropbox or project link');
-                      if (!href) return;
-                      await saveIdeaAsset({
-                        idea_id: idea.id,
-                        file_url: href,
-                        file_path: href,
-                        asset_type: href.includes('dropbox') ? 'project_link' : 'link',
-                        metadata: { label: href.includes('dropbox') ? 'Dropbox/project' : 'External link' },
-                      });
-                      await loadReviewData(idea);
+                  {idea.status === 'production' && new Date(idea.created_at).getTime() < Date.now() - (14 * 24 * 60 * 60 * 1000) && (
+                    <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-50 text-amber-600 rounded-lg text-[8px] font-bold uppercase tracking-widest border border-amber-100">
+                      <History className="w-2.5 h-2.5" />
+                      Stale: 14+ Days
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {idea.is_public && (
+                    <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-bold uppercase tracking-widest border border-blue-100 mr-1">
+                      <Share2 className="w-2.5 h-2.5" />
+                      Public
+                    </div>
+                  )}
+                  {idea.production?.project_file_url && (
+                    <a 
+                      href={idea.production.project_file_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-blue-600 transition-colors"
+                      title="Open Dropbox"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Cloud className="w-4 h-4" />
+                    </a>
+                  )}
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedRelease(idea);
+                      setIsIdeaModalOpen(true);
                     }}
+                    className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-blue-600 transition-colors"
                   >
-                    <Link2 className="h-4 w-4" />
-                    Add Link
+                    <Edit2 className="w-4 h-4" />
                   </button>
-
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    onClick={async () => {
-                      setReviewIdea(idea);
-                      await loadReviewData(idea);
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteItem(idea.id);
                     }}
+                    className="p-2 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-colors"
                   >
-                    <AudioLines className="h-4 w-4" />
-                    Review
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
-              </article>
-            );
-          })}
-        </section>
-      )}
+              </div>
 
-      <IdeaModal open={modalOpen} idea={selectedIdea} onClose={() => setModalOpen(false)} onSaved={load} />
-      <AudioReviewModal
-        open={Boolean(reviewIdea)}
-        idea={reviewIdea}
-        assets={reviewIdea ? ideaAssets[reviewIdea.id] || [] : []}
-        comments={reviewIdea ? ideaComments[reviewIdea.id] || [] : []}
-        onClose={() => setReviewIdea(null)}
-        onSaved={async () => {
-          if (reviewIdea) await loadReviewData(reviewIdea);
+              <h3 className="text-xl font-bold text-slate-900 mb-2">{idea.title}</h3>
+              <p className="text-sm text-slate-500 line-clamp-2 mb-4">
+                {idea.rationale || "No description provided for this idea yet."}
+              </p>
+
+              {/* Links Section */}
+              <div className="flex flex-wrap gap-2 mb-6">
+                {idea.production?.project_file_url && (
+                  <a 
+                    href={idea.production.project_file_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-blue-100 transition-all border border-blue-100"
+                  >
+                    <Cloud className="w-3 h-3" />
+                    Project
+                  </a>
+                )}
+                {idea.production?.stems_url && (
+                  <a 
+                    href={idea.production.stems_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 text-purple-600 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-purple-100 transition-all border border-purple-100"
+                  >
+                    <Music className="w-3 h-3" />
+                    Stems
+                  </a>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                {/* Progress Bar */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    <span>Production Progress</span>
+                    <span>
+                      {idea.status === 'idea' ? '10%' : idea.status === 'production' ? '40%' : idea.status === 'mastered' ? '80%' : '100%'}
+                    </span>
+                  </div>
+                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div 
+                      className={cn(
+                        "h-full transition-all duration-1000",
+                        idea.status === 'idea' ? "w-[10%] bg-slate-300" : 
+                        idea.status === 'production' ? "w-[40%] bg-blue-500" : 
+                        idea.status === 'mastered' ? "w-[80%] bg-purple-500" : "w-full bg-emerald-500"
+                      )}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <div className="flex-1 flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-100">
+                    {['idea', 'production', 'mastered', 'ready'].map((s) => (
+                      <button
+                        key={s}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          updateItem(idea.id, { status: s as ReleaseStatus });
+                        }}
+                        className={cn(
+                          "flex-1 py-1.5 rounded-lg text-[8px] font-bold uppercase tracking-tighter transition-all",
+                          idea.status === s 
+                            ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200" 
+                            : "text-slate-400 hover:text-slate-600"
+                        )}
+                        title={`Move to ${s}`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  {idea.status === 'ready' ? (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePromote(idea);
+                      }}
+                      className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl text-xs font-bold uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 flex items-center justify-center gap-2 group/btn"
+                    >
+                      <Zap className="w-4 h-4 fill-current group-hover/btn:scale-110 transition-transform" />
+                      Promote to Release
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const nextStatus: Record<string, ReleaseStatus> = {
+                          'idea': 'production',
+                          'production': 'mastered',
+                          'mastered': 'ready'
+                        };
+                        updateItem(idea.id, { status: nextStatus[idea.status] });
+                      }}
+                      className="flex-1 py-4 bg-slate-900 text-white rounded-2xl text-xs font-bold uppercase tracking-widest hover:bg-blue-600 transition-all flex items-center justify-center gap-2 group/btn shadow-lg shadow-slate-200"
+                    >
+                      Next Stage: {
+                        idea.status === 'idea' ? 'Production' : 
+                        idea.status === 'production' ? 'Mastering' : 'Ready'
+                      }
+                      <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform" />
+                    </button>
+                  )}
+                  
+                  {idea.type === 'Remix' && (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleScheduleRemix(idea);
+                      }}
+                      className="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-all flex items-center gap-2"
+                      title="Schedule Remix"
+                    >
+                      <Cloud className="w-4 h-4" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">Schedule</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {filteredIdeas.length === 0 && (
+          <div className="col-span-full py-20 text-center bg-slate-50 rounded-[2.5rem] border border-dashed border-slate-200">
+            <Sparkles className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+            <p className="text-slate-500 font-medium">Your creative pipeline is empty. Start a new idea!</p>
+          </div>
+        )}
+      </div>
+
+      <ReleaseModal 
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSave={async (data) => {
+          if (selectedRelease) {
+            await updateItem(selectedRelease.id, data);
+          } else {
+            await addItem({ ...data, status: data.status || 'idea' });
+          }
+          setIsModalOpen(false);
         }}
+        release={selectedRelease}
+      />
+
+      <IdeaModal 
+        isOpen={isIdeaModalOpen}
+        onClose={() => setIsIdeaModalOpen(false)}
+        onSave={async (data) => {
+          const supabaseData = {
+            title: data.title,
+            status: data.status,
+            type: data.type,
+            rationale: data.rationale,
+            is_public: data.is_public || false,
+            production: data.production,
+            assets: data.assets || {},
+            distribution: data.distribution || {},
+            marketing: data.marketing || {},
+            performance: data.performance || {
+              streams: { spotify: 0, apple: 0, soundcloud: 0, youtube: 0 },
+              engagement: { likes: 0, saves: 0, reposts: 0 },
+              growth_rate: 0,
+              engagement_rate: 0
+            }
+          };
+
+          if (selectedRelease) {
+            await updateItem(selectedRelease.id, supabaseData);
+          } else {
+            await addItem({ ...supabaseData, status: data.status || 'idea' });
+          }
+          setIsIdeaModalOpen(false);
+        }}
+        idea={selectedRelease}
+      />
+
+      <PromoteModal 
+        isOpen={isPromoteModalOpen}
+        onClose={() => setIsPromoteModalOpen(false)}
+        onPromote={finalizePromotion}
+        idea={selectedRelease}
       />
     </div>
   );

@@ -182,8 +182,8 @@ export interface FinanceTransaction {
   amount: number;
   type: 'income' | 'expense';
   category: 'Streaming' | 'Merch' | 'Live' | 'Royalties' | 'Production' | 'Marketing' | 'Equipment' | 'Software' | 'Other';
-  linked_release_id?: string | null;
-  notes?: string | null;
+  linked_release_id?: string;
+  notes?: string;
 }
 
 export interface FinanceSummary {

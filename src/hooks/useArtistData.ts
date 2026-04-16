@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { getCurrentAuthUser } from '../lib/auth';
 
 export function useArtistData<T>(table: string) {
   const [data, setData] = useState<T[]>([]);
@@ -55,7 +54,7 @@ export function useArtistData<T>(table: string) {
 
   const addItem = async (item: Partial<T>) => {
     try {
-      const user = await getCurrentAuthUser();
+      const { data: { user } } = await supabase.auth.getUser();
       const insertData = user ? { ...item, user_id: user.id } : item;
 
       const { data: result, error: addError } = await supabase
@@ -74,8 +73,8 @@ export function useArtistData<T>(table: string) {
 
   const updateItem = async (id: string, updates: Partial<T>) => {
     try {
-      const user = await getCurrentAuthUser();
-
+      const { data: { user } } = await supabase.auth.getUser();
+      
       let query = supabase.from(table).update(updates).eq('id', id);
       
       // If user is logged in, we try to match user_id, but we also allow matching if user_id is null
@@ -103,8 +102,8 @@ export function useArtistData<T>(table: string) {
 
   const deleteItem = async (id: string) => {
     try {
-      const user = await getCurrentAuthUser();
-
+      const { data: { user } } = await supabase.auth.getUser();
+      
       const { error: deleteError } = await supabase
         .from(table)
         .delete()

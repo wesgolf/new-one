@@ -4,7 +4,6 @@ import { Activity, Globe, Music, TrendingUp, AlertCircle, RefreshCw, LogIn, Shar
 import { spotifyFetch, redirectToSpotifyAuth, getSpotifyToken } from '../lib/spotify';
 import { useSoundCloud } from '../hooks/useSoundCloud';
 import { useArtistData } from '../hooks/useArtistData';
-import { fetchJson, isApiError, type ApiError } from '../lib/api';
 import { Release } from '../types';
 import { ARTIST_INFO } from '../constants';
 import { cn } from '../lib/utils';
@@ -34,9 +33,8 @@ export const AnalyticsDashboard: React.FC = () => {
   const fetchMetrics = async () => {
     try {
       setLoading(true);
-      setError(null);
-      
-      const data = await fetchJson<Metric[]>('/api/analytics/latest');
+      const response = await fetch('/api/analytics/latest');
+      const data = await response.json();
       setMetrics(data);
 
       // Fetch Spotify data if authed
@@ -65,23 +63,7 @@ export const AnalyticsDashboard: React.FC = () => {
         setSoundcloudMe(me);
       }
     } catch (err: any) {
-      if (isApiError(err)) {
-        // Provide detailed error message for debugging
-        if (err instanceof Error && 'responseBody' in err) {
-          const responseBody = (err as any).responseBody || '';
-          if (responseBody.includes('<!DOCTYPE') || responseBody.includes('<html')) {
-            setError(`Analytics endpoint returned HTML instead of JSON. This usually means the server is returning an error page. Status: ${(err as any).status}`);
-          } else if (responseBody.includes('<!DOCTYPE') === false && (err as any).status === 404) {
-            setError(`Analytics endpoint not found (404). Check that /api/analytics/latest is configured correctly.`);
-          } else {
-            setError(`Failed to load analytics: ${err.message}`);
-          }
-        } else {
-          setError(`Failed to load analytics: ${err.message}`);
-        }
-      } else {
-        setError(err instanceof Error ? err.message : 'Failed to load analytics');
-      }
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -94,24 +76,12 @@ export const AnalyticsDashboard: React.FC = () => {
   const handleManualSync = async () => {
     try {
       setSyncing(true);
-      setError(null);
-      
-      const data = await fetchJson<{ success?: boolean; error?: string }>(
-        '/api/analytics/trigger',
-        { method: 'POST' }
-      );
-      
-      if (data.error) {
-        throw new Error(data.error);
-      }
-      
+      const response = await fetch('/api/analytics/trigger', { method: 'POST' });
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
       await fetchMetrics();
     } catch (err: any) {
-      if (isApiError(err)) {
-        setError(`Sync failed: ${err.message}`);
-      } else {
-        setError(err instanceof Error ? err.message : 'Sync failed');
-      }
+      setError(err.message);
     } finally {
       setSyncing(false);
     }

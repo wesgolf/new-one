@@ -1,270 +1,40 @@
 @import "tailwindcss";
 
 @theme {
-  /* Brand Colors - Premium Music Artist Identity */
-  --color-primary: #2563eb;           /* Electric Blue */
-  --color-primary-light: #3b82f6;     /* Light Electric Blue */
-  --color-primary-dark: #1e40af;      /* Deep Blue */
-  
-  /* Accent - Electronic/Premium Feel */
-  --color-accent: #8b5cf6;            /* Vibrant Purple (nightlife/electronic) */
-  --color-accent-light: #a78bfa;      /* Light Purple */
-  --color-accent-dark: #7c3aed;       /* Deep Purple */
-  
-  /* Dark Mode Surfaces - Polished Dashboard */
-  --color-dark-bg: #0f172a;           /* Premium dark navy */
-  --color-dark-surface-1: #1e293b;    /* Dark surface level 1 */
-  --color-dark-surface-2: #334155;    /* Dark surface level 2 */
-  --color-dark-surface-3: #475569;    /* Dark surface level 3 */
-  
-  /* Light Surfaces */
-  --color-light-bg: #f8fafc;          /* Clean off-white */
-  --color-light-surface: #ffffff;     /* Card/surface */
-  --color-light-surface-secondary: #f1f5f9;
-  
-  /* Text Hierarchy */
-  --color-text-primary: #0f172a;      /* Primary text - dark blue-black */
-  --color-text-secondary: #475569;    /* Secondary text - muted slate */
-  --color-text-tertiary: #94a3b8;     /* Tertiary text - light slate */
-  
-  /* Borders & Dividers */
-  --color-border: #e2e8f0;            /* Subtle borders */
-  --color-border-light: #f1f5f9;      /* Very subtle borders */
-  --color-divider: #cbd5e1;           /* Divider lines */
-  
-  /* Semantic Colors */
-  --color-success: #10b981;           /* Success green */
-  --color-warning: #f59e0b;           /* Warning amber */
-  --color-error: #ef4444;             /* Error red */
-  --color-info: #06b6d4;              /* Info cyan */
-  
-  /* Extended Spacing - Tighter, more refined rhythm */
-  --spacing-0: 0px;
-  --spacing-1: 0.25rem;
-  --spacing-2: 0.5rem;
-  --spacing-3: 0.75rem;
-  --spacing-4: 1rem;
-  --spacing-5: 1.25rem;
-  --spacing-6: 1.5rem;
-  --spacing-8: 2rem;
-  --spacing-10: 2.5rem;
-  --spacing-12: 3rem;
-  --spacing-16: 4rem;
-  
-  /* Typography Scale - Premium hierarchy */
-  --font-size-xs: 0.75rem;
-  --font-size-sm: 0.875rem;
-  --font-size-base: 1rem;
-  --font-size-lg: 1.125rem;
-  --font-size-xl: 1.25rem;
-  --font-size-2xl: 1.5rem;
-  --font-size-3xl: 1.875rem;
-  --font-size-4xl: 2.25rem;
-  
-  /* Line Heights - Better readability */
-  --line-height-tight: 1.25;
-  --line-height-normal: 1.5;
-  --line-height-relaxed: 1.75;
-  
-  /* Border Radii - Consistent, refined curves */
-  --radius-sm: 0.375rem;
-  --radius-base: 0.5rem;
-  --radius-md: 0.75rem;
-  --radius-lg: 1rem;
-  --radius-xl: 1.25rem;
-  --radius-2xl: 1.5rem;
-  
-  /* Shadows - Premium, subtle depth */
-  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.12), 0 4px 6px -4px rgba(0, 0, 0, 0.08);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  --color-accent: #3b82f6;
+  --color-accent-foreground: #ffffff;
+  --color-background: #f8fafc;
+  --color-card: #ffffff;
+  --color-border: #e2e8f0;
+  --color-muted: #64748b;
+  --color-neon-purple: #a855f7;
 }
 
 @layer base {
   body {
-    @apply bg-light-bg text-text-primary antialiased;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
-    font-feature-settings: "kern" 1;
-  }
-
-  /* Typography Base */
-  h1 {
-    @apply text-4xl font-bold tracking-tight leading-tight;
-  }
-
-  h2 {
-    @apply text-3xl font-bold tracking-tight leading-tight;
-  }
-
-  h3 {
-    @apply text-2xl font-bold tracking-tight;
-  }
-
-  h4 {
-    @apply text-xl font-semibold tracking-tight;
-  }
-
-  h5 {
-    @apply text-lg font-semibold;
-  }
-
-  h6 {
-    @apply text-base font-semibold;
-  }
-
-  p {
-    @apply leading-normal text-text-secondary;
-  }
-
-  a {
-    @apply text-primary hover:text-primary-dark transition-colors outline-none focus:ring-2 focus:ring-primary/30 rounded;
-  }
-
-  button {
-    @apply transition-all;
+    @apply bg-background text-slate-900 antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
   }
 }
 
 @layer components {
-  /* Premium Cards */
-  .card {
-    @apply bg-light-surface border border-border rounded-lg shadow-sm hover:shadow-md transition-shadow;
-  }
-
-  .card-elevated {
-    @apply bg-light-surface border border-border rounded-xl shadow-md hover:shadow-lg transition-shadow;
-  }
-
   .glass-card {
-    @apply bg-white/70 backdrop-blur-xl border border-white/20 rounded-xl shadow-sm hover:shadow-md transition-shadow;
+    @apply bg-white/80 backdrop-blur-xl border border-slate-200/60 rounded-2xl shadow-sm;
   }
-
-  /* Buttons - Premium feel */
+  
   .btn-primary {
-    @apply bg-primary hover:bg-primary-dark text-white px-4 py-2.5 rounded-lg font-semibold transition-all active:scale-95 flex items-center justify-center gap-2 shadow-sm hover:shadow-md;
+    @apply bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl font-medium transition-all active:scale-95 flex items-center justify-center gap-2 shadow-sm;
   }
-
-  .btn-primary-large {
-    @apply bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-xl font-semibold transition-all active:scale-95 flex items-center justify-center gap-2 shadow-md hover:shadow-lg;
-  }
-
+  
   .btn-secondary {
-    @apply bg-light-surface-secondary hover:bg-slate-100 text-text-primary px-4 py-2.5 rounded-lg font-medium transition-all active:scale-95 flex items-center justify-center gap-2 border border-border shadow-sm;
+    @apply bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-xl font-medium transition-all active:scale-95 flex items-center justify-center gap-2 border border-slate-200 shadow-sm;
   }
 
-  .btn-ghost {
-    @apply text-text-secondary hover:text-text-primary hover:bg-light-surface-secondary px-3 py-2 rounded-lg transition-all;
-  }
-
-  .btn-minimal {
-    @apply text-text-secondary hover:text-primary transition-colors;
-  }
-
-  /* Badges */
   .badge {
-    @apply px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider inline-block;
+    @apply px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider;
   }
-
-  .badge-primary {
-    @apply bg-primary/10 text-primary;
-  }
-
-  .badge-success {
-    @apply bg-success/10 text-success;
-  }
-
-  .badge-warning {
-    @apply bg-warning/10 text-warning;
-  }
-
-  .badge-error {
-    @apply bg-error/10 text-error;
-  }
-
-  /* Input Fields */
-  .input-base {
-    @apply w-full px-4 py-2.5 border border-border rounded-lg bg-light-surface text-text-primary placeholder-text-tertiary transition-all focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary;
-  }
-
-  /* Dividers */
-  .divider {
-    @apply border-t border-border;
-  }
-
-  /* Section */
-  .section {
-    @apply space-y-6;
-  }
-
-  .section-title {
-    @apply text-2xl font-bold text-text-primary mb-4;
-  }
-
-  .section-subtitle {
-    @apply text-sm text-text-secondary;
-  }
-
-  /* Grid Layouts */
-  .grid-responsive {
-    @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6;
-  }
-
-  .grid-2col {
-    @apply grid grid-cols-1 md:grid-cols-2 gap-6;
-  }
-
-  /* Utility */
-  .truncate-line {
-    @apply line-clamp-1;
-  }
-
-  .truncate-2-lines {
-    @apply line-clamp-2;
-  }
-
-  .truncate-3-lines {
-    @apply line-clamp-3;
-  }
-
-  /* Premium accents */
-  .accent-glow {
-    @apply shadow-lg shadow-accent/20;
-  }
-
-  .accent-border {
-    @apply border-accent;
-  }
-}
-
-/* Animations */
-@layer utilities {
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  @keyframes slideInDown {
-    from {
-      opacity: 0;
-      transform: translateY(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  .animate-fadeIn {
-    animation: fadeIn 0.2s ease-in-out;
-  }
-
-  .animate-slideInDown {
-    animation: slideInDown 0.3s ease-out;
+  
+  .neon-glow {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.1);
   }
 }

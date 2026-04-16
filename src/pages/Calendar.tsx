@@ -1,449 +1,1089 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { addDays, format, isSameDay, parseISO, startOfWeek } from 'date-fns';
-import { Bot, CalendarPlus, ChevronLeft, ChevronRight, Lightbulb, Sparkles } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { parseAssistantIntent } from '../lib/assistantActions';
-import { subscribeAssistantActions } from '../lib/commandBus';
-import { fetchGoals, fetchTasks, safeSelect, saveGoal, saveTask } from '../lib/supabaseData';
+import React, { useState, useEffect } from 'react';
+import { 
+  ChevronLeft, 
+  ChevronRight, 
+  Plus, 
+  Calendar as CalendarIcon,
+  Clock,
+  Video,
+  Smartphone,
+  Music,
+  MoreVertical,
+  Loader2,
+  CheckSquare,
+  Target,
+  Share2,
+  Filter,
+  X,
+  Zap,
+  Repeat
+} from 'lucide-react';
+import { cn } from '../lib/utils';
 import { supabase } from '../lib/supabase';
-import type { GoalRecord, TaskRecord } from '../types/domain';
+import { CalendarEventModal } from '../components/CalendarEventModal';
+import { CalendarEventDetailModal } from '../components/CalendarEventDetailModal';
+import { Release } from '../types';
+import { useSoundCloud } from '../hooks/useSoundCloud';
+import { useSpotify } from '../hooks/useSpotify';
+import { ARTIST_INFO } from '../constants';
 
-type PlannerItemType = 'task' | 'scheduled_post' | 'goal' | 'custom_event';
-
-interface PlannerItem {
+interface Event {
   id: string;
   title: string;
-  startsAt: string;
-  type: PlannerItemType;
-  platform?: string | null;
-  status?: string | null;
-}
-
-const HOURS = Array.from({ length: 15 }, (_, index) => index + 8);
-const BEST_TIMES = [
-  { weekday: 1, hour: 11, label: 'IG window' },
-  { weekday: 3, hour: 18, label: 'TikTok lift' },
-  { weekday: 5, hour: 19, label: 'Weekend warmup' },
-];
-
-function toLocalInputValue(dateIso: string) {
-  return new Date(dateIso).toISOString().slice(0, 16);
+  date: string;
+  time?: string;
+  type: 'post' | 'release' | 'show' | 'meeting' | 'todo' | 'goal';
+  platform?: string;
+  priority?: 'low' | 'medium' | 'high';
+  zernioId?: string;
+  releaseId?: string;
+  status?: string;
+  publishStatus?: 'draft' | 'scheduled' | 'published' | 'failed' | 'cancelled';
+  notes?: string;
+  venue?: string;
+  task?: string;
+  category?: string;
+  target?: number;
+  current?: number;
+  unit?: string;
+  isFullDay?: boolean;
+  isRecurring?: boolean;
+  recurrencePattern?: 'daily' | 'weekly' | 'monthly';
+  recurrenceInterval?: number;
+  recurrenceEndDate?: string;
 }
 
 export function Calendar() {
-  const navigate = useNavigate();
+  const [view, setView] = useState<'month' | 'week' | 'day'>('month');
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [view, setView] = useState<'week' | 'day'>('week');
-  const [items, setItems] = useState<PlannerItem[]>([]);
-  const [goals, setGoals] = useState<GoalRecord[]>([]);
-  const [taskRows, setTaskRows] = useState<TaskRecord[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
+  const [releases, setReleases] = useState<Release[]>([]);
+  const [selectedTrackId, setSelectedTrackId] = useState<string>('all');
   const [loading, setLoading] = useState(true);
-  const [assistantInput, setAssistantInput] = useState('');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [draftType, setDraftType] = useState<PlannerItemType | null>(null);
-  const [draftDate, setDraftDate] = useState(new Date().toISOString());
-  const [draftTitle, setDraftTitle] = useState('');
-  const [editingItem, setEditingItem] = useState<PlannerItem | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [modalType, setModalType] = useState<'release' | 'post' | 'show' | 'meeting' | 'todo' | 'goal' | undefined>(undefined);
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+  const [draggedEvent, setDraggedEvent] = useState<Event | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isSpotifySyncing, setIsSpotifySyncing] = useState(false);
+  const { login: scLogin, token: scToken, fetchTracks: scFetchTracks } = useSoundCloud();
+  const { login: spLogin, isAuthenticated: isSpAuthed, fetchTracks: spFetchTracks } = useSpotify();
 
-  const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
-  const visibleDays = view === 'week' ? Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)) : [currentDate];
+  const expandRecurringEvents = (rawEvents: Event[]): Event[] => {
+    const expanded: Event[] = [];
+    const now = new Date();
+    const endRange = new Date();
+    endRange.setFullYear(now.getFullYear() + 1); // Expand up to 1 year ahead
 
-  const load = async () => {
-    setLoading(true);
+    rawEvents.forEach(event => {
+      if (!event.isRecurring || !event.recurrencePattern) {
+        expanded.push(event);
+        return;
+      }
+
+      // Parse the initial date carefully to avoid timezone shifts
+      const [year, month, day] = event.date.split('-').map(Number);
+      let current = new Date(year, month - 1, day);
+      
+      const end = event.recurrenceEndDate ? new Date(event.recurrenceEndDate) : endRange;
+      const interval = event.recurrenceInterval || 1;
+
+      let count = 0;
+      while (current <= end && count < 365) {
+        const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
+        
+        expanded.push({
+          ...event,
+          id: count === 0 ? event.id : `${event.id}-${count}`,
+          date: dateStr,
+        });
+
+        if (event.recurrencePattern === 'daily') {
+          current.setDate(current.getDate() + interval);
+        } else if (event.recurrencePattern === 'weekly') {
+          current.setDate(current.getDate() + (7 * interval));
+        } else if (event.recurrencePattern === 'monthly') {
+          current.setMonth(current.getMonth() + interval);
+        } else {
+          break;
+        }
+        count++;
+      }
+    });
+
+    return expanded;
+  };
+
+  const fetchEvents = async () => {
     try {
-      const [tasks, content, meetings, goalRows] = await Promise.all([
-        fetchTasks(),
-        safeSelect<any>('content_items', 'scheduled_date', true),
-        safeSelect<any>('meetings', 'date', true),
-        fetchGoals(),
+      setLoading(true);
+      setError(null);
+      
+      // Fetch from all tables
+      const [
+        releasesRes,
+        contentRes,
+        showsRes,
+        meetingsRes,
+        todosRes,
+        goalsRes,
+        platformPostsRes
+      ] = await Promise.all([
+        supabase.from('releases').select('*'),
+        supabase.from('content_items').select('*'),
+        supabase.from('shows').select('*'),
+        supabase.from('meetings').select('*'),
+        supabase.from('todos').select('*'),
+        supabase.from('goals').select('*'),
+        supabase.from('platform_posts').select('*, content_items(title, media_url)')
       ]);
 
-      setTaskRows(tasks);
-      setGoals(goalRows);
+      if (releasesRes.error) throw releasesRes.error;
+      if (contentRes.error) throw contentRes.error;
+      if (showsRes.error) throw showsRes.error;
+      if (meetingsRes.error) throw meetingsRes.error;
+      if (todosRes.error) throw todosRes.error;
+      if (goalsRes.error) throw goalsRes.error;
 
-      const mapped: PlannerItem[] = [
-        ...tasks
-          .filter((task) => task.due_date)
-          .map((task) => ({
-            id: task.id,
-            title: task.title,
-            startsAt: task.due_date!,
-            type: 'task' as const,
-            status: task.status,
-          })),
-        ...content
-          .filter((item) => item.scheduled_date)
-          .map((item) => ({
-            id: item.id,
-            title: item.title,
-            startsAt: item.scheduled_date,
-            type: 'scheduled_post' as const,
-            platform: item.platform,
-            status: item.status,
-          })),
-        ...meetings
-          .filter((meeting) => meeting.date)
-          .map((meeting) => ({
-            id: meeting.id,
-            title: meeting.title,
-            startsAt: meeting.time ? `${meeting.date}T${meeting.time}` : `${meeting.date}T12:00:00`,
-            type: 'custom_event' as const,
-            status: meeting.priority,
-          })),
-        ...goalRows
-          .filter((goal) => goal.end_date)
-          .map((goal) => ({
-            id: goal.id,
-            title: goal.title,
-            startsAt: goal.end_date!,
-            type: 'goal' as const,
-          })),
-      ];
+      const releases = releasesRes.data;
+      const content = contentRes.data;
+      const shows = showsRes.data;
+      const meetings = meetingsRes.data;
+      const todos = todosRes.data;
+      const goals = goalsRes.data;
+      const platformPosts = platformPostsRes.data || [];
 
-      setItems(mapped);
+      const rawEvents: Event[] = [
+        ...(releases || []).map(r => ({
+          id: r.id,
+          title: r.title,
+          date: r.release_date,
+          time: r.release_time,
+          type: 'release' as const,
+          platform: r.soundcloud_url ? 'SoundCloud' : undefined,
+          priority: r.priority,
+          releaseId: r.id,
+          status: r.status,
+          notes: r.notes,
+          isFullDay: r.is_full_day
+        })),
+        ...(content || []).map(c => ({
+          id: c.id,
+          title: c.title,
+          date: c.scheduled_date?.split('T')[0],
+          time: c.scheduled_time,
+          type: 'post' as const,
+          platform: c.platform,
+          priority: c.priority,
+          zernioId: c.zernio_id || c.zernio_post_id,
+          releaseId: c.linked_release_id,
+          status: c.status,
+          publishStatus: c.publish_status || 'draft',
+          notes: c.caption,
+          isFullDay: c.is_full_day,
+          isRecurring: c.is_recurring,
+          recurrencePattern: c.recurrence_pattern,
+          recurrenceInterval: c.recurrence_interval,
+          recurrenceEndDate: c.recurrence_end_date
+        })),
+        ...(shows || []).map(s => ({
+          id: s.id,
+          title: s.venue,
+          date: s.date,
+          time: s.time,
+          type: 'show' as const,
+          priority: s.priority,
+          status: s.status,
+          venue: s.venue,
+          isFullDay: s.is_full_day
+        })),
+        ...(meetings || []).map(m => ({
+          id: m.id,
+          title: m.title,
+          date: m.date,
+          time: m.time,
+          type: 'meeting' as const,
+          priority: m.priority,
+          notes: m.notes,
+          isFullDay: m.is_full_day,
+          isRecurring: m.is_recurring,
+          recurrencePattern: m.recurrence_pattern,
+          recurrenceInterval: m.recurrence_interval,
+          recurrenceEndDate: m.recurrence_end_date
+        })),
+        ...(todos || []).map(t => ({
+          id: t.id,
+          title: t.task,
+          date: t.due_date,
+          time: t.due_time,
+          type: 'todo' as const,
+          priority: t.priority,
+          status: t.completed ? 'completed' : 'pending',
+          task: t.task,
+          isFullDay: t.is_full_day,
+          isRecurring: t.is_recurring,
+          recurrencePattern: t.recurrence_pattern,
+          recurrenceInterval: t.recurrence_interval,
+          recurrenceEndDate: t.recurrence_end_date
+        })),
+        ...(goals || []).map(g => ({
+          id: g.id,
+          title: g.title,
+          date: g.deadline,
+          time: g.deadline_time,
+          type: 'goal' as const,
+          priority: g.priority,
+          category: g.category,
+          target: g.target,
+          current: g.current,
+          unit: g.unit,
+          isRecurring: g.is_recurring,
+          recurrencePattern: g.recurrence_pattern,
+          recurrenceInterval: g.recurrence_interval,
+          recurrenceEndDate: g.recurrence_end_date
+        })),
+        ...(platformPosts || [])
+          .filter((pp: any) => pp.scheduled_at)
+          .map((pp: any) => {
+            const scheduledDate = new Date(pp.scheduled_at);
+            const dateStr = `${scheduledDate.getFullYear()}-${String(scheduledDate.getMonth() + 1).padStart(2, '0')}-${String(scheduledDate.getDate()).padStart(2, '0')}`;
+            const timeStr = `${String(scheduledDate.getHours()).padStart(2, '0')}:${String(scheduledDate.getMinutes()).padStart(2, '0')}`;
+            const parentTitle = pp.content_items?.title || pp.title || 'Untitled';
+            return {
+              id: `pp_${pp.id}`,
+              title: `${parentTitle} (${pp.platform})`,
+              date: dateStr,
+              time: timeStr,
+              type: 'post' as const,
+              platform: pp.platform,
+              publishStatus: pp.status as any,
+              status: pp.status,
+              notes: pp.caption,
+            };
+          })
+      ].filter(e => e.date);
+
+      const allEvents = expandRecurringEvents(rawEvents);
+      setEvents(allEvents);
+      setReleases(releases || []);
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    load();
+    fetchEvents();
   }, []);
 
-  useEffect(() => {
-    return subscribeAssistantActions((action) => {
-      if (action.type === 'create_calendar_event') {
-        setDraftType('custom_event');
-        setDraftDate(action.payload?.startsAt || new Date().toISOString());
-        setDraftTitle(action.payload?.title || '');
-        setModalOpen(true);
-      }
-      if (action.type === 'open_content_scheduler') {
-        navigate(`/content?scheduledAt=${encodeURIComponent(action.payload?.startsAt || new Date().toISOString())}`);
-      }
-    });
-  }, [navigate]);
+  const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
+  const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
 
-  const insights = useMemo(() => {
-    const counts = visibleDays.map((day) => ({
-      date: day,
-      count: items.filter((item) => isSameDay(parseISO(item.startsAt), day)).length,
-      posts: items.filter((item) => item.type === 'scheduled_post' && isSameDay(parseISO(item.startsAt), day)).length,
-    }));
-
-    const busyDay = counts.sort((a, b) => b.count - a.count)[0];
-    const deadZones = visibleDays
-      .filter((day) => items.filter((item) => isSameDay(parseISO(item.startsAt), day)).length === 0)
-      .map((day) => format(day, 'EEE'));
-    const conflicts = counts.filter((day) => day.count >= 4).length;
-
-    return {
-      busyDay: busyDay?.count ? `${format(busyDay.date, 'EEEE')} (${busyDay.count} items)` : 'No busy days yet',
-      contentDensity: counts.reduce((sum, day) => sum + day.posts, 0),
-      deadZones: deadZones.length ? deadZones.join(', ') : 'No dead zones',
-      conflicts,
-      opportunities: BEST_TIMES.filter((slot) =>
-        !items.some((item) => {
-          const start = parseISO(item.startsAt);
-          return start.getDay() === slot.weekday && start.getHours() === slot.hour;
-        })
-      ).length,
-    };
-  }, [items, visibleDays]);
-
-  const itemsForDayAndHour = (day: Date, hour: number) =>
-    items.filter((item) => {
-      const start = parseISO(item.startsAt);
-      return isSameDay(start, day) && start.getHours() === hour;
-    });
-
-  const bestTimeForDayHour = (day: Date, hour: number) =>
-    BEST_TIMES.find((slot) => slot.weekday === day.getDay() && slot.hour === hour);
-
-  const createFromSlot = (day: Date, hour: number) => {
-    const slot = new Date(day);
-    slot.setHours(hour, 0, 0, 0);
-    setDraftDate(slot.toISOString());
-    setDraftType(null);
-    setDraftTitle('');
-    setEditingItem(null);
-    setModalOpen(true);
+  const nextMonth = () => {
+    if (view === 'month') {
+      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+    } else if (view === 'week') {
+      const nextWeek = new Date(currentDate);
+      nextWeek.setDate(currentDate.getDate() + 7);
+      setCurrentDate(nextWeek);
+    } else {
+      const nextDay = new Date(currentDate);
+      nextDay.setDate(currentDate.getDate() + 1);
+      setCurrentDate(nextDay);
+    }
   };
 
-  const saveDraft = async () => {
-    if (!draftType || !draftTitle.trim()) return;
+  const prevMonth = () => {
+    if (view === 'month') {
+      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+    } else if (view === 'week') {
+      const prevWeek = new Date(currentDate);
+      prevWeek.setDate(currentDate.getDate() - 7);
+      setCurrentDate(prevWeek);
+    } else {
+      const prevDay = new Date(currentDate);
+      prevDay.setDate(currentDate.getDate() - 1);
+      setCurrentDate(prevDay);
+    }
+  };
 
-    if (draftType === 'scheduled_post') {
-      navigate(`/content?scheduledAt=${encodeURIComponent(draftDate)}&title=${encodeURIComponent(draftTitle)}`);
-      setModalOpen(false);
+  const handleDragStart = (e: React.DragEvent, event: Event) => {
+    setDraggedEvent(event);
+    e.dataTransfer.setData('eventId', event.id);
+    e.dataTransfer.setData('eventType', event.type);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetDate: string) => {
+    e.preventDefault();
+    if (!draggedEvent) return;
+
+    const eventId = draggedEvent.id;
+    const eventType = draggedEvent.type;
+
+    try {
+      let table = '';
+      let dateField = 'date';
+
+      switch (eventType) {
+        case 'release': table = 'releases'; dateField = 'release_date'; break;
+        case 'post': table = 'content_items'; dateField = 'scheduled_date'; break;
+        case 'show': table = 'shows'; break;
+        case 'meeting': table = 'meetings'; break;
+        case 'todo': table = 'todos'; dateField = 'due_date'; break;
+        case 'goal': table = 'goals'; dateField = 'deadline'; break;
+      }
+
+      const updateData = { [dateField]: targetDate };
+      const { error } = await supabase.from(table).update(updateData).eq('id', eventId);
+      
+      if (error) throw error;
+      
+      fetchEvents();
+    } catch (err: any) {
+      console.error('Failed to move event:', err);
+      alert('Failed to move event: ' + err.message);
+    } finally {
+      setDraggedEvent(null);
+    }
+  };
+
+  const handleSyncSoundCloud = async () => {
+    if (!scToken) {
+      scLogin();
       return;
     }
 
-    if (draftType === 'task') {
-      const existingTask = editingItem?.type === 'task' ? taskRows.find((task) => task.id === editingItem.id) : null;
-      await saveTask({
-        ...(existingTask || {}),
-        id: editingItem?.type === 'task' ? editingItem.id : undefined,
-        title: draftTitle,
-        due_date: draftDate,
-        status: existingTask?.status || 'todo',
-        priority: existingTask?.priority || 'medium',
-      });
-    }
+    setIsSyncing(true);
+    try {
+      const tracks = await scFetchTracks();
+      if (tracks && tracks.length > 0) {
+        let addedCount = 0;
+        for (const track of tracks) {
+          // Check if release already exists by title
+          const { data: existing } = await supabase
+            .from('releases')
+            .select('id')
+            .eq('title', track.title)
+            .maybeSingle();
 
-    if (draftType === 'goal') {
-      const existingGoal = editingItem?.type === 'goal' ? goals.find((goal) => goal.id === editingItem.id) : null;
-      await saveGoal({
-        ...(existingGoal || {}),
-        id: editingItem?.type === 'goal' ? editingItem.id : undefined,
-        title: draftTitle,
-        tracking_mode: 'manual',
-        goal_type: 'milestone',
-        end_date: draftDate,
-      });
-    }
-
-    if (draftType === 'custom_event') {
-      const date = new Date(draftDate);
-      if (editingItem?.type === 'custom_event') {
-        await supabase
-          .from('meetings')
-          .update({
-            title: draftTitle,
-            date: format(date, 'yyyy-MM-dd'),
-            time: format(date, 'HH:mm'),
-          })
-          .eq('id', editingItem.id);
-      } else {
-        await supabase.from('meetings').insert([
-          {
-            title: draftTitle,
-            date: format(date, 'yyyy-MM-dd'),
-            time: format(date, 'HH:mm'),
-            notes: '',
-          },
-        ]);
+          if (!existing) {
+            const { error } = await supabase.from('releases').insert([{
+              title: track.title,
+              status: 'released',
+              release_date: track.created_at ? track.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+              soundcloud_url: track.permalink_url,
+              assets: { 
+                cover_art_url: track.artwork_url || `https://picsum.photos/seed/${track.title}/400/400`,
+                distribution: {
+                  soundcloud_url: track.permalink_url,
+                  release_date: track.created_at ? track.created_at.split('T')[0] : new Date().toISOString().split('T')[0]
+                }
+              },
+              performance: { 
+                streams: { spotify: 0, apple: 0, soundcloud: track.playback_count || 0, youtube: 0 },
+                engagement: { likes: track.favoritings_count || 0, saves: 0, reposts: track.reposts_count || 0 }
+              }
+            }]);
+            if (!error) addedCount++;
+          }
+        }
+        await fetchEvents();
+        alert(`Synced SoundCloud: Added ${addedCount} new releases to your calendar.`);
       }
+    } catch (err) {
+      console.error('Failed to sync SoundCloud:', err);
+      alert('Failed to sync SoundCloud. Please try again.');
+    } finally {
+      setIsSyncing(false);
     }
-
-    setModalOpen(false);
-    setEditingItem(null);
-    await load();
   };
 
-  const handleAssistantSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!assistantInput.trim()) return;
-    const parsed = parseAssistantIntent(assistantInput, 'calendar');
-    const first = parsed.actions[0];
-    if (first?.type === 'create_calendar_event') {
-      setDraftType('custom_event');
-      setDraftDate(first.payload?.startsAt || new Date().toISOString());
-      setDraftTitle(first.payload?.title || assistantInput);
-      setModalOpen(true);
-    } else if (first?.type === 'open_content_scheduler') {
-      navigate(`/content?scheduledAt=${encodeURIComponent(first.payload?.startsAt || new Date().toISOString())}&title=${encodeURIComponent(assistantInput)}`);
+  const handleSyncSpotify = async () => {
+    if (isSpAuthed === null) {
+      alert('Spotify authentication is still loading. Please wait a moment.');
+      return;
     }
-    setAssistantInput('');
+
+    if (!isSpAuthed) {
+      spLogin();
+      return;
+    }
+
+    if (!ARTIST_INFO.spotify_ids || ARTIST_INFO.spotify_ids.length === 0) {
+      alert('Spotify Artist IDs not configured in constants.ts');
+      return;
+    }
+
+    setIsSpotifySyncing(true);
+    try {
+      let totalAdded = 0;
+      let totalUpdated = 0;
+
+      for (const spotifyId of ARTIST_INFO.spotify_ids) {
+        const tracks = await spFetchTracks(spotifyId.trim());
+        if (tracks && tracks.length > 0) {
+          for (const track of tracks) {
+            // Check if release already exists by title
+            const { data: existing } = await supabase
+              .from('releases')
+              .select('id, distribution, performance, production')
+              .eq('title', track.name)
+              .maybeSingle();
+
+            const spotifyData = {
+              track_id: track.id,
+              audio_features: track.audio_features
+            };
+
+            if (!existing) {
+              const { error } = await supabase.from('releases').insert([{
+                title: track.name,
+                status: 'released',
+                release_date: track.album?.release_date,
+                assets: { 
+                  cover_art_url: track.album?.images?.[0]?.url || `https://picsum.photos/seed/${track.name}/400/400`,
+                  distribution: {
+                    release_date: track.album?.release_date,
+                    spotify_url: track.external_urls?.spotify
+                  }
+                },
+                production: {
+                  bpm: Math.round(track.audio_features?.tempo || 0),
+                  key: track.audio_features?.key?.toString()
+                },
+                performance: { 
+                  streams: { spotify: track.popularity || 0, apple: 0, soundcloud: 0, youtube: 0 },
+                  engagement: { likes: 0, saves: 0, reposts: 0 }
+                },
+                spotify_data: spotifyData
+              }]);
+              if (!error) totalAdded++;
+            } else {
+              // Update existing release with Spotify data
+              await supabase.from('releases').update({
+                distribution: {
+                  ...existing.distribution,
+                  spotify_url: track.external_urls?.spotify
+                },
+                performance: {
+                  ...existing.performance,
+                  streams: {
+                    ...existing.performance?.streams,
+                    spotify: track.popularity || 0
+                  }
+                },
+                spotify_data: spotifyData,
+                production: {
+                  ...existing.production,
+                  bpm: existing.production?.bpm || Math.round(track.audio_features?.tempo || 0),
+                  key: existing.production?.key || track.audio_features?.key?.toString()
+                }
+              }).eq('id', existing.id);
+              totalUpdated++;
+            }
+          }
+        }
+      }
+      await fetchEvents();
+      alert(`Synced Spotify: Added ${totalAdded} new releases and updated ${totalUpdated} existing ones across ${ARTIST_INFO.spotify_ids.length} profiles.`);
+    } catch (err: any) {
+      console.error('Failed to sync Spotify:', err);
+      alert('Failed to sync Spotify: ' + err.message);
+    } finally {
+      setIsSpotifySyncing(false);
+    }
   };
+
+  const monthName = currentDate.toLocaleString('default', { month: 'long' });
+  const year = currentDate.getFullYear();
+
+  const getWeekDays = () => {
+    const start = new Date(currentDate);
+    start.setDate(currentDate.getDate() - currentDate.getDay());
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return d;
+    });
+  };
+
+  const filteredEvents = selectedTrackId === 'all'
+    ? events
+    : events.filter(e => e.releaseId === selectedTrackId);
+
+  const getEventsForDate = (date: Date) => {
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    return filteredEvents.filter(e => e.date === dateStr);
+  };
+
+  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const padding = Array.from({ length: firstDayOfMonth }, (_, i) => null);
+
+  const getEventsForDay = (day: number) => {
+    const dateStr = `${year}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return filteredEvents.filter(e => e.date === dateStr);
+  };
+
+  const handleAddEvent = (day?: number, type?: 'release' | 'post' | 'show' | 'meeting' | 'todo' | 'goal') => {
+    if (day) {
+      const dateStr = `${year}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      setSelectedDate(dateStr);
+    }
+    setModalType(type);
+    setIsModalOpen(true);
+  };
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] text-center">
+        <p className="text-red-500 font-bold mb-4">Error loading calendar</p>
+        <p className="text-slate-500 text-sm max-w-md">{error}</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-8 pb-20">
-      <header className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-text-tertiary">Operational planner</p>
-          <h1 className="mt-2 text-4xl font-bold text-text-primary">Calendar</h1>
-          <p className="mt-2 max-w-3xl text-text-secondary">
-            Blank slots are clickable, tasks render directly in the grid, scheduled content shows beside custom events, and best posting times stay visible without clutter.
-          </p>
+    <div className="space-y-10">
+      <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+        <div className="text-center lg:text-left">
+          <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900">{monthName} {year}</h2>
+          <p className="text-slate-500 mt-2">Manage your releases, content, and career schedule.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="inline-flex rounded-full border border-border bg-white p-1 shadow-sm">
-            {(['week', 'day'] as const).map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setView(option)}
-                className={`rounded-full px-4 py-2 text-sm font-semibold ${view === option ? 'bg-slate-950 text-white' : 'text-text-secondary'}`}
+        <div className="flex flex-wrap justify-center lg:justify-end items-center gap-3">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl">
+              <Filter className="w-3.5 h-3.5 text-slate-500" />
+              <select 
+                value={selectedTrackId}
+                onChange={(e) => setSelectedTrackId(e.target.value)}
+                className="bg-transparent text-[10px] md:text-xs font-bold text-slate-600 focus:outline-none cursor-pointer max-w-[100px] md:max-w-none"
               >
-                {option}
+                <option value="all">All Tracks</option>
+                {releases.map(release => (
+                  <option key={release.id} value={release.id}>{release.title}</option>
+                ))}
+              </select>
+            </div>
+            {selectedTrackId !== 'all' && (
+              <button 
+                onClick={() => setSelectedTrackId('all')}
+                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                title="Clear filter"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <button 
+            onClick={() => {
+              setCurrentDate(new Date());
+              const d = new Date();
+              setSelectedDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+            }}
+            className="px-3 md:px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] md:text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all"
+          >
+            Today
+          </button>
+          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+            {(['month', 'week', 'day'] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={cn(
+                  "px-3 md:px-4 py-1.5 rounded-lg text-[10px] md:text-xs font-bold transition-all uppercase tracking-widest",
+                  view === v ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                )}
+              >
+                {v}
               </button>
             ))}
           </div>
-          <button type="button" onClick={() => setCurrentDate(addDays(currentDate, view === 'week' ? -7 : -1))} className="btn-secondary">
-            <ChevronLeft className="h-4 w-4" />
+          <button 
+            onClick={handleSyncSoundCloud}
+            disabled={isSyncing || isSpotifySyncing}
+            className="px-3 md:px-4 py-2 bg-orange-50 border border-orange-100 rounded-xl text-[10px] md:text-xs font-bold text-orange-600 hover:bg-orange-100 transition-all flex items-center gap-2"
+          >
+            {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Repeat className="w-4 h-4" />}
+            {scToken ? 'SC Sync' : 'SC Connect'}
           </button>
-          <button type="button" onClick={() => setCurrentDate(addDays(currentDate, view === 'week' ? 7 : 1))} className="btn-secondary">
-            <ChevronRight className="h-4 w-4" />
+          <button 
+            onClick={handleSyncSpotify}
+            disabled={isSpotifySyncing || isSyncing}
+            className="px-3 md:px-4 py-2 bg-emerald-50 border border-emerald-100 rounded-xl text-[10px] md:text-xs font-bold text-emerald-600 hover:bg-emerald-100 transition-all flex items-center gap-2"
+          >
+            {isSpotifySyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Repeat className="w-4 h-4" />}
+            {isSpAuthed ? 'Spotify Sync' : 'Spotify Connect'}
+          </button>
+          <button className="btn-primary py-2 px-3 md:px-4 text-[10px] md:text-xs" onClick={() => handleAddEvent()}>
+            <Plus className="w-4 h-4" />
+            Add Event
           </button>
         </div>
       </header>
 
-      <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <div className="overflow-hidden rounded-[2rem] border border-border bg-white shadow-sm">
-          <div className="grid border-b border-border" style={{ gridTemplateColumns: `90px repeat(${visibleDays.length}, minmax(0, 1fr))` }}>
-            <div className="border-r border-border px-4 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">Time</div>
-            {visibleDays.map((day) => (
-              <div key={day.toISOString()} className="border-r border-border px-4 py-4 last:border-r-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">{format(day, 'EEE')}</p>
-                <p className="mt-1 text-lg font-semibold text-text-primary">{format(day, 'MMM d')}</p>
+      {loading ? (
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          <div className="lg:col-span-3 glass-card overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <h3 className="text-xl font-bold text-slate-900">
+                {view === 'month' ? `${monthName} ${year}` : 
+                 view === 'week' ? `Week of ${getWeekDays()[0].toLocaleDateString()}` :
+                 currentDate.toLocaleDateString()}
+              </h3>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => {
+                    const today = new Date();
+                    setCurrentDate(today);
+                  }}
+                  className="px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-white rounded-lg transition-all border border-slate-200"
+                >
+                  Today
+                </button>
+                <button onClick={prevMonth} className="p-2 hover:bg-white rounded-lg transition-all border border-transparent hover:border-slate-200">
+                  <ChevronLeft className="w-5 h-5 text-slate-600" />
+                </button>
+                <button onClick={nextMonth} className="p-2 hover:bg-white rounded-lg transition-all border border-transparent hover:border-slate-200">
+                  <ChevronRight className="w-5 h-5 text-slate-600" />
+                </button>
               </div>
-            ))}
-          </div>
+            </div>
 
-          {loading ? (
-            <div className="p-6 text-sm text-text-secondary">Loading calendar...</div>
-          ) : (
-            <div>
-              {HOURS.map((hour) => (
-                <div key={hour} className="grid min-h-20 border-b border-border last:border-b-0" style={{ gridTemplateColumns: `90px repeat(${visibleDays.length}, minmax(0, 1fr))` }}>
-                  <div className="border-r border-border px-4 py-4 text-sm font-medium text-text-secondary">{format(new Date().setHours(hour, 0, 0, 0), 'h a')}</div>
-                  {visibleDays.map((day) => {
-                    const slotItems = itemsForDayAndHour(day, hour);
-                    const bestTime = bestTimeForDayHour(day, hour);
+            {view === 'month' && (
+              <>
+                <div className="grid grid-cols-7 border-b border-slate-100">
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                    <div key={day} className="py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      {day}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-7">
+                  {padding.map((_, i) => (
+                    <div key={`pad-${i}`} className="h-32 border-b border-r border-slate-50 bg-slate-50/30" />
+                  ))}
+                  {days.map(day => {
+                    const dayEvents = getEventsForDay(day);
+                    const dateStr = `${year}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    const isToday = new Date().getDate() === day && new Date().getMonth() === currentDate.getMonth() && new Date().getFullYear() === currentDate.getFullYear();
+                    
                     return (
-                      <button
-                        key={`${day.toISOString()}-${hour}`}
-                        type="button"
-                        onClick={() => createFromSlot(day, hour)}
-                        className="relative border-r border-border px-2 py-2 text-left last:border-r-0 hover:bg-slate-50"
-                      >
-                        {bestTime && (
-                          <div className="mb-2 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-emerald-700">
-                            {bestTime.label}
-                          </div>
+                      <div 
+                        key={day} 
+                        onClick={() => setSelectedDate(dateStr)}
+                        onDoubleClick={() => handleAddEvent(day)}
+                        onDragOver={handleDragOver}
+                        onDrop={(e) => handleDrop(e, dateStr)}
+                        className={cn(
+                          "h-32 border-b border-r border-slate-50 p-2 transition-colors group relative cursor-pointer",
+                          selectedDate === dateStr ? "bg-blue-50/30" : "hover:bg-slate-50/50"
                         )}
-                        <div className="space-y-2">
-                          {slotItems.map((item) => (
-                            <button
-                              key={item.id}
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setEditingItem(item);
-                                setDraftType(item.type);
-                                setDraftTitle(item.title);
-                                setDraftDate(item.startsAt);
-                                setModalOpen(true);
+                      >
+                        <span className={cn(
+                          "text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full transition-colors",
+                          isToday ? "bg-blue-600 text-white shadow-lg shadow-blue-200" : "text-slate-400 group-hover:text-slate-900"
+                        )}>
+                          {day}
+                        </span>
+                        <div className="mt-2 space-y-1">
+                          {dayEvents.map(event => (
+                            <div 
+                              key={event.id} 
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, event)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedEvent(event);
+                                setIsDetailModalOpen(true);
                               }}
-                              className={`rounded-2xl px-3 py-2 text-xs font-semibold ${item.type === 'scheduled_post' ? 'bg-blue-50 text-blue-700' : item.type === 'task' ? 'bg-amber-50 text-amber-800' : item.type === 'goal' ? 'bg-purple-50 text-purple-700' : 'bg-slate-100 text-slate-700'}`}
+                              className={cn(
+                                "text-[10px] p-1 rounded-md font-bold truncate border flex items-center gap-1 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.02] hover:shadow-sm",
+                                (event.type === 'release' || event.isFullDay) && !event.platform?.includes('SoundCloud') && "bg-blue-600 text-white border-blue-700 shadow-md py-1.5 px-2 -mx-1",
+                                (event.type === 'release' || event.isFullDay) && event.platform?.includes('SoundCloud') && "bg-orange-600 text-white border-orange-700 shadow-md py-1.5 px-2 -mx-1",
+                                !event.isFullDay && event.type === 'post' && !event.publishStatus && "bg-purple-50 text-purple-600 border-purple-100",
+                                !event.isFullDay && event.type === 'post' && event.publishStatus === 'draft' && "bg-slate-50 text-slate-600 border-slate-200",
+                                !event.isFullDay && event.type === 'post' && event.publishStatus === 'scheduled' && "bg-blue-50 text-blue-600 border-blue-200",
+                                !event.isFullDay && event.type === 'post' && event.publishStatus === 'published' && "bg-emerald-50 text-emerald-600 border-emerald-200",
+                                !event.isFullDay && event.type === 'post' && event.publishStatus === 'failed' && "bg-red-50 text-red-600 border-red-200",
+                                !event.isFullDay && event.type === 'post' && event.publishStatus === 'cancelled' && "bg-amber-50 text-amber-600 border-amber-200",
+                                !event.isFullDay && event.type === 'show' && "bg-rose-50 text-rose-600 border-rose-100",
+                                !event.isFullDay && event.type === 'meeting' && "bg-slate-100 text-slate-600 border-slate-200",
+                                !event.isFullDay && event.type === 'todo' && "bg-emerald-50 text-emerald-600 border-emerald-100",
+                                !event.isFullDay && event.type === 'goal' && "bg-amber-50 text-amber-600 border-amber-100"
+                              )}
                             >
-                              <div>{item.title}</div>
-                              <div className="mt-1 text-[10px] uppercase tracking-[0.14em] opacity-80">{item.type === 'scheduled_post' ? item.platform || 'Post' : item.type.replace('_', ' ')}</div>
-                            </button>
+                              {event.type === 'release' || event.isFullDay ? (
+                                <div className="flex items-center gap-2 w-full">
+                                  {event.type === 'release' ? <Music className="w-3 h-3 shrink-0" /> : <Zap className="w-3 h-3 shrink-0" />}
+                                  <span className="truncate uppercase tracking-wider">{event.type === 'release' ? 'RELEASE' : event.type}: {event.title}</span>
+                                  {event.isRecurring && <Repeat className="w-2.5 h-2.5 ml-auto shrink-0 opacity-70" />}
+                                </div>
+                              ) : (
+                                <>
+                                  {event.type === 'post' && event.publishStatus === 'failed' && <div className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0 animate-pulse" />}
+                                  {event.type === 'post' && event.publishStatus === 'scheduled' && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />}
+                                  {event.type === 'post' && event.publishStatus === 'published' && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />}
+                                  {event.type !== 'post' && event.priority === 'high' && <div className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0 animate-pulse" />}
+                                  {event.type !== 'post' && event.priority === 'medium' && <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 shrink-0" />}
+                                  <span className="truncate">{event.title}</span>
+                                  {event.isRecurring && <Repeat className="w-2.5 h-2.5 ml-auto shrink-0 text-slate-400" />}
+                                  {event.zernioId && <Share2 className="w-2 h-2 text-purple-500 ml-auto shrink-0" />}
+                                </>
+                              )}
+                            </div>
                           ))}
                         </div>
-                      </button>
+                        <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Plus className="w-4 h-4 text-blue-400" />
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              </>
+            )}
 
-        <div className="space-y-6">
-          <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
-            <div className="flex items-center gap-2">
-              <Lightbulb className="h-4 w-4 text-text-tertiary" />
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">Insights</p>
-                <h2 className="mt-1 text-2xl font-bold text-text-primary">Planner signals</h2>
-              </div>
-            </div>
-            <div className="mt-5 grid gap-3">
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-text-tertiary">Busy day</p>
-                <p className="mt-2 font-semibold text-text-primary">{insights.busyDay}</p>
-              </div>
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-text-tertiary">Content density</p>
-                <p className="mt-2 font-semibold text-text-primary">{insights.contentDensity} scheduled posts</p>
-              </div>
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-text-tertiary">Dead zones</p>
-                <p className="mt-2 font-semibold text-text-primary">{insights.deadZones}</p>
-              </div>
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-text-tertiary">Conflicts</p>
-                <p className="mt-2 font-semibold text-text-primary">{insights.conflicts}</p>
-              </div>
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-text-tertiary">Posting opportunities</p>
-                <p className="mt-2 font-semibold text-text-primary">{insights.opportunities}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-[2rem] border border-border bg-white p-6 shadow-sm">
-            <div className="flex items-center gap-2">
-              <Bot className="h-4 w-4 text-text-tertiary" />
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">AI event assistant</p>
-                <h2 className="mt-1 text-2xl font-bold text-text-primary">Structured parser</h2>
-              </div>
-            </div>
-            <form onSubmit={handleAssistantSubmit} className="mt-5 space-y-3">
-              <textarea
-                value={assistantInput}
-                onChange={(event) => setAssistantInput(event.target.value)}
-                placeholder='Try "book studio Friday 2pm" or "schedule teaser reel next Wednesday at 6".'
-                className="min-h-28 w-full rounded-2xl border border-border bg-slate-50 px-4 py-3 text-sm text-text-primary outline-none"
-              />
-              <button type="submit" className="btn-primary">
-                <Sparkles className="h-4 w-4" />
-                Parse intent
-              </button>
-            </form>
-          </div>
-        </div>
-      </section>
-
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-xl rounded-[2rem] border border-border bg-white p-6 shadow-2xl">
-            <div className="mb-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">Create from slot</p>
-              <h3 className="mt-2 text-2xl font-bold text-text-primary">Choose event type</h3>
-              <p className="mt-2 text-sm text-text-secondary">{format(parseISO(draftDate), 'EEEE, MMM d • h:mm a')}</p>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              {[
-                { type: 'custom_event', label: 'Custom event' },
-                { type: 'task', label: 'Task' },
-                { type: 'scheduled_post', label: 'Scheduled post' },
-                { type: 'goal', label: 'Goal milestone' },
-              ].map((option) => (
-                <button
-                  key={option.type}
-                  type="button"
-                  onClick={() => setDraftType(option.type as PlannerItemType)}
-                  className={`rounded-2xl border px-4 py-4 text-left ${draftType === option.type ? 'border-slate-950 bg-slate-950 text-white' : 'border-border bg-slate-50 text-text-primary'}`}
-                >
-                  <span className="font-semibold">{option.label}</span>
-                </button>
-              ))}
-            </div>
-
-            {draftType && (
-              <div className="mt-5 space-y-4">
-                <input className="input-base" placeholder="Title" value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} />
-                <input type="datetime-local" className="input-base" value={toLocalInputValue(draftDate)} onChange={(event) => setDraftDate(new Date(event.target.value).toISOString())} />
+            {view === 'week' && (
+              <div className="grid grid-cols-7 min-h-[400px]">
+                {getWeekDays().map((date, i) => {
+                  const dayEvents = getEventsForDate(date);
+                  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                  const isToday = date.toDateString() === new Date().toDateString();
+                  
+                  return (
+                    <div 
+                      key={i} 
+                      onClick={() => setSelectedDate(dateStr)}
+                      onDoubleClick={() => handleAddEvent(undefined, undefined)}
+                      onDragOver={handleDragOver}
+                      onDrop={(e) => handleDrop(e, dateStr)}
+                      className={cn(
+                        "border-r border-slate-100 p-4 transition-colors group cursor-pointer",
+                        selectedDate === dateStr ? "bg-blue-50/30" : "hover:bg-slate-50/50"
+                      )}
+                    >
+                      <div className="text-center mb-4">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                          {date.toLocaleDateString('default', { weekday: 'short' })}
+                        </p>
+                        <span className={cn(
+                          "text-lg font-bold w-10 h-10 flex items-center justify-center rounded-full mx-auto transition-colors",
+                          isToday ? "bg-blue-600 text-white shadow-lg shadow-blue-200" : "text-slate-900 group-hover:text-blue-600"
+                        )}>
+                          {date.getDate()}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {dayEvents.map(event => (
+                          <div 
+                            key={event.id} 
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, event)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedEvent(event);
+                              setIsDetailModalOpen(true);
+                            }}
+                            className={cn(
+                              "text-[10px] p-2 rounded-xl font-bold border flex flex-col gap-1 cursor-grab active:cursor-grabbing shadow-sm transition-all hover:scale-[1.02] hover:shadow-md",
+                              (event.type === 'release' || event.isFullDay) && !event.platform?.includes('SoundCloud') && "bg-blue-600 text-white border-blue-700 p-3 -mx-1",
+                              (event.type === 'release' || event.isFullDay) && event.platform?.includes('SoundCloud') && "bg-orange-600 text-white border-orange-700 p-3 -mx-1",
+                              !event.isFullDay && event.type === 'post' && !event.publishStatus && "bg-purple-50 text-purple-600 border-purple-100",
+                              !event.isFullDay && event.type === 'post' && event.publishStatus === 'draft' && "bg-slate-50 text-slate-600 border-slate-200",
+                              !event.isFullDay && event.type === 'post' && event.publishStatus === 'scheduled' && "bg-blue-50 text-blue-600 border-blue-200",
+                              !event.isFullDay && event.type === 'post' && event.publishStatus === 'published' && "bg-emerald-50 text-emerald-600 border-emerald-200",
+                              !event.isFullDay && event.type === 'post' && event.publishStatus === 'failed' && "bg-red-50 text-red-600 border-red-200",
+                              !event.isFullDay && event.type === 'post' && event.publishStatus === 'cancelled' && "bg-amber-50 text-amber-600 border-amber-200",
+                              !event.isFullDay && event.type === 'show' && "bg-rose-50 text-rose-600 border-rose-100",
+                              !event.isFullDay && event.type === 'meeting' && "bg-slate-100 text-slate-600 border-slate-200",
+                              !event.isFullDay && event.type === 'todo' && "bg-emerald-50 text-emerald-600 border-emerald-100",
+                              !event.isFullDay && event.type === 'goal' && "bg-amber-50 text-amber-600 border-amber-100"
+                            )}
+                          >
+                            {event.type === 'release' || event.isFullDay ? (
+                              <div className="flex flex-col gap-2">
+                                <div className="flex items-center gap-2">
+                                  {event.type === 'release' ? <Music className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
+                                  <span className="text-xs uppercase tracking-widest">{event.type === 'release' ? 'RELEASE DAY' : `${event.type.toUpperCase()} DAY`}</span>
+                                  {event.isRecurring && <Repeat className="w-3.5 h-3.5 ml-auto opacity-70" />}
+                                </div>
+                                <p className="text-sm leading-tight">{event.title}</p>
+                                {event.time && !event.isFullDay && <p className="text-[10px] opacity-80">{event.time}</p>}
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-1">
+                                  {event.priority === 'high' && <div className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />}
+                                  <span className="truncate">{event.title}</span>
+                                  {event.isRecurring && <Repeat className="w-2.5 h-2.5 ml-auto text-slate-400" />}
+                                  {event.zernioId && <Share2 className="w-2 h-2 text-purple-500 ml-auto shrink-0" />}
+                                </div>
+                                {event.platform && <span className="text-[8px] opacity-60 uppercase">{event.platform}</span>}
+                                {event.time && <span className="text-[8px] opacity-60">{event.time}</span>}
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
-            <div className="mt-6 flex items-center justify-end gap-3">
-              <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>
-                Cancel
-              </button>
-              <button type="button" className="btn-primary" disabled={!draftType || !draftTitle.trim()} onClick={saveDraft}>
-                <CalendarPlus className="h-4 w-4" />
-                Continue
-              </button>
-            </div>
+            {view === 'day' && (
+              <div className="p-8 min-h-[400px]">
+                <div className="flex items-center gap-4 mb-8">
+                  <span className="text-5xl font-black text-slate-900">{currentDate.getDate()}</span>
+                  <div>
+                    <p className="text-xl font-bold text-slate-900">{currentDate.toLocaleDateString('default', { weekday: 'long' })}</p>
+                    <p className="text-slate-500">{monthName} {year}</p>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  {getEventsForDate(currentDate)
+                    .sort((a, b) => (a.time || '00:00').localeCompare(b.time || '00:00'))
+                    .map(event => (
+                    <div 
+                      key={event.id} 
+                      className={cn(
+                        "p-4 rounded-2xl border flex items-center justify-between group",
+                        event.type === 'release' && "bg-blue-50 border-blue-100",
+                        event.type === 'post' && "bg-purple-50 border-purple-100",
+                        event.type === 'show' && "bg-rose-50 border-rose-100",
+                        event.type === 'meeting' && "bg-slate-50 border-slate-200",
+                        event.type === 'todo' && "bg-emerald-50 border-emerald-100",
+                        event.type === 'goal' && "bg-amber-50 border-amber-100"
+                      )}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="text-xs font-bold text-slate-400 w-12 text-right">
+                          {event.time || '--:--'}
+                        </div>
+                        <div className={cn(
+                          "w-12 h-12 rounded-xl flex items-center justify-center shadow-sm",
+                          event.type === 'release' && !event.platform?.includes('SoundCloud') && "bg-blue-600 text-white",
+                          event.type === 'release' && event.platform?.includes('SoundCloud') && "bg-orange-600 text-white",
+                          event.type === 'post' && "bg-purple-600 text-white",
+                          event.type === 'show' && "bg-rose-600 text-white",
+                          event.type === 'meeting' && "bg-slate-600 text-white",
+                          event.type === 'todo' && "bg-emerald-600 text-white",
+                          event.type === 'goal' && "bg-amber-600 text-white"
+                        )}>
+                          {event.type === 'release' && <Music className="w-6 h-6" />}
+                          {event.type === 'post' && <Video className="w-6 h-6" />}
+                          {event.type === 'show' && <CalendarIcon className="w-6 h-6" />}
+                          {event.type === 'meeting' && <Clock className="w-6 h-6" />}
+                          {event.type === 'todo' && <CheckSquare className="w-6 h-6" />}
+                          {event.type === 'goal' && <Target className="w-6 h-6" />}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-slate-900">{event.title}</p>
+                            {event.zernioId && (
+                              <span className="flex items-center gap-1 px-1.5 py-0.5 bg-purple-100 text-purple-600 text-[8px] font-bold rounded uppercase tracking-widest">
+                                <Share2 className="w-2 h-2" />
+                                Zernio
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 uppercase tracking-widest font-bold">
+                            {event.type} {event.platform ? `• ${event.platform}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                      {event.priority === 'high' && (
+                        <span className="px-3 py-1 bg-red-100 text-red-600 text-[10px] font-black uppercase rounded-full">High Priority</span>
+                      )}
+                    </div>
+                  ))}
+                  {getEventsForDate(currentDate).length === 0 && (
+                    <div className="text-center py-20 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+                      <CalendarIcon className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                      <p className="text-slate-500 font-medium">No events scheduled for today</p>
+                      <button 
+                        onClick={() => {
+                          const d = currentDate;
+                          setSelectedDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+                          setIsModalOpen(true);
+                        }}
+                        className="mt-4 text-blue-600 font-bold text-sm hover:underline"
+                      >
+                        Add something
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-8">
+            <section className="glass-card p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold flex items-center gap-2 text-slate-900">
+                  <CheckSquare className="w-5 h-5 text-emerald-500" />
+                  Daily To-Do
+                </h3>
+                <button 
+                  onClick={() => handleAddEvent(undefined, 'todo')}
+                  className="p-1.5 hover:bg-emerald-50 rounded-lg text-emerald-600 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="space-y-3">
+                {filteredEvents
+                  .filter(e => e.type === 'todo' && e.date === selectedDate)
+                  .map(todo => (
+                    <div 
+                      key={todo.id} 
+                      onClick={() => {
+                        setSelectedEvent(todo);
+                        setIsDetailModalOpen(true);
+                      }}
+                      className="flex items-start gap-3 p-3 bg-white rounded-xl border border-slate-100 group hover:border-emerald-100 transition-all cursor-pointer"
+                    >
+                      <button className="mt-0.5 w-5 h-5 rounded-md border-2 border-slate-200 flex items-center justify-center hover:border-emerald-500 transition-colors">
+                        <div className="w-2.5 h-2.5 rounded-sm bg-emerald-500 opacity-0 group-hover:opacity-20" />
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-slate-900 truncate">{todo.title}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={cn(
+                            "text-[8px] font-black uppercase px-1.5 py-0.5 rounded",
+                            todo.priority === 'high' ? "bg-red-100 text-red-600" :
+                            todo.priority === 'medium' ? "bg-amber-100 text-amber-600" :
+                            "bg-slate-100 text-slate-500"
+                          )}>
+                            {todo.priority || 'medium'}
+                          </span>
+                          {todo.time && <span className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">{todo.time}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                {filteredEvents.filter(e => e.type === 'todo' && e.date === selectedDate).length === 0 && (
+                  <div className="text-center py-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">No tasks for this day</p>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="glass-card p-6">
+              <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-slate-900">
+                <Clock className="w-5 h-5 text-blue-500" />
+                Upcoming
+              </h3>
+              <div className="space-y-4">
+                {filteredEvents
+                  .filter(e => new Date(e.date) >= new Date())
+                  .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                  .slice(0, 6)
+                  .map(event => (
+                  <div 
+                    key={event.id} 
+                    onClick={() => {
+                      setSelectedEvent(event);
+                      setIsDetailModalOpen(true);
+                    }}
+                    className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 hover:bg-white transition-all group"
+                  >
+                    <div className={cn(
+                      "w-10 h-10 rounded-lg flex items-center justify-center shadow-sm transition-transform group-hover:scale-110",
+                      event.type === 'release' && "bg-blue-100 text-blue-600",
+                      event.type === 'post' && "bg-purple-100 text-purple-600",
+                      event.type === 'show' && "bg-rose-100 text-rose-600",
+                      event.type === 'meeting' && "bg-slate-200 text-slate-600",
+                      event.type === 'todo' && "bg-emerald-100 text-emerald-600",
+                      event.type === 'goal' && "bg-amber-100 text-amber-600"
+                    )}>
+                      {event.type === 'release' && <Music className="w-5 h-5" />}
+                      {event.type === 'post' && <Video className="w-5 h-5" />}
+                      {event.type === 'show' && <CalendarIcon className="w-5 h-5" />}
+                      {event.type === 'meeting' && <Clock className="w-5 h-5" />}
+                      {event.type === 'todo' && <CheckSquare className="w-5 h-5" />}
+                      {event.type === 'goal' && <Target className="w-5 h-5" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-bold text-slate-900 truncate">{event.title}</p>
+                        {event.priority === 'high' && (
+                          <span className="px-1 py-0.5 bg-red-100 text-red-600 text-[8px] font-black uppercase rounded leading-none">High</span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{event.date}</p>
+                    </div>
+                  </div>
+                ))}
+                {filteredEvents.length === 0 && (
+                  <p className="text-xs text-slate-400 text-center py-4">No upcoming events.</p>
+                )}
+              </div>
+            </section>
+
+            <section className="glass-card p-6 bg-blue-50 border-blue-100">
+              <h3 className="text-lg font-bold mb-2 text-slate-900">Post Status Legend</h3>
+              <p className="text-xs text-slate-500 mb-4">Color coding for your content posts.</p>
+              <div className="space-y-2">
+                {[
+                  { label: 'Draft', color: 'bg-slate-400' },
+                  { label: 'Scheduled', color: 'bg-blue-500' },
+                  { label: 'Published', color: 'bg-emerald-500' },
+                  { label: 'Failed', color: 'bg-red-500' },
+                  { label: 'Cancelled', color: 'bg-amber-500' },
+                ].map((item, i) => (
+                  <div key={i} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-blue-100 shadow-sm">
+                    <div className={cn("w-2.5 h-2.5 rounded-full shrink-0", item.color)} />
+                    <span className="text-xs font-bold text-slate-700">{item.label}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
           </div>
         </div>
+      )}
+      <CalendarEventModal 
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setModalType(undefined);
+        }}
+        onSave={fetchEvents}
+        initialDate={selectedDate}
+        initialType={modalType}
+      />
+
+      {selectedEvent && (
+        <CalendarEventDetailModal
+          isOpen={isDetailModalOpen}
+          onClose={() => {
+            setIsDetailModalOpen(false);
+            setSelectedEvent(null);
+          }}
+          event={selectedEvent}
+          onDelete={fetchEvents}
+          onUpdate={fetchEvents}
+        />
       )}
     </div>
   );

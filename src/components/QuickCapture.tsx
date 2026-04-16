@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Send, Sparkles, Lightbulb, CheckSquare, UserPlus, StickyNote, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../lib/supabase';
-import { getCurrentAuthUser } from '../lib/auth';
 import { cn } from '../lib/utils';
 
 interface QuickCaptureProps {
@@ -21,7 +20,7 @@ export function QuickCapture({ onSuccess }: QuickCaptureProps) {
 
     setIsSubmitting(true);
     try {
-      const user = await getCurrentAuthUser();
+      const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from('inbox').insert([{
         content,
         category,
