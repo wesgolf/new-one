@@ -99,7 +99,7 @@ export function ReleaseTracker() {
       type: raw.type || assets.type || detectedType,
       production: assets.production || raw.production || { bpm: 0, key: '' },
       assets: {
-        cover_art_url: raw.cover_art_url || assets.cover_art_url || `https://picsum.photos/seed/${raw.title}/400/400`,
+        cover_art_url: raw.cover_art_url || assets.cover_art_url || '/placeholder-cover.svg',
         teaser_clip_urls: assets.teaser_clip_urls || [],
         short_form_exports: assets.short_form_exports || [],
         waveform_video_url: assets.waveform_video_url || ''
@@ -228,7 +228,7 @@ export function ReleaseTracker() {
               release_date: track.created_at ? track.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
               soundcloud_url: track.permalink_url,
               assets: { 
-                cover_art_url: track.artwork_url || `https://picsum.photos/seed/${track.title}/400/400`,
+                cover_art_url: track.artwork_url || '/placeholder-cover.svg',
                 teaser_clip_urls: [],
                 short_form_exports: [],
                 waveform_video_url: '',
@@ -323,7 +323,7 @@ export function ReleaseTracker() {
                 status: 'released',
                 release_date: track.album?.release_date,
                 assets: { 
-                  cover_art_url: track.album?.images?.[0]?.url || `https://picsum.photos/seed/${track.name}/400/400`,
+                  cover_art_url: track.album?.images?.[0]?.url || '/placeholder-cover.svg',
                   teaser_clip_urls: [],
                   short_form_exports: [],
                   waveform_video_url: '',
@@ -629,6 +629,7 @@ export function ReleaseTracker() {
                       alt={release.title} 
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" 
                       referrerPolicy="no-referrer"
+                      onError={(e) => { e.currentTarget.src = '/placeholder-cover.svg'; }}
                     />
                   ) : (
                     <div className="w-full h-full bg-slate-50 flex items-center justify-center">

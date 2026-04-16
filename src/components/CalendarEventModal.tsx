@@ -86,7 +86,7 @@ export function CalendarEventModal({ isOpen, onClose, onSave, initialDate, initi
           }],
           mediaItems: [{
             type: mediaType,
-            url: mediaUrl || 'https://picsum.photos/seed/artist/1080/1350'
+            url: mediaUrl || ''
           }],
           publishAt: `${date}T${time}:00Z`
         };

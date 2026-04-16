@@ -34,6 +34,11 @@ export const AnalyticsDashboard: React.FC = () => {
     try {
       setLoading(true);
       const response = await fetch('/api/analytics/latest');
+      if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
+        // Analytics backend unavailable (static deploy) — proceed without server metrics
+        setLoading(false);
+        return;
+      }
       const data = await response.json();
       setMetrics(data);
 
@@ -77,6 +82,9 @@ export const AnalyticsDashboard: React.FC = () => {
     try {
       setSyncing(true);
       const response = await fetch('/api/analytics/trigger', { method: 'POST' });
+      if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
+        throw new Error('Analytics sync is not available in this environment');
+      }
       const data = await response.json();
       if (data.error) throw new Error(data.error);
       await fetchMetrics();

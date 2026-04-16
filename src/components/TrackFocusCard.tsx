@@ -38,10 +38,11 @@ export function TrackFocusCard({ track, onAction }: { track?: Release | null, on
           <div className="flex flex-col md:flex-row gap-8 items-start">
             <div className="relative shrink-0">
               <img 
-                src={track.assets?.cover_art_url || `https://picsum.photos/seed/${track.title}/400/400`} 
+                src={track.assets?.cover_art_url || '/placeholder-cover.svg'} 
                 alt={track.title} 
                 className="w-32 h-32 rounded-2xl shadow-xl group-hover:scale-105 transition-transform duration-500 object-cover"
                 referrerPolicy="no-referrer"
+                onError={(e) => { e.currentTarget.src = '/placeholder-cover.svg'; }}
               />
               <div className="absolute -bottom-2 -right-2 bg-blue-600 text-white p-2 rounded-xl shadow-lg">
                 <Play className="w-4 h-4 fill-current" />

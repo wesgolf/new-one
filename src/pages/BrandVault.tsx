@@ -65,7 +65,7 @@ export function BrandVault() {
             release_date: track.created_at ? track.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
             soundcloud_url: track.permalink_url,
             assets: { 
-              cover_art_url: track.artwork_url || `https://picsum.photos/seed/${track.title}/400/400`,
+              cover_art_url: track.artwork_url || '/placeholder-cover.svg',
               teaser_clip_urls: [],
               short_form_exports: [],
               waveform_video_url: '',

@@ -84,7 +84,7 @@ export function ReleasePreviewModal({ isOpen, onClose, onEdit, release }: Releas
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 bg-blue-600 rounded-2xl shadow-lg shadow-blue-200 overflow-hidden">
               {release.assets?.cover_art_url ? (
-                <img src={release.assets.cover_art_url} alt={release.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                <img src={release.assets.cover_art_url} alt={release.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.src = '/placeholder-cover.svg'; }} />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
                   <Music className="w-8 h-8 text-white" />

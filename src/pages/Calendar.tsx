@@ -386,7 +386,7 @@ export function Calendar() {
               release_date: track.created_at ? track.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
               soundcloud_url: track.permalink_url,
               assets: { 
-                cover_art_url: track.artwork_url || `https://picsum.photos/seed/${track.title}/400/400`,
+                cover_art_url: track.artwork_url || '/placeholder-cover.svg',
                 distribution: {
                   soundcloud_url: track.permalink_url,
                   release_date: track.created_at ? track.created_at.split('T')[0] : new Date().toISOString().split('T')[0]
@@ -454,7 +454,7 @@ export function Calendar() {
                 status: 'released',
                 release_date: track.album?.release_date,
                 assets: { 
-                  cover_art_url: track.album?.images?.[0]?.url || `https://picsum.photos/seed/${track.name}/400/400`,
+                  cover_art_url: track.album?.images?.[0]?.url || '/placeholder-cover.svg',
                   distribution: {
                     release_date: track.album?.release_date,
                     spotify_url: track.external_urls?.spotify

@@ -39,7 +39,7 @@ export function Sidebar() {
       <div className="p-6 border-t border-zinc-800">
         <div className="flex items-center gap-3 px-2 mb-6">
           <div className="w-10 h-10 rounded-full bg-zinc-800 border border-zinc-700 overflow-hidden">
-            <img src="https://picsum.photos/seed/dj/100/100" alt="Artist" />
+            <img src="/placeholder-cover.svg" alt="Artist" />
           </div>
           <div>
             <p className="text-sm font-bold">WES ROB</p>

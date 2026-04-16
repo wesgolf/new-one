@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { GlobalSearch } from '../components/GlobalSearch';
 import { QuickCapture } from '../components/QuickCapture';
-import { FinanceWidget } from '../components/FinanceWidget';
+
 import { 
   Zap,
   TrendingUp,
@@ -555,8 +555,6 @@ export function CommandCenter() {
               </div>
             </section>
           )}
-
-          <FinanceWidget />
 
           <AlertsPanel 
             alerts={signals}

@@ -71,7 +71,7 @@ export default function GoalsTrackerComponent({ onAction }: GoalsTrackerProps) {
     if (goals.length === 0) return;
     setAnalyzing(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
       
       // Fetch calendar events (shows) for context
       const { data: shows } = await supabase.from('shows').select('*');
