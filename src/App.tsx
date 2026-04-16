@@ -41,6 +41,7 @@ export default function App() {
 
       {/* Public routes */}
       <Route path="/collab" element={<CollabPortal />} />
+      <Route path="/collab/:ideaId" element={<CollabPortal />} />
       <Route path="/hub" element={<PublicHub />} />
       <Route path="/unauthorized" element={<Unauthorized />} />
 

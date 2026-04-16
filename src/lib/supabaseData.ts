@@ -256,6 +256,11 @@ export async function saveIdeaAsset(asset: Partial<IdeaAsset>) {
   return data as IdeaAsset;
 }
 
+export async function deleteIdea(id: string) {
+  const { error } = await supabase.from('ideas').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function fetchGoals(): Promise<GoalRecord[]> {
   try {
     const rows = await safeSelect<any>('goals', 'updated_at', false);
