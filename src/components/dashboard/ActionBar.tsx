@@ -177,11 +177,12 @@ function GenerateReportModal({ onClose }: GenerateReportModalProps) {
 
 interface ActionBarProps {
   onSyncNow: () => void;
+  onAIAssistant?: () => void;
   syncing?: boolean;
   syncSuccess?: boolean;
 }
 
-export function ActionBar({ onSyncNow, syncing, syncSuccess }: ActionBarProps) {
+export function ActionBar({ onSyncNow, onAIAssistant, syncing, syncSuccess }: ActionBarProps) {
   const navigate = useNavigate();
   const [showReportModal, setShowReportModal] = useState(false);
 
@@ -224,7 +225,7 @@ export function ActionBar({ onSyncNow, syncing, syncSuccess }: ActionBarProps) {
           </button>
 
           <button
-            onClick={() => navigate('/coach')}
+            onClick={() => onAIAssistant ? onAIAssistant() : navigate('/coach')}
             className="btn-primary flex items-center gap-2 text-sm"
           >
             <Sparkles className="w-4 h-4" />

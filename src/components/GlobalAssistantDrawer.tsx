@@ -32,11 +32,22 @@ function labelForPath(pathname: string) {
   return 'dashboard';
 }
 
-export function GlobalAssistantDrawer() {
+interface GlobalAssistantDrawerProps {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export function GlobalAssistantDrawer({ open: externalOpen, onOpenChange }: GlobalAssistantDrawerProps = {}) {
   const location = useLocation();
   const navigate = useNavigate();
   const pageContext = labelForPath(location.pathname);
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+
+  const open = externalOpen ?? internalOpen;
+  const setOpen = (value: boolean) => {
+    setInternalOpen(value);
+    onOpenChange?.(value);
+  };
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
