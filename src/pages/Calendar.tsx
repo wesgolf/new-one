@@ -8,7 +8,7 @@ import { fetchGoals, fetchTasks, safeSelect, saveGoal, saveTask } from '../lib/s
 import { supabase } from '../lib/supabase';
 import type { GoalRecord, TaskRecord } from '../types/domain';
 
-type PlannerItemType = 'task' | 'post' | 'goal' | 'custom_event';
+type PlannerItemType = 'task' | 'scheduled_post' | 'goal' | 'custom_event';
 
 interface PlannerItem {
   id: string;
@@ -43,6 +43,7 @@ export function Calendar() {
   const [draftType, setDraftType] = useState<PlannerItemType | null>(null);
   const [draftDate, setDraftDate] = useState(new Date().toISOString());
   const [draftTitle, setDraftTitle] = useState('');
+  const [editingItem, setEditingItem] = useState<PlannerItem | null>(null);
 
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const visibleDays = view === 'week' ? Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)) : [currentDate];
@@ -76,7 +77,7 @@ export function Calendar() {
             id: item.id,
             title: item.title,
             startsAt: item.scheduled_date,
-            type: 'post' as const,
+            type: 'scheduled_post' as const,
             platform: item.platform,
             status: item.status,
           })),
@@ -127,7 +128,7 @@ export function Calendar() {
     const counts = visibleDays.map((day) => ({
       date: day,
       count: items.filter((item) => isSameDay(parseISO(item.startsAt), day)).length,
-      posts: items.filter((item) => item.type === 'post' && isSameDay(parseISO(item.startsAt), day)).length,
+      posts: items.filter((item) => item.type === 'scheduled_post' && isSameDay(parseISO(item.startsAt), day)).length,
     }));
 
     const busyDay = counts.sort((a, b) => b.count - a.count)[0];
@@ -165,6 +166,7 @@ export function Calendar() {
     setDraftDate(slot.toISOString());
     setDraftType(null);
     setDraftTitle('');
+    setEditingItem(null);
     setModalOpen(true);
   };
 
@@ -178,16 +180,22 @@ export function Calendar() {
     }
 
     if (draftType === 'task') {
+      const existingTask = editingItem?.type === 'task' ? taskRows.find((task) => task.id === editingItem.id) : null;
       await saveTask({
+        ...(existingTask || {}),
+        id: editingItem?.type === 'task' ? editingItem.id : undefined,
         title: draftTitle,
         due_date: draftDate,
-        status: 'todo',
-        priority: 'medium',
+        status: existingTask?.status || 'todo',
+        priority: existingTask?.priority || 'medium',
       });
     }
 
     if (draftType === 'goal') {
+      const existingGoal = editingItem?.type === 'goal' ? goals.find((goal) => goal.id === editingItem.id) : null;
       await saveGoal({
+        ...(existingGoal || {}),
+        id: editingItem?.type === 'goal' ? editingItem.id : undefined,
         title: draftTitle,
         tracking_mode: 'manual',
         goal_type: 'milestone',
@@ -197,17 +205,29 @@ export function Calendar() {
 
     if (draftType === 'custom_event') {
       const date = new Date(draftDate);
-      await supabase.from('meetings').insert([
-        {
-          title: draftTitle,
-          date: format(date, 'yyyy-MM-dd'),
-          time: format(date, 'HH:mm'),
-          notes: '',
-        },
-      ]);
+      if (editingItem?.type === 'custom_event') {
+        await supabase
+          .from('meetings')
+          .update({
+            title: draftTitle,
+            date: format(date, 'yyyy-MM-dd'),
+            time: format(date, 'HH:mm'),
+          })
+          .eq('id', editingItem.id);
+      } else {
+        await supabase.from('meetings').insert([
+          {
+            title: draftTitle,
+            date: format(date, 'yyyy-MM-dd'),
+            time: format(date, 'HH:mm'),
+            notes: '',
+          },
+        ]);
+      }
     }
 
     setModalOpen(false);
+    setEditingItem(null);
     await load();
   };
 
@@ -295,13 +315,22 @@ export function Calendar() {
                         )}
                         <div className="space-y-2">
                           {slotItems.map((item) => (
-                            <div
+                            <button
                               key={item.id}
-                              className={`rounded-2xl px-3 py-2 text-xs font-semibold ${item.type === 'post' ? 'bg-blue-50 text-blue-700' : item.type === 'task' ? 'bg-amber-50 text-amber-800' : item.type === 'goal' ? 'bg-purple-50 text-purple-700' : 'bg-slate-100 text-slate-700'}`}
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setEditingItem(item);
+                                setDraftType(item.type);
+                                setDraftTitle(item.title);
+                                setDraftDate(item.startsAt);
+                                setModalOpen(true);
+                              }}
+                              className={`rounded-2xl px-3 py-2 text-xs font-semibold ${item.type === 'scheduled_post' ? 'bg-blue-50 text-blue-700' : item.type === 'task' ? 'bg-amber-50 text-amber-800' : item.type === 'goal' ? 'bg-purple-50 text-purple-700' : 'bg-slate-100 text-slate-700'}`}
                             >
                               <div>{item.title}</div>
-                              <div className="mt-1 text-[10px] uppercase tracking-[0.14em] opacity-80">{item.type === 'post' ? item.platform || 'Post' : item.type.replace('_', ' ')}</div>
-                            </div>
+                              <div className="mt-1 text-[10px] uppercase tracking-[0.14em] opacity-80">{item.type === 'scheduled_post' ? item.platform || 'Post' : item.type.replace('_', ' ')}</div>
+                            </button>
                           ))}
                         </div>
                       </button>

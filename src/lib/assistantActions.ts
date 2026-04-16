@@ -1,4 +1,4 @@
-import { addHours, isValid, nextWednesday, setHours, setMinutes } from 'date-fns';
+import { addHours, isValid, setHours, setMinutes } from 'date-fns';
 import type { AssistantAction } from '../types/domain';
 
 export interface ParsedAssistantIntent {
@@ -16,7 +16,10 @@ function parseDateish(text: string): string | null {
   }
 
   if (lower.includes('next wednesday')) {
-    return nextWednesday(now).toISOString();
+    const next = new Date(now);
+    const delta = (3 - now.getDay() + 7) % 7 || 7;
+    next.setDate(now.getDate() + delta);
+    return next.toISOString();
   }
 
   if (lower.includes('friday')) {
@@ -103,4 +106,3 @@ export function parseAssistantIntent(input: string, pageContext: string): Parsed
     actions,
   };
 }
-

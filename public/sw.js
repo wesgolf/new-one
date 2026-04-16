@@ -21,20 +21,40 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') {
+    return;
+  }
+
   // Skip caching entirely for dev server requests (localhost / Vite HMR / API calls)
   const url = new URL(event.request.url);
   const isDevOrigin = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
-  if (isDevOrigin || url.pathname.startsWith('/api/') || url.pathname.startsWith('/@')) {
+  if (
+    isDevOrigin ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/@') ||
+    event.request.headers.get('range')
+  ) {
     return; // Let the browser handle it normally — no SW interception
   }
 
   event.respondWith((async () => {
     try {
+      if (event.request.mode === 'navigate') {
+        const networkResponse = await fetch(event.request);
+        const cache = await caches.open(CACHE_NAME);
+        cache.put('/index.html', networkResponse.clone());
+        return networkResponse;
+      }
+
       const cached = await caches.match(event.request);
       if (cached) return cached;
       return await fetch(event.request);
     } catch (err) {
       try {
+        if (event.request.mode === 'navigate') {
+          const cachedIndex = await caches.match('/index.html');
+          if (cachedIndex) return cachedIndex;
+        }
         return new Response('Service unavailable', { status: 503, statusText: 'Service Unavailable' });
       } catch (e) {
         return Response.error();

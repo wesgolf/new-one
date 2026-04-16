@@ -14,6 +14,7 @@ import {
   Sparkles,
   Shield,
   Map,
+  CheckSquare,
   Menu,
   X,
   ChevronDown,
@@ -21,6 +22,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { GlobalSearchOverlay } from './GlobalSearchOverlay';
+import { GlobalAssistantDrawer } from './GlobalAssistantDrawer';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import { signOut } from '../lib/auth';
 import { getRoleDisplayName } from '../types/roles';
@@ -47,6 +49,7 @@ const mainNav = [
     ]
   },
   { icon: BarChart3, label: 'Analytics', path: '/analytics' },
+  { icon: CheckSquare, label: 'Tasks', path: '/tasks' },
   { icon: Zap, label: 'Goals', path: '/goals' },
 ];
 
@@ -62,6 +65,7 @@ const mobileNav = [
   { icon: Sparkles, label: 'Ideas', path: '/ideas' },
   { icon: Music, label: 'Releases', path: '/releases' },
   { icon: Calendar, label: 'Calendar', path: '/calendar' },
+  { icon: CheckSquare, label: 'Tasks', path: '/tasks' },
   { icon: BarChart3, label: 'Analytics', path: '/analytics' },
 ];
 
@@ -375,6 +379,7 @@ export function Layout() {
 
       {/* Global Search Overlay */}
       <GlobalSearchOverlay isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
+      <GlobalAssistantDrawer />
     </div>
   );
 }

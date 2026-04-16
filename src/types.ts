@@ -175,4 +175,20 @@ export interface Goal {
   manual_progress?: boolean;
 }
 
-// Finance module removed — FinanceTransaction and FinanceSummary types deleted
+export interface FinanceTransaction {
+  id: string;
+  date: string;
+  description: string;
+  amount: number;
+  type: 'income' | 'expense';
+  category: 'Streaming' | 'Merch' | 'Live' | 'Royalties' | 'Production' | 'Marketing' | 'Equipment' | 'Software' | 'Other';
+  linked_release_id?: string | null;
+  notes?: string | null;
+}
+
+export interface FinanceSummary {
+  total_income: number;
+  total_expenses: number;
+  net_profit: number;
+  by_category: Record<string, number>;
+}
