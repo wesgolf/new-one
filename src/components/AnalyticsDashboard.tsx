@@ -1,348 +1,402 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
-import { Activity, Globe, Music, TrendingUp, RefreshCw, LogIn, Share2, Heart, Play } from 'lucide-react';
-import { spotifyFetch, redirectToSpotifyAuth, getSpotifyToken } from '../lib/spotify';
-import { useSoundCloud } from '../hooks/useSoundCloud';
-import { useArtistData } from '../hooks/useArtistData';
-import { fetchJson, ApiContentTypeError, ApiHttpError } from '../lib/api';
-import { ApiErrorBanner } from './ApiErrorBanner';
-import { Release } from '../types';
-import { ARTIST_INFO } from '../constants';
+/**
+ * AnalyticsDashboard — provider-agnostic analytics shell.
+ *
+ * Data comes exclusively through the analytics provider abstraction
+ * (useAnalytics → ANALYTICS_REGISTRY). No page-level fetch logic.
+ * Charts are only rendered when real data is present.
+ */
+import React, { useState } from 'react';
+import {
+  Activity,
+  BarChart2,
+  ChevronDown,
+  ChevronUp,
+  Globe,
+  ListMusic,
+  Loader2,
+  Music,
+  RefreshCw,
+  Share2,
+  TrendingUp,
+  Users,
+  Zap,
+  AlertCircle,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Settings,
+} from 'lucide-react';
 import { cn } from '../lib/utils';
+import { ApiErrorBanner } from './ApiErrorBanner';
+import { useAnalytics } from '../hooks/useAnalytics';
+import type { AnalyticsOverviewMetric, AnalyticsProviderState } from '../types/domain';
 
-interface Metric {
-  platform: string;
-  total_plays: number;
-  followers: number;
-  total_likes: number;
-  date: string;
+// ── Small shared UI pieces ────────────────────────────────────────────────────
+
+const PROVIDER_STATUS_ICON: Record<string, React.ReactNode> = {
+  ready:          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />,
+  not_configured: <Settings     className="w-3.5 h-3.5 text-slate-400"   />,
+  error:          <XCircle      className="w-3.5 h-3.5 text-rose-500"    />,
+};
+
+const PROVIDER_STATUS_LABEL: Record<string, string> = {
+  ready:          'Ready',
+  not_configured: 'Not configured',
+  error:          'Error',
+};
+
+function MetricCard({ metric }: { metric: AnalyticsOverviewMetric }) {
+  const trendPositive = (metric.trend ?? 0) > 0;
+  const trendStr = metric.trend != null
+    ? `${trendPositive ? '+' : ''}${metric.trend.toFixed(1)}%`
+    : null;
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+          {metric.label}
+        </span>
+        {trendStr && (
+          <span className={cn(
+            'text-[10px] font-bold px-2 py-0.5 rounded-full',
+            trendPositive ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600',
+          )}>
+            {trendStr}
+          </span>
+        )}
+      </div>
+      <p className="text-2xl font-black text-slate-900 tabular-nums">
+        {typeof metric.value === 'number' ? metric.value.toLocaleString() : metric.value}
+        {metric.unit && (
+          <span className="text-sm font-bold text-slate-400 ml-1">{metric.unit}</span>
+        )}
+      </p>
+      <p className="text-[10px] text-slate-400">{metric.sourceProvider}</p>
+    </div>
+  );
 }
 
-const COLORS = ['#ff5500', '#1DB954', '#000000', '#FF0000'];
+function SectionHeader({
+  icon,
+  title,
+  count,
+  expanded,
+  onToggle,
+  badge,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  count: number;
+  expanded: boolean;
+  onToggle: () => void;
+  badge?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="flex w-full items-center gap-3 rounded-2xl p-4 bg-slate-50/60 hover:bg-slate-50 transition-colors text-left"
+    >
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white border border-slate-100 shadow-sm">
+        {icon}
+      </div>
+      <span className="flex-1 text-sm font-bold text-slate-900">{title}</span>
+      {badge && (
+        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">{badge}</span>
+      )}
+      <span className={cn(
+        'text-[10px] font-bold rounded-full px-2 py-0.5',
+        count > 0 ? 'bg-slate-200 text-slate-600' : 'bg-slate-100 text-slate-400',
+      )}>
+        {count > 0 ? count : 'No data'}
+      </span>
+      {expanded
+        ? <ChevronUp   className="w-4 h-4 text-slate-400 shrink-0" />
+        : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />}
+    </button>
+  );
+}
+
+function EmptySectionState({
+  description,
+  providers,
+}: {
+  description: string;
+  providers: string[];
+}) {
+  return (
+    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/40 p-6 flex flex-col items-center text-center gap-3">
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white border border-slate-100 shadow-sm">
+        <Activity className="w-5 h-5 text-slate-300" />
+      </div>
+      <div>
+        <p className="text-sm font-bold text-slate-600">No data yet</p>
+        <p className="text-xs text-slate-400 mt-1 max-w-sm">{description}</p>
+      </div>
+      {providers.length > 0 && (
+        <div className="flex flex-wrap gap-1 justify-center mt-1">
+          {providers.map(p => (
+            <span key={p} className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-500 border border-blue-100">
+              {p}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProviderStatusRow({ state }: { state: AnalyticsProviderState }) {
+  return (
+    <div className="flex items-start gap-3 p-4 rounded-xl border border-slate-100 bg-white">
+      <div className="mt-0.5 shrink-0">
+        {PROVIDER_STATUS_ICON[state.status] ?? PROVIDER_STATUS_ICON.error}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-bold text-slate-900">{state.provider}</p>
+          <span className={cn(
+            'text-[9px] font-bold px-2 py-0.5 rounded-full',
+            state.status === 'ready'          && 'bg-emerald-50 text-emerald-600',
+            state.status === 'not_configured' && 'bg-slate-100 text-slate-500',
+            state.status === 'error'          && 'bg-rose-50 text-rose-600',
+          )}>
+            {PROVIDER_STATUS_LABEL[state.status] ?? state.status}
+          </span>
+        </div>
+        {state.errorMessage && (
+          <p className="text-[10px] text-slate-400 mt-1">{state.errorMessage}</p>
+        )}
+        {state.lastSyncedAt && (
+          <div className="flex items-center gap-1 mt-1">
+            <Clock className="w-2.5 h-2.5 text-slate-400" />
+            <p className="text-[10px] text-slate-400">
+              Last synced: {new Date(state.lastSyncedAt).toLocaleString()}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Domain section config ─────────────────────────────────────────────────────
+
+const DOMAIN_CONFIG = [
+  {
+    key:          'streaming' as const,
+    title:        'Streaming Performance',
+    icon:         <Music   className="w-4 h-4 text-emerald-600" />,
+    badge:        'Spotify · Apple Music · Soundcharts',
+    description:  'Streams, saves, skip rate, and release-level performance will appear here once a streaming analytics provider is connected.',
+    providers:    ['Spotify', 'Songstats', 'Soundcharts'],
+  },
+  {
+    key:          'playlist' as const,
+    title:        'Playlisting',
+    icon:         <ListMusic className="w-4 h-4 text-purple-600" />,
+    badge:        'Songstats · Soundcharts',
+    description:  'Active playlists, recent adds, notable editorial placements, and curator breakdown will appear here when Songstats or Soundcharts is configured.',
+    providers:    ['Songstats', 'Soundcharts'],
+  },
+  {
+    key:          'audience' as const,
+    title:        'Audience Growth',
+    icon:         <Users  className="w-4 h-4 text-blue-600" />,
+    badge:        'Spotify · SoundCloud',
+    description:  'Follower counts, listener-to-follower ratio, demographic breakdowns, and 30-day growth will appear here.',
+    providers:    ['Spotify', 'Soundcharts'],
+  },
+  {
+    key:          'social' as const,
+    title:        'Social Metrics',
+    icon:         <Share2 className="w-4 h-4 text-rose-500" />,
+    badge:        'Instagram · TikTok',
+    description:  'Engagement rate, reach, profile visits, and cross-platform social performance will appear here.',
+    providers:    ['Songstats', 'Soundcharts'],
+  },
+  {
+    key:          'releases' as const,
+    title:        'Release Performance',
+    icon:         <BarChart2 className="w-4 h-4 text-amber-500" />,
+    badge:        'Multi-platform',
+    description:  'Per-release stream counts, playlist adds, and trend lines will appear here when streaming providers are connected.',
+    providers:    ['Spotify', 'Songstats'],
+  },
+];
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export const AnalyticsDashboard: React.FC = () => {
-  const [metrics, setMetrics] = useState<Metric[]>([]);
-  const [spotifyData, setSpotifyData] = useState<any>(null);
-  const [soundcloudMe, setSoundcloudMe] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-  const [isSpotifyAuthed, setIsSpotifyAuthed] = useState(false);
+  const { payload, providerStates, loading, error, refresh } = useAnalytics();
 
-  const { token: scToken, login: scLogin, fetchMe: scFetchMe } = useSoundCloud();
-  const { data: releases, loading: releasesLoading } = useArtistData<Release>('releases');
+  // Track which sections are expanded
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({
+    streaming: true,
+    playlist:  true,
+    audience:  true,
+    social:    false,
+    releases:  false,
+    status:    true,
+  });
 
-  const fetchMetrics = useCallback(async () => {
-    const controller = new AbortController();
-    try {
-      setLoading(true);
-      setError(null);
+  const toggle = (key: string) =>
+    setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
 
-      // Fetch server-side analytics — silently skip if backend unavailable (static deploy)
-      try {
-        const data = await fetchJson<Metric[]>('/api/analytics/latest', { signal: controller.signal });
-        setMetrics(data ?? []);
-      } catch (apiErr) {
-        if (apiErr instanceof ApiContentTypeError || apiErr instanceof ApiHttpError) {
-          // No analytics backend in this environment — continue with client-side data only
-        } else {
-          throw apiErr;
-        }
-      }
+  // Flatten all metrics for Overview cards
+  const allMetrics = [
+    ...payload.audience,
+    ...payload.streaming,
+    ...payload.playlist,
+    ...payload.social,
+    ...payload.releases,
+  ];
 
-      // Fetch Spotify data if authed
-      const token = await getSpotifyToken();
-      if (token) {
-        setIsSpotifyAuthed(true);
-        if (ARTIST_INFO.spotify_ids && ARTIST_INFO.spotify_ids.length > 0) {
-          const artistsData = await Promise.all(
-            ARTIST_INFO.spotify_ids.map(id => spotifyFetch(`/artists/${id.trim()}`))
-          );
-          
-          // Aggregate data
-          const aggregated = {
-            popularity: Math.round(artistsData.reduce((acc, a) => acc + (a.popularity || 0), 0) / artistsData.length),
-            followers: {
-              total: artistsData.reduce((acc, a) => acc + (a.followers?.total || 0), 0)
-            }
-          };
-          setSpotifyData(aggregated);
-        }
-      }
-
-      // Fetch SoundCloud data if authed
-      if (scToken) {
-        const me = await scFetchMe();
-        setSoundcloudMe(me);
-      }
-    } catch (err: any) {
-      setError(err instanceof Error ? err : new Error(String(err)));
-    } finally {
-      setLoading(false);
-    }
-  }, [scToken]);
-
-  useEffect(() => {
-    fetchMetrics();
-  }, [fetchMetrics]);
-
-  const handleManualSync = async () => {
-    try {
-      setSyncing(true);
-      setError(null);
-      await fetchJson('/api/analytics/trigger', { method: 'POST' });
-      await fetchMetrics();
-    } catch (err: any) {
-      setError(err instanceof Error ? err : new Error(String(err)));
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  // Aggregate SoundCloud Stats from Releases
-  const soundcloudStats = useMemo(() => {
-    if (!releases) return { plays: 0, likes: 0, reposts: 0 };
-    return releases.reduce((acc, r) => {
-      const sc = r.performance?.streams?.soundcloud || 0;
-      const likes = r.performance?.engagement?.likes || 0;
-      const reposts = r.performance?.engagement?.reposts || 0;
-      return {
-        plays: acc.plays + sc,
-        likes: acc.likes + likes,
-        reposts: acc.reposts + reposts
-      };
-    }, { plays: 0, likes: 0, reposts: 0 });
-  }, [releases]);
-
-  const totalPlays = metrics.reduce((sum, m) => sum + m.total_plays, 0) + soundcloudStats.plays;
-  const totalFollowers = metrics.reduce((sum, m) => sum + m.followers, 0) + (soundcloudMe?.followers_count || 0);
-
-  const platformDistribution = [
-    { name: 'SoundCloud', value: soundcloudStats.plays },
-    { name: 'Spotify', value: spotifyData?.popularity || 0 }, // Placeholder for actual spotify plays
-    { name: 'Other', value: totalPlays - soundcloudStats.plays }
-  ].filter(p => p.value > 0);
+  const configuredCount = providerStates.filter(s => s.status === 'ready').length;
+  const errorCount      = providerStates.filter(s => s.status === 'error').length;
+  const anyData         = allMetrics.length > 0;
 
   return (
-    <div className="p-4 md:p-6 space-y-6 bg-gray-50 min-h-screen">
-      <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-        <div className="text-center sm:text-left">
-          <h1 className="text-2xl font-bold text-gray-900">Artist OS Analytics</h1>
-          <p className="text-gray-500">Multi-platform performance tracking</p>
-        </div>
-        <div className="flex gap-3 w-full sm:w-auto">
-          <button
-            onClick={handleManualSync}
-            disabled={syncing}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-all"
-          >
-            <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-            {syncing ? 'Syncing...' : 'Sync Now'}
-          </button>
-        </div>
-      </div>
+    <div className="space-y-6">
 
+      {/* Header */}
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
+            Analytics
+          </h2>
+          <p className="mt-1 text-slate-500">
+            Provider-agnostic performance overview.
+            {configuredCount > 0
+              ? ` ${configuredCount} source${configuredCount > 1 ? 's' : ''} active.`
+              : ' No providers configured yet.'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={refresh}
+          disabled={loading}
+          className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-600 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50"
+        >
+          <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
+          {loading ? 'Loading…' : 'Refresh'}
+        </button>
+      </header>
+
+      {/* Error banner */}
       {error && (
-        <ApiErrorBanner
-          error={error}
-          onRetry={fetchMetrics}
-          onDismiss={() => setError(null)}
-        />
+        <ApiErrorBanner error={error} onRetry={refresh} onDismiss={() => {}} />
       )}
 
-      {/* Stats Overview */}
-      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard 
-          title="Total Plays" 
-          value={totalPlays.toLocaleString()} 
-          icon={<Activity className="w-5 h-5" />} 
-          trend="+12%" 
-        />
-        <StatCard 
-          title="Total Followers" 
-          value={totalFollowers.toLocaleString()} 
-          icon={<Globe className="w-5 h-5" />} 
-          trend="+5%" 
-        />
-        <StatCard 
-          title="SC Followers" 
-          value={soundcloudMe?.followers_count?.toLocaleString() || 'N/A'} 
-          icon={<Music className="w-5 h-5 text-[#ff5500]" />} 
-          color="text-[#ff5500]"
-        />
-        <StatCard 
-          title="Spotify Followers" 
-          value={spotifyData?.followers?.total?.toLocaleString() || 'N/A'} 
-          icon={<Music className="w-5 h-5 text-[#1DB954]" />} 
-          color="text-[#1DB954]"
-        />
-      </div>
+      {/* Loading state */}
+      {loading && (
+        <div className="flex h-32 items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+        </div>
+      )}
 
-      {/* SoundCloud Specific Metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-        <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
-          <div className="p-3 bg-orange-50 text-[#ff5500] rounded-xl shrink-0">
-            <Play className="w-6 h-6" />
+      {/* Setup nudge when nothing configured */}
+      {!loading && !anyData && configuredCount === 0 && (
+        <div className="rounded-3xl border border-dashed border-blue-200 bg-blue-50/40 p-8 flex flex-col items-center text-center gap-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white border border-blue-100 shadow-sm">
+            <Zap className="w-7 h-7 text-blue-500" />
           </div>
-          <div className="min-w-0">
-            <p className="text-sm text-gray-500 truncate">SC Total Plays</p>
-            <p className="text-lg md:text-xl font-bold">{soundcloudStats.plays.toLocaleString()}</p>
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Connect your first analytics source</h3>
+            <p className="text-sm text-slate-500 max-w-md mt-2">
+              Artist OS supports Spotify, Songstats, and Soundcharts. Once connected, streaming,
+              playlisting, audience, and social metrics will populate here automatically.
+            </p>
           </div>
-        </div>
-        <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
-          <div className="p-3 bg-rose-50 text-rose-500 rounded-xl shrink-0">
-            <Heart className="w-6 h-6" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm text-gray-500 truncate">SC Total Likes</p>
-            <p className="text-lg md:text-xl font-bold">{soundcloudStats.likes.toLocaleString()}</p>
-          </div>
-        </div>
-        <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
-          <div className="p-3 bg-blue-50 text-blue-500 rounded-xl shrink-0">
-            <Share2 className="w-6 h-6" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm text-gray-500 truncate">SC Total Reposts</p>
-            <p className="text-lg md:text-xl font-bold">{soundcloudStats.reposts.toLocaleString()}</p>
+          <div className="flex flex-wrap gap-2 justify-center">
+            {['Spotify', 'Songstats', 'Soundcharts'].map(p => (
+              <span key={p} className="text-xs font-bold px-3 py-1.5 rounded-full bg-white border border-blue-100 text-blue-600">
+                {p}
+              </span>
+            ))}
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-semibold mb-4">Plays by Platform</h3>
-          <div className="h-64">
-            {metrics.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={[
-                  ...metrics,
-                  { platform: 'SoundCloud', total_plays: soundcloudStats.plays }
-                ]}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="platform" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="total_plays" radius={[4, 4, 0, 0]}>
-                    {[...metrics, { platform: 'SoundCloud' }].map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.platform === 'SoundCloud' ? '#ff5500' : '#6366f1'} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-slate-50 rounded-xl text-slate-400 text-sm font-medium">
-                No data available yet
-              </div>
-            )}
+      {/* Overview metric cards */}
+      {!loading && anyData && (
+        <div>
+          <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Overview</p>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {allMetrics.slice(0, 8).map(m => (
+              <MetricCard key={m.id} metric={m} />
+            ))}
           </div>
         </div>
+      )}
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-semibold mb-4">Platform Distribution</h3>
-          <div className="h-64">
-            {platformDistribution.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={platformDistribution}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {platformDistribution.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-slate-50 rounded-xl text-slate-400 text-sm font-medium">
-                No distribution data
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Platform Status */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-4 border-b border-gray-100 bg-gray-50">
-          <h3 className="font-semibold">Platform Status & Sessions</h3>
-        </div>
-        <div className="divide-y divide-gray-100">
-          {['soundcloud', 'spotify', 'applemusic'].map(platform => {
-            const metric = metrics.find(m => m.platform.toLowerCase() === platform);
-            const isConnected = platform === 'soundcloud' ? !!scToken : !!metric;
-            
+      {/* Domain sections */}
+      {!loading && (
+        <div className="space-y-4">
+          {DOMAIN_CONFIG.map(section => {
+            const data    = payload[section.key];
+            const isOpen  = expanded[section.key] ?? true;
             return (
-              <div key={platform} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className={cn("w-2 h-2 rounded-full", isConnected ? 'bg-green-500' : 'bg-gray-300')} />
-                  <span className="capitalize font-medium">{platform}</span>
-                </div>
-                <div className="flex items-center justify-between sm:justify-end gap-4">
-                  <span className="text-sm text-gray-500">
-                    {isConnected ? 'Connected' : 'Not connected'}
-                  </span>
-                  {platform === 'spotify' && !isSpotifyAuthed && (
-                    <button 
-                      onClick={redirectToSpotifyAuth}
-                      className="text-emerald-600 hover:text-emerald-700 text-xs font-bold flex items-center gap-1 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100 whitespace-nowrap"
-                    >
-                      <LogIn className="w-3.5 h-3.5" />
-                      Connect
-                    </button>
-                  )}
-                  {platform === 'soundcloud' && !scToken && (
-                    <button 
-                      onClick={scLogin}
-                      className="text-[#ff5500] hover:text-[#e64d00] text-xs font-bold flex items-center gap-1 bg-orange-50 px-3 py-1.5 rounded-full border border-orange-100 whitespace-nowrap"
-                    >
-                      <LogIn className="w-3.5 h-3.5" />
-                      Connect
-                    </button>
-                  )}
-                </div>
+              <div key={section.key} className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+                <SectionHeader
+                  icon={section.icon}
+                  title={section.title}
+                  count={data.length}
+                  expanded={isOpen}
+                  onToggle={() => toggle(section.key)}
+                  badge={section.badge}
+                />
+                {isOpen && (
+                  <div className="p-4">
+                    {data.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                        {data.map(m => <MetricCard key={m.id} metric={m} />)}
+                      </div>
+                    ) : (
+                      <EmptySectionState
+                        description={section.description}
+                        providers={section.providers}
+                      />
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
-      </div>
+      )}
 
-      {/* Instructions */}
-      <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-lg">
-        <h4 className="font-semibold text-indigo-900 mb-2">Setup Instructions</h4>
-        <ul className="text-sm text-indigo-800 space-y-1 list-disc list-inside">
-          <li>Connect your SoundCloud and Spotify accounts to see real-time performance data.</li>
-          <li>SoundCloud data is pulled directly from your synced tracks in the Release Tracker.</li>
-          <li>The daily scheduler automatically collects additional platform data at 3 AM.</li>
-        </ul>
-      </div>
+      {/* Source attribution / sync status */}
+      {!loading && providerStates.length > 0 && (
+        <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+          <button
+            type="button"
+            onClick={() => toggle('status')}
+            className="flex w-full items-center gap-3 p-4 hover:bg-slate-50 transition-colors text-left"
+          >
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white border border-slate-100 shadow-sm">
+              <Globe className="w-4 h-4 text-slate-500" />
+            </div>
+            <span className="flex-1 text-sm font-bold text-slate-900">Source Attribution</span>
+            {errorCount > 0 && (
+              <div className="flex items-center gap-1 text-rose-600">
+                <AlertCircle className="w-3.5 h-3.5" />
+                <span className="text-xs font-bold">{errorCount} error{errorCount > 1 ? 's' : ''}</span>
+              </div>
+            )}
+            {expanded.status
+              ? <ChevronUp   className="w-4 h-4 text-slate-400 shrink-0" />
+              : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />}
+          </button>
+          {expanded.status && (
+            <div className="grid gap-2 p-4 pt-0 sm:grid-cols-2 lg:grid-cols-3">
+              {providerStates.map(state => (
+                <ProviderStatusRow key={state.provider} state={state} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
-
-const StatCard: React.FC<{ title: string; value: string; icon: React.ReactNode; trend?: string; color?: string }> = ({ title, value, icon, trend, color }) => (
-  <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100">
-    <div className="flex justify-between items-start mb-3 md:mb-4">
-      <div className="p-2 bg-slate-50 rounded-lg shrink-0">
-        {icon}
-      </div>
-      {trend && (
-        <span className="text-[10px] md:text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded-full">
-          {trend}
-        </span>
-      )}
-    </div>
-    <div className="min-w-0">
-      <p className="text-xs md:text-sm text-gray-500 mb-1 truncate">{title}</p>
-      <p className={cn("text-xl md:text-2xl font-bold truncate", color || 'text-gray-900')}>{value}</p>
-    </div>
-  </div>
-);
