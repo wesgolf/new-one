@@ -165,13 +165,29 @@ export interface Todo {
 export interface Goal {
   id: string;
   title: string;
+  description?: string;
+  goal_type?: 'count' | 'ratio' | 'milestone' | 'custom';
+  tracking_mode?: 'manual' | 'automatic' | 'hybrid';
   target: number;
   current: number;
   unit: string;
   start_date?: string;
-  deadline: string;
+  deadline?: string;
   category: 'Streaming' | 'Social' | 'Live' | 'Revenue';
   term: 'short' | 'medium' | 'long';
   manual_progress?: boolean;
+  source_metric?: string;
+  formula?: Record<string, unknown>;
+  is_timeless?: boolean;
+  updated_at?: string;
+}
+
+export interface GoalEntry {
+  id: string;
+  goal_id: string;
+  value: number;
+  note?: string;
+  created_by?: string;
+  created_at: string;
 }
 

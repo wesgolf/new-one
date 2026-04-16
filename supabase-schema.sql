@@ -280,3 +280,26 @@ ALTER TABLE content_items ADD COLUMN IF NOT EXISTS notes TEXT;
 -- CREATE POLICY "Users can manage their own opportunities" ON opportunities FOR ALL USING (auth.uid() = user_id);
 -- CREATE POLICY "Users can manage their own shows" ON shows FOR ALL USING (auth.uid() = user_id);
 -- CREATE POLICY "Users can manage their own goals" ON goals FOR ALL USING (auth.uid() = user_id);
+
+-- ── Goals: Extended tracking model (2025-04) ─────────────────────────────────
+-- New columns support manual, automatic, hybrid tracking modes and
+-- ratio / timeless / milestone goal types.
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS goal_type TEXT DEFAULT 'count'
+  CHECK (goal_type IN ('count', 'ratio', 'milestone', 'custom'));
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS tracking_mode TEXT DEFAULT 'manual'
+  CHECK (tracking_mode IN ('manual', 'automatic', 'hybrid'));
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS source_metric TEXT;
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS formula JSONB;
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS is_timeless BOOLEAN DEFAULT FALSE;
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+-- Goal entry history: one row per logged progress update
+CREATE TABLE IF NOT EXISTS goal_entries (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  goal_id UUID NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+  value NUMERIC NOT NULL,
+  note TEXT,
+  created_by UUID REFERENCES auth.users(id),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);

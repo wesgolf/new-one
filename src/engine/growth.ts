@@ -148,7 +148,7 @@ export function generateDailyTasks(
 
 export function calculateGoalPace(goal: Goal) {
   const start = goal.start_date ? new Date(goal.start_date) : new Date();
-  const end = new Date(goal.deadline);
+  const end = goal.deadline ? new Date(goal.deadline) : new Date(NaN);
   const now = new Date();
 
   // Guard against invalid dates
