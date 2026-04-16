@@ -20,9 +20,9 @@ export function PublicHub({ authPanel }: PublicHubProps) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#bfdbfe,transparent_28%),linear-gradient(180deg,#f8fafc,#e2e8f0)] px-4 py-8 sm:px-6">
+    <div className="min-h-screen bg-background px-4 py-8 sm:px-6">
       <div className="mx-auto max-w-6xl space-y-8">
-        <section className="overflow-hidden rounded-[2.75rem] border border-white/80 bg-white/80 p-8 shadow-xl backdrop-blur-xl">
+        <section className="overflow-hidden rounded-3xl border border-border bg-surface p-8 shadow-sm">
           <div className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr]">
             <div>
               <div className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-white">

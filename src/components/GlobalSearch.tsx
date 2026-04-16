@@ -5,7 +5,11 @@ import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 
-export function GlobalSearch() {
+interface GlobalSearchProps {
+  compact?: boolean;
+}
+
+export function GlobalSearch({ compact = false }: GlobalSearchProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
@@ -78,16 +82,26 @@ export function GlobalSearch() {
 
   return (
     <>
-      <button 
-        onClick={() => setIsOpen(true)}
-        className="flex items-center gap-3 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-xl transition-all w-full max-w-md group"
-      >
-        <Search className="w-4 h-4 group-hover:scale-110 transition-transform" />
-        <span className="text-sm font-medium">Search anything...</span>
-        <kbd className="ml-auto hidden sm:inline-flex h-5 select-none items-center gap-1 rounded border bg-white px-1.5 font-mono text-[10px] font-medium text-slate-400 opacity-100">
-          <span className="text-xs">⌘</span>K
-        </kbd>
-      </button>
+      {compact ? (
+        <button
+          onClick={() => setIsOpen(true)}
+          className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+          title="Search (⌘K)"
+        >
+          <Search className="w-4 h-4" />
+        </button>
+      ) : (
+        <button
+          onClick={() => setIsOpen(true)}
+          className="flex items-center gap-3 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-xl transition-all w-full max-w-md group"
+        >
+          <Search className="w-4 h-4 group-hover:scale-110 transition-transform" />
+          <span className="text-sm font-medium">Search anything...</span>
+          <kbd className="ml-auto hidden sm:inline-flex h-5 select-none items-center gap-1 rounded border bg-white px-1.5 font-mono text-[10px] font-medium text-slate-400 opacity-100">
+            <span className="text-xs">⌘</span>K
+          </kbd>
+        </button>
+      )}
 
       <AnimatePresence>
         {isOpen && (

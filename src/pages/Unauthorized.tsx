@@ -16,7 +16,7 @@ export function Unauthorized() {
   const authPanel = (
     <>
       {isAuthenticated && !role ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
           <p className="text-sm font-semibold text-amber-900">Authenticated but unauthorized</p>
           <p className="mt-1 text-sm text-amber-800">Your account is signed in, but it does not have an Artist OS role yet.</p>
           <button type="button" className="btn-primary mt-4" onClick={() => navigate('/')}>
@@ -42,7 +42,7 @@ export function Unauthorized() {
           }}
         >
           {error && (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
               <div className="flex items-start gap-2">
                 <AlertCircle className="mt-0.5 h-4 w-4" />
                 <span>{error}</span>
