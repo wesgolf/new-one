@@ -14,18 +14,23 @@ import {
   MessageSquare,
   AlertCircle,
   TrendingUp,
-  UserPlus
+  UserPlus,
+  X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../lib/supabase';
 import { cn } from '../lib/utils';
+import { EmailComposerModal } from '../components/EmailComposerModal';
+import { useAssistantPageContext } from '../hooks/useAssistantPageContext';
+import type { OpportunityContact } from '../types/domain';
 
 export function Opportunities() {
-  const [contacts, setContacts] = useState<any[]>([]);
+  const [contacts, setContacts] = useState<OpportunityContact[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [isAdding, setIsAdding] = useState(false);
+  const [draftTarget, setDraftTarget] = useState<OpportunityContact | null>(null);
   const [newContact, setNewContact] = useState({
     name: '',
     category: 'Collaborator',
@@ -34,6 +39,8 @@ export function Opportunities() {
     relationship_strength: 3,
     tags: [] as string[]
   });
+
+  useAssistantPageContext('network');
 
   const fetchData = async () => {
     setLoading(true);
@@ -211,9 +218,12 @@ export function Opportunities() {
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <button className="py-2 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2">
-                <MessageSquare className="w-3 h-3" />
-                Message
+              <button
+                onClick={() => setDraftTarget(contact)}
+                className="py-2 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+              >
+                <Mail className="w-3 h-3" />
+                Draft Email
               </button>
               <button className="py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2">
                 <MoreVertical className="w-3 h-3" />
@@ -323,12 +333,16 @@ export function Opportunities() {
           </div>
         )}
       </AnimatePresence>
-    </div>
-  );
-}
 
-function X({ className }: { className?: string }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      {/* Email Composer Modal */}
+      <AnimatePresence>
+        {draftTarget && (
+          <EmailComposerModal
+            contact={draftTarget}
+            onClose={() => setDraftTarget(null)}
+          />
+        )}
+      </AnimatePresence>
+    </div>
   );
 }

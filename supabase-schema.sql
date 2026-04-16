@@ -303,3 +303,19 @@ CREATE TABLE IF NOT EXISTS goal_entries (
   created_by UUID REFERENCES auth.users(id),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- ── Outreach Emails: email draft & send log per contact ─────────────────────
+-- Tracks all outbound emails drafted or sent from contact records.
+-- status: draft (saved, not sent) | sent (dispatched) | failed
+CREATE TABLE IF NOT EXISTS outreach_emails (
+  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  contact_id   UUID NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
+  subject      TEXT NOT NULL,
+  body         TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'draft'
+               CHECK (status IN ('draft', 'sent', 'failed')),
+  sent_at      TIMESTAMP WITH TIME ZONE,
+  opened_at    TIMESTAMP WITH TIME ZONE,
+  created_by   UUID REFERENCES auth.users(id),
+  created_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);

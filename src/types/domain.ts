@@ -130,10 +130,27 @@ export interface OutreachEmail {
   contact_id: string;
   subject: string;
   body: string;
-  status: string;
+  status: 'draft' | 'sent' | 'failed';
   sent_at?: string | null;
   opened_at?: string | null;
   created_by?: string | null;
+  created_at?: string;
+}
+
+export interface OpportunityContact {
+  id: string;
+  user_id?: string | null;
+  name: string;
+  category: 'Venue' | 'Label' | 'Promoter' | 'Collaborator' | 'Playlist' | string;
+  contact?: string | null;
+  last_contact?: string | null;
+  next_follow_up?: string | null;
+  status: 'cold' | 'warm' | 'active' | 'closed';
+  notes?: string | null;
+  priority?: 'low' | 'medium' | 'high' | null;
+  tags?: string[] | null;
+  relationship_strength?: number | null;
+  last_interaction_notes?: string | null;
   created_at?: string;
 }
 

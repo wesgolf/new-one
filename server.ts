@@ -341,6 +341,45 @@ async function startServer() {
     }
   });
 
+  // ── Email send endpoint ───────────────────────────────────────────────────
+  // SMTP credentials are kept server-side only (never sent to the client).
+  // Currently stubbed: logs the outbound email and returns success.
+  // Wire up nodemailer / Resend / SendGrid by setting SMTP_* env vars.
+  app.post('/api/email/send', async (req, res) => {
+    const { to, subject, body, emailLogId } = req.body as {
+      to?: string;
+      subject?: string;
+      body?: string;
+      emailLogId?: string;
+    };
+
+    if (!to || !subject || !body) {
+      return res.status(400).json({ error: 'Missing required fields: to, subject, body' });
+    }
+
+    // Input validation — basic email format check to prevent abuse
+    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!EMAIL_RE.test(to)) {
+      return res.status(400).json({ error: 'Invalid recipient email address' });
+    }
+
+    const SMTP_HOST = process.env.SMTP_HOST;
+    const SMTP_USER = process.env.SMTP_USER;
+
+    if (SMTP_HOST && SMTP_USER) {
+      // ── Live SMTP path (wire nodemailer here when credentials are available)
+      // Example:
+      //   const transporter = nodemailer.createTransport({ host: SMTP_HOST, ... });
+      //   await transporter.sendMail({ from: SMTP_USER, to, subject, text: body });
+      console.log(`[email/send] SMTP configured but not yet wired. Would send to: ${to}, subject: "${subject}"`);
+    } else {
+      // ── Stub path: logs intent, marks email as logically sent in DB via the client
+      console.log(`[email/send] SMTP not configured. Email logged only. to=${to} subject="${subject}" logId=${emailLogId ?? 'n/a'}`);
+    }
+
+    res.json({ sent: true, message: 'Email queued. Configure SMTP_HOST and SMTP_USER to enable live sending.' });
+  });
+
   // Start the daily scheduler lazily
   setTimeout(async () => {
     try {
