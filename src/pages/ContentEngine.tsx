@@ -25,8 +25,6 @@ import { contentService } from '../services/contentService';
 
 import { mockReleases, mockContentItems } from '../content/mockData';
 
-const SYNC_INTERVAL_MS = 60 * 60 * 1000;
-
 export function ContentEngine() {
   const [items, setItems] = React.useState<ContentItem[]>(mockContentItems);
   const [releases, setReleases] = React.useState<Release[]>(mockReleases);
@@ -37,8 +35,6 @@ export function ContentEngine() {
   const [isPostModeOpen, setIsPostModeOpen] = React.useState(false);
   const [selectedItem, setSelectedItem] = React.useState<ContentItem | null>(null);
   const [editorItem, setEditorItem] = React.useState<ContentItemWithAssets | null>(null);
-  const [isSyncing, setIsSyncing] = React.useState(false);
-  const [lastSyncTime, setLastSyncTime] = React.useState<Date | null>(null);
   const [contentListRefresh, setContentListRefresh] = React.useState(0);
   const [activeTab, setActiveTab] = React.useState<'library' | 'pipeline'>('library');
   const [scheduledPlatformItems, setScheduledPlatformItems] = React.useState<ContentItem[]>([]);
@@ -70,37 +66,9 @@ export function ContentEngine() {
     }
   }, []);
 
-  const syncZernio = React.useCallback(async () => {
-    setIsSyncing(true);
-    try {
-      const posts = await zernioAdapter.fetchPosts();
-      if (posts) setItems(posts);
-      setLastSyncTime(new Date());
-    } catch (error) {
-      console.error('Zernio sync failed:', error);
-    } finally {
-      setIsSyncing(false);
-    }
+  React.useEffect(() => {
     loadScheduledPlatformPosts();
   }, [loadScheduledPlatformPosts]);
-
-  React.useEffect(() => {
-    syncZernio();
-
-    const now = new Date();
-    const msUntilNextHour = (60 - now.getMinutes()) * 60 * 1000 - now.getSeconds() * 1000;
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-
-    const initialTimeout = setTimeout(() => {
-      syncZernio();
-      intervalId = setInterval(syncZernio, SYNC_INTERVAL_MS);
-    }, msUntilNextHour);
-
-    return () => {
-      clearTimeout(initialTimeout);
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [syncZernio]);
 
   React.useEffect(() => {
     setIsBestTimesLoading(true);
@@ -210,17 +178,7 @@ export function ContentEngine() {
             <h2 className="text-4xl md:text-5xl font-black tracking-tight text-slate-900">Content</h2>
             <div className="flex items-center gap-3">
               <p className="text-slate-400 font-medium text-sm">Manage, schedule, and publish your content.</p>
-              {isSyncing && (
-                <span className="flex items-center gap-1.5 text-[10px] font-bold text-blue-500">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  Syncing
-                </span>
-              )}
-              {lastSyncTime && !isSyncing && (
-                <span className="text-[10px] text-slate-300 font-medium">
-                  Synced {lastSyncTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              )}
+
             </div>
           </div>
           <button 
