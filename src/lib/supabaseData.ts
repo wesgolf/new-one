@@ -428,3 +428,25 @@ export async function uploadReleaseArtwork(releaseId: string, file: File) {
   if (error) throw error;
   return publicData.publicUrl;
 }
+
+export async function saveRelease(data: Partial<ReleaseRecord> & { id?: string }) {
+  const user = await getCurrentAuthUser();
+  if (data.id) {
+    const { id, ...rest } = data;
+    const { error } = await supabase
+      .from('releases')
+      .update({ ...rest, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw error;
+  } else {
+    const { error } = await supabase.from('releases').insert([
+      { ...data, user_id: user?.id ?? null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+    ]);
+    if (error) throw error;
+  }
+}
+
+export async function deleteRelease(id: string) {
+  const { error } = await supabase.from('releases').delete().eq('id', id);
+  if (error) throw error;
+}

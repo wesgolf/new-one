@@ -5,6 +5,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { CommandCenter } from './pages/CommandCenter';
 import { ReleaseTracker } from './pages/ReleaseTracker';
+import { ReleaseDetail } from './pages/ReleaseDetail';
 import { Ideas } from './pages/Ideas';
 import { ContentEngine } from './pages/ContentEngine';
 import { Analytics } from './pages/Analytics';
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="/" element={<ErrorBoundary><CommandCenter /></ErrorBoundary>} />
         <Route path="/ideas" element={<ErrorBoundary><Ideas /></ErrorBoundary>} />
         <Route path="/releases" element={<ErrorBoundary><ReleaseTracker /></ErrorBoundary>} />
+        <Route path="/releases/:releaseId" element={<ErrorBoundary><ReleaseDetail /></ErrorBoundary>} />
         <Route path="/content" element={<ErrorBoundary><ContentEngine /></ErrorBoundary>} />
         <Route path="/analytics" element={<ErrorBoundary><Analytics /></ErrorBoundary>} />
         <Route path="/calendar" element={<ErrorBoundary><Calendar /></ErrorBoundary>} />
