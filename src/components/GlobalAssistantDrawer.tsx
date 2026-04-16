@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Bot,
   CalendarPlus,
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { parseAssistantIntent } from '../lib/assistantActions';
 import { dispatchAssistantAction } from '../lib/commandBus';
+import { useAssistantContext } from '../context/AssistantContext';
 import type { AssistantAction } from '../types/domain';
 
 interface Message {
@@ -23,31 +24,9 @@ interface Message {
 
 const STORAGE_KEY = 'artist_os_assistant_drawer_messages';
 
-function labelForPath(pathname: string) {
-  if (pathname.startsWith('/calendar')) return 'calendar';
-  if (pathname.startsWith('/ideas')) return 'ideas';
-  if (pathname.startsWith('/releases')) return 'releases';
-  if (pathname.startsWith('/tasks')) return 'tasks';
-  if (pathname.startsWith('/network')) return 'network';
-  return 'dashboard';
-}
-
-interface GlobalAssistantDrawerProps {
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-}
-
-export function GlobalAssistantDrawer({ open: externalOpen, onOpenChange }: GlobalAssistantDrawerProps = {}) {
-  const location = useLocation();
+export function GlobalAssistantDrawer() {
+  const { open, setOpen, pageContext } = useAssistantContext();
   const navigate = useNavigate();
-  const pageContext = labelForPath(location.pathname);
-  const [internalOpen, setInternalOpen] = useState(false);
-
-  const open = externalOpen ?? internalOpen;
-  const setOpen = (value: boolean) => {
-    setInternalOpen(value);
-    onOpenChange?.(value);
-  };
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);

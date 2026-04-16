@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
+import { subscribeAssistantActions } from '../lib/commandBus';
+import { useAssistantPageContext } from '../hooks/useAssistantPageContext';
 
 import { ContentItem, ContentStatus, ContentItemWithAssets, PlatformPost, BestPostingTime } from '../content/types';
 import { Release } from '../types';
@@ -40,6 +42,16 @@ export function ContentEngine() {
   const [scheduledPlatformItems, setScheduledPlatformItems] = React.useState<ContentItem[]>([]);
   const [bestTimes, setBestTimes] = React.useState<BestPostingTime[]>([]);
   const [isBestTimesLoading, setIsBestTimesLoading] = React.useState(true);
+
+  // Register page context + handle assistant actions
+  useAssistantPageContext('content');
+  React.useEffect(() => {
+    return subscribeAssistantActions((action) => {
+      if (action.type === 'open_content_scheduler') {
+        setIsComposerOpen(true);
+      }
+    });
+  }, []);
 
   const loadScheduledPlatformPosts = React.useCallback(async () => {
     try {

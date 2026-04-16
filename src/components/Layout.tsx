@@ -7,6 +7,7 @@ import {
   Calendar as CalendarIcon,
   BarChart3,
   Brain,
+  MessageSquareMore,
   Sparkles,
   Layers,
   ChevronDown,
@@ -16,6 +17,8 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { GlobalSearch } from './GlobalSearch';
+import { GlobalAssistantDrawer } from './GlobalAssistantDrawer';
+import { AssistantProvider, useAssistantContext } from '../context/AssistantContext';
 import { useCurrentUserRole } from '../hooks/useCurrentUserRole';
 
 type DropdownChild = {
@@ -119,7 +122,22 @@ function NavDropdown({ label, children }: { label: string; children: DropdownChi
   );
 }
 
-export function Layout() {
+function AssistantTrigger() {
+  const { toggleOpen } = useAssistantContext();
+  return (
+    <button
+      type="button"
+      onClick={toggleOpen}
+      className="flex items-center p-2 text-zinc-400 hover:text-white rounded-lg transition-colors"
+      title="Open assistant"
+      aria-label="Open assistant"
+    >
+      <MessageSquareMore className="w-4 h-4" />
+    </button>
+  );
+}
+
+function LayoutInner() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { roleDisplayName, isArtist, isManager } = useCurrentUserRole();
@@ -185,6 +203,7 @@ export function Layout() {
               </span>
             )}
             <GlobalSearch compact />
+            <AssistantTrigger />
             <button
               onClick={handleLogout}
               className="hidden md:flex items-center p-2 text-zinc-600 hover:text-zinc-200 rounded-lg transition-colors"
@@ -338,6 +357,17 @@ export function Layout() {
           </motion.div>
         </AnimatePresence>
       </main>
+
+      {/* Global assistant — rendered once here so it's available on every page */}
+      <GlobalAssistantDrawer />
     </div>
+  );
+}
+
+export function Layout() {
+  return (
+    <AssistantProvider>
+      <LayoutInner />
+    </AssistantProvider>
   );
 }

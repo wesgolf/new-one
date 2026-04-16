@@ -22,6 +22,8 @@ import { CalendarEventDetailModal } from '../components/CalendarEventDetailModal
 import { CalendarSlotDrawer } from '../components/CalendarSlotDrawer';
 import { CalendarInsightsPanel } from '../components/CalendarInsightsPanel';
 import { CalendarAIAssistant, parseCalendarIntent } from '../components/CalendarAIAssistant';
+import { subscribeAssistantActions } from '../lib/commandBus';
+import { useAssistantPageContext } from '../hooks/useAssistantPageContext';
 import type { IntentResult } from '../components/CalendarAIAssistant';
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -277,6 +279,24 @@ export function Calendar() {
   }, []);
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
+
+  // Register page context so the assistant prioritises calendar commands
+  useAssistantPageContext('calendar');
+
+  // Handle structured actions dispatched from the global assistant
+  useEffect(() => {
+    return subscribeAssistantActions((action) => {
+      if (action.type === 'create_calendar_event') {
+        if (action.payload?.startsAt) {
+          const d = new Date(action.payload.startsAt);
+          if (!isNaN(d.getTime())) setSelectedDate(toDateStr(d));
+        }
+        if (action.payload?.title) setSlotPrefillTitle(action.payload.title);
+        setSlotPrefillType('event');
+        setIsModalOpen(true);
+      }
+    });
+  }, []);
 
   // ── Navigation ───────────────────────────────────────────────────────────
 

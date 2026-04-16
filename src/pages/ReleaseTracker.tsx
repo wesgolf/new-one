@@ -14,6 +14,8 @@ import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { fetchReleases, deleteRelease } from '../lib/supabaseData';
 import { useCurrentUserRole } from '../hooks/useCurrentUserRole';
+import { subscribeAssistantActions } from '../lib/commandBus';
+import { useAssistantPageContext } from '../hooks/useAssistantPageContext';
 import { ReleaseFormModal } from '../components/ReleaseFormModal';
 import type { ReleaseRecord } from '../types/domain';
 
@@ -92,6 +94,17 @@ export function ReleaseTracker() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Register page context + handle assistant open_release action
+  useAssistantPageContext('releases');
+  useEffect(() => {
+    return subscribeAssistantActions((action) => {
+      if (action.type === 'open_release') {
+        setEditingRelease(null);
+        setFormOpen(true);
+      }
+    });
+  }, []);
 
   const filtered = useMemo(() => {
     return releases

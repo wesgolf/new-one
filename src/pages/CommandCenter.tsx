@@ -18,9 +18,9 @@ import { TodaysPriorities } from '../components/dashboard/TodaysPriorities';
 import { UpcomingContent } from '../components/dashboard/UpcomingContent';
 import { ActiveCampaigns } from '../components/dashboard/ActiveCampaigns';
 import { DashCard } from '../components/dashboard/DashCard';
-import { GlobalAssistantDrawer } from '../components/GlobalAssistantDrawer';
 import { IntegrationStatusCard } from '../components/dashboard/IntegrationStatusCard';
 import { MyTasksWidget } from '../components/dashboard/MyTasksWidget';
+import { useAssistantContext } from '../context/AssistantContext';
 import { syncService } from '../services/syncService';
 import type { SinceLastLoginDelta } from '../hooks/useDashboard';
 
@@ -95,10 +95,10 @@ function ArtistLinks() {
 export function CommandCenter() {
   const { data, loading, error, refetch } = useDashboard();
   const { isManager } = useCurrentUserRole();
+  const { setOpen: setAssistantOpen } = useAssistantContext();
 
   const [syncing,       setSyncing]       = useState(false);
   const [syncSuccess,   setSyncSuccess]   = useState(false);
-  const [assistantOpen, setAssistantOpen] = useState(false);
 
   const handleSyncNow = useCallback(async () => {
     setSyncing(true);
@@ -175,8 +175,7 @@ export function CommandCenter() {
         </div>
       )}
 
-      {/* AI assistant drawer */}
-      <GlobalAssistantDrawer open={assistantOpen} onOpenChange={setAssistantOpen} />
+      {/* AI assistant — now global via Layout, just trigger open */}
     </div>
   );
 }
