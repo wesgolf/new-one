@@ -67,3 +67,32 @@
     box-shadow: 0 0 16px rgba(124, 58, 237, 0.12);
   }
 }
+
+/* ── PDF / Print export ────────────────────────────────────────────────────────
+ * When window.print() is called, only #wos-report-print is visible.
+ * Everything else is hidden via visibility:hidden (preserves layout reflow).
+ * The report is positioned absolute top-left so it fills the entire page.
+ * ─────────────────────────────────────────────────────────────────────────── */
+@media print {
+  @page {
+    margin: 1.4cm 1.6cm;
+    size: A4 portrait;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  #wos-report-print,
+  #wos-report-print * {
+    visibility: visible;
+  }
+
+  #wos-report-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: white !important;
+  }
+}

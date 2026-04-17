@@ -187,8 +187,62 @@ export interface PublicHubLink {
   label: string;
   href: string;
   description?: string;
+  /** Lucide icon name key, e.g. 'Music2', 'Radio', 'Users' */
+  icon?: string;
+  category?: 'music' | 'social' | 'collab' | 'contact' | 'merch';
+  /** True = opens in new tab via <a>; false = SPA route via <Link> */
+  external?: boolean;
+  /** Renders a brand-accent ring to visually elevate the card */
+  highlight?: boolean;
+  /** Controls render order (ascending) */
+  order?: number;
+  /** Legacy tailwind accent class — kept for backward compat */
   accent?: string;
 }
+
+// ─── Weekly Report ────────────────────────────────────────────────────────────
+
+export type ReportSectionId =
+  | 'wins'
+  | 'losses'
+  | 'content_performance'
+  | 'release_highlights'
+  | 'task_summary'
+  | 'action_items'
+  | 'sync_issues';
+
+export interface ReportItem {
+  text: string;
+  meta?: string;
+  status?: 'positive' | 'negative' | 'neutral' | 'warning';
+  tag?: string;
+}
+
+export interface WeeklyReportSection {
+  id: ReportSectionId;
+  title: string;
+  narrative?: string;
+  items: ReportItem[];
+  stats?: Array<{ label: string; value: string | number }>;
+}
+
+export interface WeeklyReportConfig {
+  startDate: string; // ISO date string
+  endDate: string;   // ISO date string
+  sections: ReportSectionId[];
+  label?: string;
+}
+
+export interface WeeklyReport {
+  id: string;
+  config: WeeklyReportConfig;
+  generatedAt: string;
+  artistName: string;
+  sections: WeeklyReportSection[];
+  executiveSummary?: string;
+}
+
+// ─── Assistant Actions ────────────────────────────────────────────────────────
 
 export interface AssistantAction {
   type:

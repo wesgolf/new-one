@@ -1,29 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Bot, 
-  Send, 
-  Plus, 
-  Trash2, 
-  BookOpen, 
-  MessageSquare, 
-  Loader2, 
-  Sparkles, 
-  Database, 
-  History,
-  Zap,
+import {
+  BookOpen,
   Brain,
-  Search,
-  Info,
-  X,
-  Globe,
-  Link as LinkIcon,
+  CheckCircle2,
+  Database,
   ExternalLink,
   FileText,
+  Globe,
   Image as ImageIcon,
+  Link as LinkIcon,
+  Loader2,
+  MessageSquare,
+  Plus,
+  Send,
+  Trash2,
   Upload,
-  File,
-  CheckCircle2,
-  AlertCircle
+  X,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabase } from '../lib/supabase';
@@ -286,343 +278,342 @@ export function ArtistCoach() {
   };
 
   return (
-    <div className="h-[calc(100vh-120px)] flex flex-col gap-6">
-      <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-        <div className="text-center lg:text-left">
-          <h1 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight flex flex-col sm:flex-row items-center gap-3">
-            <div className="p-2 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-200 shrink-0">
-              <Brain className="w-6 h-6 text-white" />
-            </div>
-            Artist Coach
-          </h1>
-          <p className="text-slate-500 mt-1 text-sm">AI-powered mentorship trained on your career data</p>
+    <div className="flex h-[calc(100vh-120px)] flex-col gap-6">
+
+      {/* ── Header ─────────────────────────────────────────────────── */}
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">Coach</h2>
+          <p className="mt-1 text-slate-500">AI mentorship trained on your career data.</p>
         </div>
 
-        <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 self-center lg:self-auto">
-          <button
-            onClick={() => setActiveTab('chat')}
-            className={cn(
-              "px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-widest flex items-center gap-2",
-              activeTab === 'chat' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-            )}
-          >
-            <MessageSquare className="w-3.5 h-3.5" />
-            Coach Chat
-          </button>
-          <button
-            onClick={() => setActiveTab('knowledge')}
-            className={cn(
-              "px-4 py-1.5 rounded-lg text-xs font-bold transition-all uppercase tracking-widest flex items-center gap-2",
-              activeTab === 'knowledge' ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-            )}
-          >
-            <Database className="w-3.5 h-3.5" />
-            Knowledge Base
-          </button>
+        <div className="flex items-center gap-3 self-start sm:self-auto">
+          {/* Tab switcher */}
+          <div className="flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
+            <button
+              onClick={() => setActiveTab('chat')}
+              className={cn(
+                'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all',
+                activeTab === 'chat'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700',
+              )}
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              Chat
+            </button>
+            <button
+              onClick={() => setActiveTab('knowledge')}
+              className={cn(
+                'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all',
+                activeTab === 'knowledge'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700',
+              )}
+            >
+              <Database className="h-3.5 w-3.5" />
+              Knowledge
+            </button>
+          </div>
+
+          {/* Clear history — chat tab only */}
+          {activeTab === 'chat' && (
+            <button
+              onClick={clearChatHistory}
+              className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-500 shadow-sm transition-colors hover:border-rose-200 hover:text-rose-600"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Clear
+            </button>
+          )}
         </div>
       </header>
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-6 overflow-hidden">
-        {/* Main Interface */}
-        <div className="lg:col-span-3 flex flex-col glass-card overflow-hidden border-indigo-100 shadow-indigo-50/50">
-          {activeTab === 'chat' ? (
-            <>
-              <div 
-                ref={scrollRef}
-                className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/30"
-              >
-                {messages.map((msg, i) => (
-                  <div 
-                    key={i} 
-                    className={cn(
-                      "flex gap-3 md:gap-4 max-w-[90%] md:max-w-[85%]",
-                      msg.role === 'user' ? "ml-auto flex-row-reverse" : ""
-                    )}
-                  >
-                    <div className={cn(
-                      "w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm",
-                      msg.role === 'assistant' ? "bg-indigo-600" : "bg-slate-800"
-                    )}>
-                      {msg.role === 'assistant' ? <Brain className="w-4 h-4 text-white" /> : <History className="w-4 h-4 text-white" />}
-                    </div>
-                    <div className={cn(
-                      "p-3 md:p-4 rounded-2xl text-sm leading-relaxed",
-                      msg.role === 'assistant' 
-                        ? "bg-white border border-slate-100 text-slate-800 shadow-sm rounded-tl-none" 
-                        : "bg-indigo-600 text-white shadow-md shadow-indigo-100 rounded-tr-none"
-                    )}>
-                      <div className="prose prose-sm max-w-none prose-slate dark:prose-invert">
-                        <ReactMarkdown>{msg.content}</ReactMarkdown>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {loading && (
-                  <div className="flex gap-4 animate-pulse">
-                    <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
-                      <Brain className="w-4 h-4 text-indigo-300" />
-                    </div>
-                    <div className="p-4 rounded-2xl bg-white border border-slate-100 w-32 h-12 flex items-center justify-center">
-                      <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
-                    </div>
-                  </div>
-                )}
-              </div>
+      {/* ── Main panel ─────────────────────────────────────────────── */}
+      <div className="flex min-h-0 flex-1 overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm">
 
-              <form onSubmit={handleSendMessage} className="p-4 bg-white border-t border-slate-100">
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="Ask your coach anything..."
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-3 md:py-4 px-4 md:px-6 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
-                  />
-                  <button 
-                    type="submit"
-                    disabled={loading || !input.trim()}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 md:p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 transition-all shadow-lg shadow-indigo-100"
-                  >
-                    <Send className="w-4 h-4" />
-                  </button>
-                </div>
-              </form>
-            </>
-          ) : (
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <BookOpen className="w-5 h-5 text-indigo-600" />
-                  Custom Knowledge Base
-                </h2>
-                <button 
-                  onClick={() => setIsAddingResource(true)}
-                  className="btn-primary py-2 px-4 text-xs"
+        {/* ── Chat tab ──────────────────────────────────────────────── */}
+        {activeTab === 'chat' && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div
+              ref={scrollRef}
+              className="min-h-0 flex-1 overflow-y-auto space-y-6 p-6"
+            >
+              {messages.map((msg, i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    'flex max-w-[88%] gap-3 md:gap-4',
+                    msg.role === 'user' ? 'ml-auto flex-row-reverse' : '',
+                  )}
                 >
-                  <Plus className="w-4 h-4" />
-                  Add Resource
+                  {/* Avatar */}
+                  <div className={cn(
+                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl shadow-sm',
+                    msg.role === 'assistant' ? 'bg-slate-100' : 'bg-slate-900',
+                  )}>
+                    {msg.role === 'assistant'
+                      ? <Brain className="h-4 w-4 text-slate-600" />
+                      : <MessageSquare className="h-4 w-4 text-white" />
+                    }
+                  </div>
+
+                  {/* Bubble */}
+                  <div className={cn(
+                    'rounded-2xl p-4 text-sm leading-relaxed',
+                    msg.role === 'assistant'
+                      ? 'rounded-tl-none border border-slate-100 bg-slate-50 text-slate-800'
+                      : 'rounded-tr-none bg-slate-900 text-white shadow-md',
+                  )}>
+                    <div className="prose prose-sm max-w-none prose-slate">
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {loading && (
+                <div className="flex gap-4">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100">
+                    <Brain className="h-4 w-4 text-slate-400" />
+                  </div>
+                  <div className="flex h-12 w-28 items-center justify-center rounded-2xl rounded-tl-none border border-slate-100 bg-slate-50">
+                    <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Input */}
+            <form
+              onSubmit={handleSendMessage}
+              className="border-t border-slate-100 bg-white p-4"
+            >
+              <div className="relative">
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Ask your coach anything…"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3.5 pl-5 pr-14 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
+                />
+                <button
+                  type="submit"
+                  disabled={loading || !input.trim()}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-xl bg-slate-900 p-2.5 text-white shadow transition-colors hover:bg-blue-600 disabled:opacity-40 disabled:hover:bg-slate-900"
+                >
+                  <Send className="h-4 w-4" />
                 </button>
               </div>
+            </form>
+          </div>
+        )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {resources.map(resource => (
-                  <div key={resource.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 group relative">
-                    <div className="flex items-center justify-between mb-2">
+        {/* ── Knowledge tab ─────────────────────────────────────────── */}
+        {activeTab === 'knowledge' && (
+          <div className="min-h-0 flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <BookOpen className="h-4.5 w-4.5 text-slate-400" />
+                <h3 className="text-base font-bold text-slate-900">Knowledge Base</h3>
+                {resources.length > 0 && (
+                  <span className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-500">
+                    {resources.length}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => setIsAddingResource(true)}
+                className="btn-primary py-2 px-4 text-xs"
+              >
+                <Plus className="h-4 w-4" />
+                Add resource
+              </button>
+            </div>
+
+            {resources.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-[2rem] border border-dashed border-slate-200 bg-slate-50 py-20 text-center">
+                <Database className="mb-4 h-10 w-10 text-slate-200" />
+                <p className="font-medium text-slate-500">No resources yet.</p>
+                <p className="mt-1 text-xs text-slate-400">Add notes or links to train the coach on your strategy.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {resources.map((resource) => (
+                  <div
+                    key={resource.id}
+                    className="group relative flex flex-col rounded-[1.75rem] border border-slate-100 bg-white p-5 shadow-sm transition-shadow hover:shadow-md"
+                  >
+                    <div className="mb-3 flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 bg-indigo-100 text-indigo-600 rounded text-[10px] font-bold uppercase tracking-widest">
+                        <span className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
                           {resource.category}
                         </span>
-                        <div className="p-1 bg-white rounded-md border border-slate-100">
-                          {resource.type === 'text' && <FileText className="w-3 h-3 text-slate-400" />}
-                          {resource.type === 'image' && <ImageIcon className="w-3 h-3 text-slate-400" />}
-                          {resource.type === 'webpage' && <Globe className="w-3 h-3 text-slate-400" />}
-                          {resource.type === 'pdf' && <FileText className="w-3 h-3 text-slate-400" />}
+                        <div className="flex h-5 w-5 items-center justify-center rounded-md border border-slate-100 bg-white">
+                          {resource.type === 'image'   && <ImageIcon  className="h-3 w-3 text-slate-400" />}
+                          {resource.type === 'webpage' && <Globe      className="h-3 w-3 text-slate-400" />}
+                          {(resource.type === 'text' || resource.type === 'pdf') && <FileText className="h-3 w-3 text-slate-400" />}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                         {resource.url && (
-                          <a 
-                            href={resource.url} 
-                            target="_blank" 
+                          <a
+                            href={resource.url}
+                            target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1.5 text-slate-400 hover:text-indigo-600"
+                            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:text-blue-600"
                           >
-                            <ExternalLink className="w-3.5 h-3.5" />
+                            <ExternalLink className="h-3.5 w-3.5" />
                           </a>
                         )}
-                        <button 
+                        <button
                           onClick={() => handleDeleteResource(resource.id)}
-                          className="p-1.5 text-slate-400 hover:text-red-500"
+                          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:text-rose-600"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </div>
-                    <h3 className="font-bold text-slate-900 mb-1">{resource.title}</h3>
+
+                    <h4 className="font-bold text-slate-900">{resource.title}</h4>
+
                     {resource.type === 'image' && resource.url && (
-                      <div className="mb-2 rounded-lg overflow-hidden border border-slate-200 aspect-video bg-slate-100">
-                        <img 
-                          src={resource.url} 
-                          alt={resource.title} 
-                          className="w-full h-full object-cover"
+                      <div className="my-3 aspect-video overflow-hidden rounded-xl border border-slate-100 bg-slate-50">
+                        <img
+                          src={resource.url}
+                          alt={resource.title}
+                          className="h-full w-full object-cover"
                           referrerPolicy="no-referrer"
                         />
                       </div>
                     )}
-                    <p className="text-xs text-slate-500 line-clamp-3 leading-relaxed">{resource.content}</p>
+
+                    <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-slate-500">
+                      {resource.content}
+                    </p>
                   </div>
                 ))}
-                {resources.length === 0 && (
-                  <div className="col-span-full py-12 text-center bg-slate-50 rounded-3xl border border-dashed border-slate-200">
-                    <Database className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                    <p className="text-slate-500 font-medium">No resources added yet.</p>
-                    <p className="text-slate-400 text-xs mt-1">Add text to train your coach on specific strategies.</p>
-                  </div>
-                )}
               </div>
-            </div>
-          )}
-        </div>
-
-        {/* Sidebar / Quick Stats */}
-        <div className="space-y-6">
-          <div className="glass-card p-6 border-indigo-100">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-              Coach Memory
-            </h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                <div className="flex items-center gap-2">
-                  <Database className="w-4 h-4 text-slate-400" />
-                  <span className="text-xs font-medium text-slate-600">Resources</span>
-                </div>
-                <span className="text-xs font-bold text-indigo-600">{resources.length}</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                <div className="flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4 text-slate-400" />
-                  <span className="text-xs font-medium text-slate-600">Messages</span>
-                </div>
-                <span className="text-xs font-bold text-indigo-600">{messages.length}</span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                <div className="flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-slate-400" />
-                  <span className="text-xs font-medium text-slate-600">Context Depth</span>
-                </div>
-                <span className="text-xs font-bold text-indigo-600">Full OS</span>
-              </div>
-              <button 
-                onClick={clearChatHistory}
-                className="w-full py-2 px-3 bg-white border border-slate-200 text-slate-600 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-slate-50 hover:text-red-600 transition-all flex items-center justify-center gap-2"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Clear Chat History
-              </button>
-            </div>
+            )}
           </div>
-
-          <div className="glass-card p-6 bg-indigo-600 text-white border-none shadow-xl shadow-indigo-200">
-            <h3 className="text-xs font-bold text-white/70 uppercase tracking-widest mb-3">Coach Tip</h3>
-            <p className="text-sm font-medium leading-relaxed">
-              "Add your marketing plans or inspiration notes to the Knowledge Base. I'll use them to give you better advice on your next release."
-            </p>
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* Add Resource Modal */}
+      {/* ── Add Resource Modal ─────────────────────────────────────── */}
       <AnimatePresence>
         {isAddingResource && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden"
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="w-full max-w-lg overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-2xl"
             >
-              <div className="p-6 bg-indigo-600 flex items-center justify-between">
-                <h3 className="text-xl font-bold text-white">Add Knowledge Resource</h3>
-                <button onClick={() => setIsAddingResource(false)} className="text-white/80 hover:text-white">
-                  <X className="w-6 h-6" />
+              <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+                <h3 className="text-lg font-bold text-slate-900">Add knowledge resource</h3>
+                <button
+                  onClick={() => setIsAddingResource(false)}
+                  className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                >
+                  <X className="h-5 w-5" />
                 </button>
               </div>
-              <form onSubmit={handleAddResource} className="p-6 space-y-4">
+
+              <form onSubmit={handleAddResource} className="space-y-4 p-6">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Title</label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Title</label>
                     <input
                       required
                       type="text"
                       value={newResource.title}
                       onChange={(e) => setNewResource({ ...newResource, title: e.target.value })}
-                      placeholder="e.g. 2024 Marketing Strategy"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                      placeholder="e.g. 2025 Marketing Strategy"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Category</label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Category</label>
                     <select
                       value={newResource.category}
                       onChange={(e) => setNewResource({ ...newResource, category: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                     >
                       <option>Strategy</option>
                       <option>Technical</option>
                       <option>Inspiration</option>
-                      <option>General</option>
                       <option>Marketing</option>
+                      <option>General</option>
                     </select>
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Resource Type</label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Type</label>
                   <div className="grid grid-cols-4 gap-2">
-                    {[
-                      { id: 'text', icon: FileText, label: 'Text' },
-                      { id: 'image', icon: ImageIcon, label: 'Image' },
-                      { id: 'webpage', icon: Globe, label: 'Web' },
-                      { id: 'pdf', icon: FileText, label: 'PDF' }
-                    ].map(type => (
+                    {([
+                      { id: 'text',    icon: FileText,   label: 'Text'  },
+                      { id: 'image',   icon: ImageIcon,  label: 'Image' },
+                      { id: 'webpage', icon: Globe,      label: 'Web'   },
+                      { id: 'pdf',     icon: FileText,   label: 'PDF'   },
+                    ] as const).map((t) => (
                       <button
-                        key={type.id}
+                        key={t.id}
                         type="button"
-                        onClick={() => setNewResource({ ...newResource, type: type.id as any })}
+                        onClick={() => setNewResource({ ...newResource, type: t.id })}
                         className={cn(
-                          "flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all",
-                          newResource.type === type.id 
-                            ? "bg-indigo-50 border-indigo-200 text-indigo-600 shadow-sm" 
-                            : "bg-white border-slate-100 text-slate-400 hover:border-slate-200"
+                          'flex flex-col items-center gap-1.5 rounded-xl border p-3 transition-all',
+                          newResource.type === t.id
+                            ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                            : 'border-slate-100 bg-white text-slate-400 hover:border-slate-200',
                         )}
                       >
-                        <type.icon className="w-4 h-4" />
-                        <span className="text-[10px] font-bold uppercase tracking-tighter">{type.label}</span>
+                        <t.icon className="h-4 w-4" />
+                        <span className="text-[10px] font-bold uppercase tracking-tighter">{t.label}</span>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {newResource.type !== 'text' && newResource.type !== 'webpage' && (
+                {(newResource.type === 'image' || newResource.type === 'pdf') && (
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Upload File</label>
-                    <div 
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Upload file</label>
+                    <div
                       onDragEnter={handleDrag}
                       onDragLeave={handleDrag}
                       onDragOver={handleDrag}
                       onDrop={handleDrop}
                       className={cn(
-                        "relative border-2 border-dashed rounded-2xl p-8 transition-all flex flex-col items-center justify-center gap-3",
-                        dragActive ? "border-indigo-500 bg-indigo-50" : "border-slate-200 bg-slate-50",
-                        selectedFile ? "border-emerald-500 bg-emerald-50" : ""
+                        'relative flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed p-8 transition-all',
+                        dragActive    ? 'border-blue-400 bg-blue-50'    : 'border-slate-200 bg-slate-50',
+                        selectedFile  ? 'border-emerald-400 bg-emerald-50' : '',
                       )}
                     >
-                      <input 
-                        type="file" 
+                      <input
+                        type="file"
                         onChange={(e) => e.target.files && setSelectedFile(e.target.files[0])}
-                        className="absolute inset-0 opacity-0 cursor-pointer"
-                        accept={newResource.type === 'image' ? "image/*" : "application/pdf"}
+                        className="absolute inset-0 cursor-pointer opacity-0"
+                        accept={newResource.type === 'image' ? 'image/*' : 'application/pdf'}
                       />
                       {selectedFile ? (
                         <>
-                          <div className="p-3 bg-emerald-500 rounded-xl">
-                            <CheckCircle2 className="w-6 h-6 text-white" />
+                          <div className="rounded-xl bg-emerald-500 p-3">
+                            <CheckCircle2 className="h-6 w-6 text-white" />
                           </div>
                           <div className="text-center">
                             <p className="text-sm font-bold text-slate-900">{selectedFile.name}</p>
-                            <p className="text-[10px] text-slate-500 uppercase tracking-widest">File selected</p>
+                            <p className="text-[10px] uppercase tracking-widest text-slate-400">File selected</p>
                           </div>
                         </>
                       ) : (
                         <>
-                          <div className="p-3 bg-white rounded-xl shadow-sm">
-                            <Upload className="w-6 h-6 text-slate-400" />
+                          <div className="rounded-xl bg-white p-3 shadow-sm">
+                            <Upload className="h-6 w-6 text-slate-400" />
                           </div>
                           <div className="text-center">
                             <p className="text-sm font-bold text-slate-900">Click or drag to upload</p>
-                            <p className="text-[10px] text-slate-500 uppercase tracking-widest">
-                              {newResource.type === 'image' ? 'PNG, JPG, GIF' : 'PDF Document'}
+                            <p className="text-[10px] uppercase tracking-widest text-slate-400">
+                              {newResource.type === 'image' ? 'PNG, JPG, GIF' : 'PDF only'}
                             </p>
                           </div>
                         </>
@@ -633,48 +624,44 @@ export function ArtistCoach() {
 
                 {newResource.type === 'webpage' && (
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                      Website URL
-                    </label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">URL</label>
                     <div className="relative">
-                      <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <LinkIcon className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       <input
                         required
                         type="url"
                         value={newResource.url}
                         onChange={(e) => setNewResource({ ...newResource, url: e.target.value })}
-                        placeholder="https://..."
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                        placeholder="https://…"
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                       />
                     </div>
                   </div>
                 )}
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                    {newResource.type === 'text' ? 'Content' : 'Description / Notes'}
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                    {newResource.type === 'text' ? 'Content' : 'Notes / description'}
                   </label>
                   <textarea
                     required={newResource.type === 'text'}
                     rows={4}
                     value={newResource.content}
                     onChange={(e) => setNewResource({ ...newResource, content: e.target.value })}
-                    placeholder={newResource.type === 'text' ? "Paste your notes here..." : "Add some context about this resource for the coach..."}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all resize-none"
+                    placeholder={newResource.type === 'text' ? 'Paste your notes here…' : 'Add context for the coach…'}
+                    className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                   />
                 </div>
-                <button 
-                  type="submit" 
+
+                <button
+                  type="submit"
                   disabled={isUploading}
-                  className="btn-primary w-full py-3 flex items-center justify-center gap-2"
+                  className="btn-primary w-full py-3"
                 >
                   {isUploading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Uploading to Vault...
-                    </>
+                    <><Loader2 className="h-4 w-4 animate-spin" /> Uploading…</>
                   ) : (
-                    'Save to Knowledge Base'
+                    'Save to knowledge base'
                   )}
                 </button>
               </form>
@@ -685,3 +672,4 @@ export function ArtistCoach() {
     </div>
   );
 }
+
