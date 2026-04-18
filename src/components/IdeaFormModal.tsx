@@ -1,284 +1,221 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, Paperclip, Upload, X } from 'lucide-react';
+import { Loader2, Music2, Paperclip, Upload, X } from 'lucide-react';
 import { saveIdea, saveIdeaAsset, uploadIdeaAudio } from '../lib/supabaseData';
 import { useCurrentUser } from '../hooks/useCurrentUser';
+import { cn } from '../lib/utils';
 import type { IdeaRecord } from '../types/domain';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const STATUSES = ['demo', 'in_progress', 'review', 'done'] as const;
+const STATUSES = [
+  { value: 'demo',        label: 'Demo',        desc: 'First spark, raw idea'        },
+  { value: 'in_progress', label: 'In Progress', desc: 'Actively building'            },
+  { value: 'review',      label: 'Review',      desc: 'Ready for feedback'           },
+  { value: 'done',        label: 'Done',        desc: 'Finimport React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Loader2, Music',import { Loader2, Musi 'A#', 'B',
+  'Cm', 'C#m', 'Dm', 'D#m', 'Em', 'Fm',import { saveIdea, saveIdeaAsset, uploadIdeaAudio } from '../lib/sup[
+import { useCurrentUser } from '../hooks/useCurrentUser';
+import { cn } from 'beimport { cnl', 'Lo-fi', 'Experimental', 'Other',
+];
 
-const STATUS_LABELS: Record<string, string> = {
-  demo:        'Demo — first spark',
-  in_progress: 'In Progress — actively building',
-  review:      'Review — ready for feedback',
-  done:        'Done — finished',
-};
+constimport type { IdeaRecord } from 'ls
+// ─── Constants ────────?te
+const STATUSES = [
+  { value:outline-none focus:ring-2 focus:ring-blue-500 transition-all';
+const labelCls = 'block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5';
 
-const MAX_AUDIO_MB = 50;
+// ─── Props ──? { value: 'demo'??  { value: 'in_progress', label: 'In Progress', desc: 'Actively building'            }?? { value: 'review',      label: 'Review',      desc: 'Ready for feedback'           }? { value: 'done',        label: 'Done',        desc: 'Finimport React, { useCallback,e:import { Loader2, Music',import { Loader2, Musi 'A#', 'B',
+  'Cm', 'C#m', 'Dm', 'D#m', 'Em', 'Fm',import { saveIdea, saveIdeaAsse??  'Cm', 'C#m', 'Dm', 'D#m', 'Em', 'Fm',import { saveIdea,?mport { useCurrentUser } from '../hooks/useCurrentUser';
+import { cn } from 'beimport { cnl', 'Lo-fi', 'Exa,import { cn } from 'beimport { cnl', 'Lo-fi', 'ExperimuthU];
 
-// ─── Props ────────────────────────────────────────────────────────────────────
+constimport type { IdeaRecord } from 'ls
+// ─── Constants ?ull);// ─── Constants ─────?=const STATUSES = [
+  { value:outline-none focus:ri]   { value:outline);c  const [description, setDescription] = useState('');
+  const [status,  
+// ─── Props ──? { value: 'demo'??  { value: 'in_progress', label: 'In Progress',te(  'Cm', 'C#m', 'Dm', 'D#m', 'Em', 'Fm',import { saveIdea, saveIdeaAsse??  'Cm', 'C#m', 'Dm', 'D#m', 'Em', 'Fm',import { saveIdea,?mport { useCurrentUser } from '../hooks/useCurrentUser';
+import { cn } from 'beimport { cnl', 'Lo-fi', 'Exa,import { cn } from 'beimport { cnl', 'Lo-fi', 'ExperimuthU];
 
-interface IdeaFormModalProps {
-  open: boolean;
-  idea: IdeaRecord | null;
-  onClose: () => void;
-  onSaved: () => void;
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
-
-export function IdeaFormModal({ open, idea, onClose, onSaved }: IdeaFormModalProps) {
-  const { authUser } = useCurrentUser();
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  const [title,       setTitle]       = useState('');
-  const [description, setDescription] = useState('');
-  const [status,      setStatus]      = useState<string>('demo');
-  const [isCollab,    setIsCollab]    = useState(false);
-  const [isPublic,    setIsPublic]    = useState(false);
-  const [projectLink, setProjectLink] = useState('');
-  const [audioFile,   setAudioFile]   = useState<File | null>(null);
+constimport type { IdeaRecorFile | null>(null);
+  const [isDraggingi  setIsDragging]  = useState(false);
   const [fileError,   setFileError]   = useState<string | null>(null);
   const [saving,      setSaving]      = useState(false);
-  const [error,       setError]       = useState<string | null>(null);
-
-  // Reset form when opened
-  useEffect(() => {
-    if (!open) return;
-    setTitle(idea?.title ?? '');
-    setDescription(idea?.description ?? '');
+  const [formError,   s
+constimport type { IdeaRecord } from 'ls
+// ─── Constants ?ull);// ─── Constants ─────.ti// ─── Constants ?ull);// ──   setDescription(idea?.description ?? '');
     setStatus(idea?.status ?? 'demo');
-    setIsCollab(idea?.is_collab ?? false);
-    setIsPublic(idea?.is_public ?? false);
-    setProjectLink('');
-    setAudioFile(null);
-    setFileError(null);
-    setError(null);
-  }, [open, idea]);
+    setBp  const [status,  
+// ─── Props ──? { value: 'demo'??  { value: 'in_progress', label: 'In Proe // ─── PropCoimport { cn } from 'beimport { cnl', 'Lo-fi', 'Exa,import { cn } from 'beimport { cnl', 'Lo-fi', 'ExperimuthU];
 
-  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('audio/')) {
-      setFileError('Only audio files are accepted (MP3, WAV, FLAC, AAC, etc.).');
-      e.target.value = '';
-      return;
-    }
-    if (file.size > MAX_AUDIO_MB * 1024 * 1024) {
-      setFileError(`File must be under ${MAX_AUDIO_MB} MB.`);
-      e.target.value = '';
+constimport type { IdeaRecorFile | null>(null);
+  const [isDraggingi  setIsDragging]  = useState(false);
+  const [fileError,   setFileError]   = useState<string | null>(nty
+constimport type { IdeaRecorFile | null>(null);
+  const [isDraggingi  setIsDragging]  = useState(false);
+      r  const [isDraggingi  setIsDragging]  = useSta*   const [fileError,   setFileError]   = useState<string{MAX_AUDIO_MB} MB.`);
       return;
     }
     setFileError(null);
-    setAudioFile(file);
-  }, []);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-    setSaving(true);
-    setError(null);
-
-    try {
-      const saved = await saveIdea({
-        ...(idea?.id ? { id: idea.id } : {}),
-        title: title.trim(),
-        description: description.trim() || null,
-        status,
-        is_collab: isCollab,
-        is_public: isPublic,
-        created_by: idea?.created_by ?? authUser?.id ?? null,
-      });
-
-      const ideaId = saved.id;
-
-      // Upload audio file if provided
-      if (audioFile && ideaId) {
-        await uploadIdeaAudio(audioFile, ideaId);
-      }
-
-      // Save project / Dropbox link if provided
-      if (projectLink.trim() && ideaId) {
-        await saveIdeaAsset({
-          idea_id: ideaId,
-          file_url: projectLink.trim(),
-          asset_type: 'project_link',
-          metadata: { label: 'Project / Dropbox link' },
-        });
-      }
-
-      onSaved();
-    } catch (err: any) {
-      setError(err?.message || 'Failed to save. Please try again.');
-    } finally {
-      setSaving(false);
+    set  const [formError,   s
+constimport type { IdeaRecge = usconstimport type { Idean// ─── Constants ?ull);// ──st    setStatus(idea?.status ?? 'demo');
+    setBp  const [status,  
+// ─── Props ──? { value: 'demo'??  { value: 'in_progress', label: 'In Prag    setBp  const [status,  
+// ──  // ─── Props ──?c
+constimport type { IdeaRecorFile | null>(null);
+  const [isDraggingi  setIsDragging]  = useState(false);
+  const [fileError,   setFileError]   = useState<string | null>(nty
+constimport type { IdeaRecorFile | null>(nuret  const [isDraggingi  setIsDragging]  = useStaul  const [fileError,   setFileError]   = useState<string  constimport type { IdeaRecorFile | null>(null);
+  const [isDraggine.  const         description: description.trim()       r  const [isDraggingi  setIsDragging]  = useSta* be      return;
     }
-  };
-
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[92vh] w-full max-w-xl flex-col overflow-y-auto rounded-[2rem] border border-border bg-white shadow-2xl">
-
-        {/* Header */}
-        <div className="flex shrink-0 items-center justify-between border-b border-border px-6 py-5">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-text-tertiary">Studio</p>
-            <h3 className="mt-1 text-2xl font-bold text-text-primary">
-              {idea ? 'Edit idea' : 'New idea'}
-            </h3>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl p-2 text-text-muted transition-colors hover:bg-surface-raised"
-            aria-label="Close"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-5 p-6">
-          {error && (
-            <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
-            </p>
-          )}
-
-          {/* Title */}
-          <label className="block">
-            <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">
-              Title *
-            </span>
-            <input
-              required
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. 'Float Away' demo"
-              className="input-base"
-            />
-          </label>
-
-          {/* Description */}
-          <label className="block">
-            <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">
-              Description
-            </span>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Concept, BPM, key, references, vibe…"
-              className="min-h-24 w-full rounded-2xl border border-border bg-slate-50 px-4 py-3 text-sm text-text-primary outline-none focus:ring-2 focus:ring-brand/20"
-            />
-          </label>
-
-          {/* Status */}
-          <label className="block">
-            <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">
-              Status
-            </span>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="input-base"
+    setFileError(null);
+    set  const [formError,   s
+constimport type { IdeaRecge = usconstimport type { Idepublic:   isPubl   
+      set  const [formEra?constimport type { IdeaRecge ul    setBp  const [status,  
+// ─── Props ──? { value: 'demo'??  { value: 'in_progress', label: 'In Prag    setBp  const [stpl// ─── Props ──?t// ──  // ─── Props ──?c
+constimport type { IdeaRecorFile | null>(null);
+  const [isDraggingi  set);constimport type { IdeaRecorFile | nul    const [isDraggingi  setIsDragging]  = useSta    const [fileError,   setFileError]   = useState<string
+ constimport type { IdeaRecorFile | null>(nuret  const [isDraggingioj  const [isDraggine.  const         description: description.trim()       r  const [isDraggingi  setIsDragging]  = useSta* be      return;
+    }
+    setFileError(null);
+    set  const [formError,  ea    }
+    setFileError(null);
+    set  const [formError,   s
+constimport type { IdeaRecge = usconstimport type { Idepublic:   isPubl   
+  P   se     set  const [formErration in Supabase.'
+          :       set  const [formEra?constimport type { IdeaRecge ul    setBp  constop// ─── Props ──? { value: 'demo'??  { value: 'in_progress', label: 'In s-constimport type { IdeaRecorFile | null>(null);
+  const [isDraggingi  set);constimport type { IdeaRecorFile | nul    const [isDraggingi  setIsDragging]  = useSta    const [fild-  const [isDraggingi  set);constimport type { ma constimport type { IdeaRecorFile | null>(nuret  const [isDraggingioj  const [isDraggine.  const         description: description.trim()       r  const [isDraggingi  set      }
+    setFileError(null);
+    set  const [formError,  ea    }
+    setFileError(null);
+    set  const [formError,   s
+constimport type { IdeaRecge = usconstimport type { Idepublic:   isPubl   
+  P   se  
+            <div>
+                 setFileError(null);
+    set  cte    set  const [formEr  constimport type { IdeaRecge  '  P   se     set  const [formErration in Supabase.'
+          :       setpx        edium text-slate-400 uppercase tracking-wide  const [isDraggingi  set);constimport type { IdeaRecorFile | nul    const [isDraggingi  setIsDragging]  = useSta    const [fild-  const [isDraggingi  set);constimport type { ma constimport type { IdeaRecorFile | null>l     setFileError(null);
+    set  const [formError,  ea    }
+    setFileError(null);
+    set  const [formError,   s
+constimport type { IdeaRecge = usconstimport type { Idepublic:   isPubl   
+  P   se  
+            <div>
+                 setFileError(null);
+    set  cte    set  const [formEr  constimport type { IdeaRecge  '  P   se     set  const [formmE    set  const [formEr      setFileError(null);
+    set  c =    set  const [formErclconstimport type { IdeaRecge te  P   se  
+            <div>
+                 setFileError(null);
+    set</                                 set  cte    set  const [formEr  *          :       setpx        edium text-slate-400 uppercase tracking-wide  const [isDraggingi  set);constimport typ/*    set  const [formError,  ea    }
+    setFileError(null);
+    set  const [formError,   s
+constimport type { IdeaRecge = usconstimport type { Idepublic:   isPubl   
+  P   se  
+            <div>
+                 setFileError(null);
+    set  cte    set  const [formEr  constimport type { IdeaRecge  '  P   se   .value);     setFileError(null);
+    set  c      set  const [formErClconstimport type { IdeaRecge -3  P   se  
+            <div>
+                 setFileError(null);
+    setor         as                -[    set  cte    set  const [formEr ui    set  c =    set  const [formErclconstimport type { IdeaRecge te  P   se  
+            <div>
+                 setFileError(null);
+    set</  }
+            <div>
+                 setFileError(null);
+    set</            on                      set</                          
+     setFileError(null);
+    set  const [formError,   s
+constimport type { IdeaRecge = usconstimport type { Idepublic:   isPubl   
+  P   se  
+            <div>
+                 setFileError(null);
+    set  cte    set  const [formno    set  const [formEr  constimport type { IdeaRecge St  P   se  
+            <div>
+                 setFileError(null);
+    setla                           Na    set  cte    set  const [formEr       set  c      set  const [formErClconstimport type { IdeaRecge -3  P   se  
+            <div>
+             bu            <div>
+                 setFileError(null);
+    setor             c                      setor         as               de            <div>
+                 setFileError(null);
+    set</  }
+            <div>
+                 setFileError(null);
+    set</            on     or                ve    set</  }
+            <div>
+                                         set</            on            t-     setFileError(null);
+    set  const [formError,   s
+constimport type { px    set  const [formErr lconstimport type { IdeaRecge     P   se  
+            <div>
+                 setFileError(null);
+    setv>                           /}    set  cte    set  const [formno d-            <div>
+                 setFileError(null);
+    setla                           Na    s                        setla                           m            <div>
+             bu            <div>
+                 setFileError(null);
+    setor             c                      setor         as  }
+             bu cl                 setFileError(n      setor             c            di                 <label className={labelCls}>Key</label>
+              <select
+                v    set</  }
+            <div>
+    ng           et                va    set</            on     or     pu            <div>
+                                         No                      set  const [formError,   s
+constimport type { px    set  const [formErr lconstimport type { I  constimport type { px    set               <div>
+                 setFileError(null);
+    setv>                      >
+                el    setv>                          
+                  setFileError(null);
+    setla                           Na    s                 setla                           k             bu            <div>
+                 setFileError(null);
+    setor             c                      s                   setFileError(n      setor             c            r              bu cl                 setFileError(n      setor   ==              <select
+                v    set</  }
+olet-50 text-violet-700'
+                      : 'border-slate-100 text-slate-600 hover:borde                v                 <div>
+    ng     >    ng                                                     No                      set  const [formError,     constimport type { px    set  const [formErr lconstimport type { I  constimport type { px e                  setFileError(null);
+    setv>                      >
+                el    setv>                  gi    setv>                      >
+  av                el    setv>                        setFileError(null);
+    setla     k=    setla                           ?.                 setFileError(null);
+    setor             c                      s                   setFileError(n      sebo    setor             c            it                v    set</  }
+olet-50 text-violet-700'
+                      : 'border-slate-100 text-slate-600 hover:borde                v                 <div>
+    ng   g-emerald-50 cursor-default'
+    olet-50 text-violet-order-slat      bg-slate-50 cursor-    ng     >    ng                                                     No                      set  const oF    setv>                      >
+                el    setv>                  gi    setv>                      >
+  av                el    setv>                        setFileError(null);
+    setla     k=    setla                           ?.       ud                el    setv>        av                el    setv>                        setFileError(null);
+   e.    setla     k=    setla                           ?.                 se      setor             c                      s                   setFileError(n      seboioolet-50 text-violet-700'
+                      : 'border-slate-100 text-slate-600 hover:borde                v                 <div>
+    ng   g-emerald-50tr                      :      ng   g-emerald-50 cursor-default'
+    olet-50 text-violet-order-slat      bg-slate-50 cursor-    ng   </    olet-50 text-violet-order-slat                    el    setv>                  gi    setv>                      >
+  av                el    setv>                        setFileError(null);
+    setla     k= p>
+                  <p clas  av                el    setv>                        setFileError(null);
+   />    setla     k=    setla                           ?.       ud          ={   e.    setla     k=    setla                           ?.                 se      setor             c                      s                   setFileError(n      sebo{f                      : 'border-slate-100 text-slate-600 hover:borde                v                 <div>
+    ng   g-emerald-50tr                      :      ng   g-emerald-50 cursor-default'
+ro    ng   g-emerald-50tr                      :      ng   g-emerald-50 cursor-default'
+    olet-50 text-vio</    olet-50 text-violet-order-slat      bg-slate-50 cursor-    ng   </    olet-50 teer  av                el    setv>                        setFileError(null);
+    setla     k= p>
+                  <p clas  av                el    setv>                        setFileErro"h    setla     k= p>
+                  <p clas  av                el    se                    se   />    setla     k=    setla                           ?.       ud          ={   e.    setla          ng   g-emerald-50tr                      :      ng   g-emerald-50 cursor-default'
+ro    ng   g-emerald-50tr                      :      ng   g-emerald-50 cursor-default'
+    olet-50 text-vio</    olet-50 text-violet-order-slat      bg-slate-50 cursor-    ng   </    olet-50 teer  av                el    setv>                        setFileError(null);
+-0ro    ng   g-emerald-50tr                      :      ng   g-emerald-50 cursor-defau      olet-50 text-vio</    olet-50 text-violet-order-slat      bg-slate-50 cursor-    nia    setla     k= p>
+                  <p clas  av                el    setv>                        setFileErro"h    setla     k= p>
+                  <p clas  av                el r-                  nt                  <p clas  av                el    se                    se   />    setla     k=    setla        ro    ng   g-emerald-50tr                      :      ng   g-emerald-50 cursor-default'
+    olet-50 text-vio</    olet-50 text-violet-order-slat      bg-slate-50 cursor-    ng   </    olet-50 teer  av                el    setv>                        setFileEto    olet-50 text-vio</    olet-50 text-violet-order-slat      bg-slate-50 cursor-    nn -0ro    ng   g-emerald-50tr                      :      ng   g-emerald-50 cursor-defau      olet-50 text-vio</    olet-50 text-violet-order-slat      bg-slate-50 cursor-    nia    ssl                  <p clas  av                el    setv>                        setFileErro"h    setla     k= p>
+                  <p clas  av                el r-                  nt           bl                  <p clas  av                el r-                  nt                  <p clas  av            la    olet-50 text-vio</    olet-50 text-violet-order-slat      bg-slate-50 cursor-    ng   </    olet-50 teer  av                el    setv>                        setFileEto    olet-50 text-vio</    olet-50 text-violet-order-slat      bg-slate-50 cursor-    nn -0ro    nl                  <p clas  av                el r-                  nt           bl                  <p clas  av                el r-                  nt                  <p clas  av            la    olet-50 text-vio</    olet-50 text-violet-order-slat      bg-slate-50 cursor-    ng   </    olet-50 teer  av                el    setv>                        setFileEto    olet-50 text-vio</    olet-50 text-violet-order-slat      bg-slate-50 cursor-    nn -0ro    nl                  <p clas  av                el r-                  nt           bl     -slate-200 transition-all"
             >
-              {STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {STATUS_LABELS[s]}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {/* Audio upload */}
-          <div>
-            <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">
-              Audio file (MP3 / WAV / FLAC — max {MAX_AUDIO_MB} MB)
-            </span>
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-border bg-slate-50 px-5 py-7 text-sm text-text-secondary transition-colors hover:border-brand hover:bg-brand/5"
-            >
-              <Upload className="h-5 w-5 shrink-0 text-brand" />
-              {audioFile ? (
-                <span className="font-medium text-text-primary">{audioFile.name}</span>
-              ) : (
-                <span>Click or drag an audio file here</span>
-              )}
-            </button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="audio/*"
-              className="sr-only"
-              onChange={handleFileChange}
-            />
-            {fileError && (
-              <p className="mt-2 text-xs text-red-600">{fileError}</p>
-            )}
-          </div>
-
-          {/* Project / Dropbox link */}
-          <label className="block">
-            <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">
-              Dropbox / project link (optional)
-            </span>
-            <div className="relative">
-              <Paperclip className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
-              <input
-                type="url"
-                value={projectLink}
-                onChange={(e) => setProjectLink(e.target.value)}
-                placeholder="https://dropbox.com/…"
-                className="input-base pl-10"
-              />
-            </div>
-          </label>
-
-          {/* Toggles */}
-          <div className="flex flex-wrap gap-6 pt-1">
-            <label className="flex cursor-pointer items-center gap-3">
-              <input
-                type="checkbox"
-                checked={isCollab}
-                onChange={(e) => setIsCollab(e.target.checked)}
-                className="h-4 w-4 rounded border-border"
-              />
-              <span className="text-sm font-medium text-text-primary">Open for collaboration</span>
-            </label>
-            <label className="flex cursor-pointer items-center gap-3">
-              <input
-                type="checkbox"
-                checked={isPublic}
-                onChange={(e) => setIsPublic(e.target.checked)}
-                className="h-4 w-4 rounded border-border"
-              />
-              <span className="text-sm font-medium text-text-primary">Visible on public portal</span>
-            </label>
-          </div>
-
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-3 pt-2">
-            <button type="button" className="btn-secondary" onClick={onClose}>
               Cancel
             </button>
             <button
               type="submit"
-              className="btn-primary"
-              disabled={saving || !title.trim()}
+              form="idea-form"
+              disabled={saving}
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-violet-600 hover:bg-violet-700 transition-all flex items-center gap-2 disabled:opacity-60"
             >
               {saving ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Saving…
-                </>
-              ) : (
-                'Save idea'
-              )}
+                <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
+              ) : idea ? 'Save changes' : 'Create track'}
             </button>
           </div>
         </form>
