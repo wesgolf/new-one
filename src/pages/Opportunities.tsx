@@ -81,8 +81,8 @@ export function Opportunities() {
     <div className="space-y-8 pb-20">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-slate-900">Network & Contacts</h2>
-          <p className="text-slate-500 mt-2">Manage your relationships, labels, and collaborators.</p>
+          <h2 className="text-3xl font-bold tracking-tight text-text-primary">Network &amp; Contacts</h2>
+          <p className="text-text-secondary mt-2">Manage your relationships, labels, and collaborators.</p>
         </div>
         <button 
           onClick={() => setIsAdding(true)}

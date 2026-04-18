@@ -21,7 +21,12 @@
   /* Text hierarchy */
   --color-text-primary: #0f0e17;
   --color-text-secondary: #3d3c4a;
+  --color-text-tertiary: #9d9aaa;
   --color-text-muted: #7a7988;
+
+  /* Light surface variants */
+  --color-light-surface: #ffffff;
+  --color-light-surface-secondary: #f0eff0;
 
   /* Legacy compat aliases */
   --color-accent: #7c3aed;

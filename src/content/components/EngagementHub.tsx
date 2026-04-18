@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { Platform } from '../types';
 import { cn } from '../../lib/utils';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 
 interface EngagementHubProps {
   onOpenPlatform: (platform: Platform) => void;

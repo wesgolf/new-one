@@ -370,17 +370,46 @@ export function Calendar() {
   const handleDrop = async (e: React.DragEvent, targetDate: string) => {
     e.preventDefault();
     if (!draggedEvent) return;
-    const tableMap: Record<string, [string, string]> = {
-      release: ['releases', 'release_date'],
-      post:    ['content_items', 'scheduled_date'],
-      show:    ['shows', 'date'],
-      meeting: ['meetings', 'date'],
-      todo:    ['todos', 'due_date'],
-      goal:    ['goals', 'deadline'],
-    };
-    const [table, field] = tableMap[draggedEvent.type] ?? ['meetings', 'date'];
+
+    // Strip synthetic prefixes to get the real DB row ID
+    let rowId = draggedEvent.id;
+    let table: string;
+    let field: string;
+
+    if (draggedEvent.id.startsWith('task_')) {
+      // Tasks from the `tasks` table — strip prefix
+      rowId = draggedEvent.id.slice(5);
+      table = 'tasks';
+      field = 'due_date';
+    } else if (draggedEvent.id.startsWith('pp_')) {
+      // platform_posts — preserve existing time, only change date
+      rowId = draggedEvent.id.slice(3);
+      const existingTime = draggedEvent.time ?? '12:00';
+      try {
+        await supabase
+          .from('platform_posts')
+          .update({ scheduled_at: `${targetDate}T${existingTime}:00` })
+          .eq('id', rowId);
+        fetchEvents();
+      } catch { /* ignore */ } finally {
+        setDraggedEvent(null);
+      }
+      return;
+    } else {
+      const tableMap: Record<string, [string, string]> = {
+        release: ['releases',      'release_date'],
+        post:    ['content_items', 'scheduled_date'],
+        show:    ['shows',         'date'],
+        meeting: ['meetings',      'date'],
+        todo:    ['todos',         'due_date'],
+        goal:    ['goals',         'deadline'],
+      };
+      const mapped = tableMap[draggedEvent.type] ?? ['meetings', 'date'];
+      [table, field] = mapped;
+    }
+
     try {
-      await supabase.from(table).update({ [field]: targetDate }).eq('id', draggedEvent.id);
+      await supabase.from(table).update({ [field]: targetDate }).eq('id', rowId);
       fetchEvents();
     } catch { /* ignore */ } finally {
       setDraggedEvent(null);
@@ -437,10 +466,10 @@ export function Calendar() {
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
+          <h2 className="text-3xl font-bold tracking-tight text-text-primary md:text-4xl">
             {monthName} {year}
           </h2>
-          <p className="mt-1 text-slate-500">Central planner — releases, posts, tasks, goals.</p>
+          <p className="mt-1 text-text-secondary">Central planner — releases, posts, tasks, goals.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button

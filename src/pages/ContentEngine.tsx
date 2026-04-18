@@ -4,7 +4,7 @@ import {
   Film,
   Upload
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { subscribeAssistantActions } from '../lib/commandBus';
 import { useAssistantPageContext } from '../hooks/useAssistantPageContext';
@@ -24,12 +24,13 @@ import { PostModeModal } from '../content/components/PostModeModal';
 import { zernioAdapter } from '../content/services/zernioAdapter';
 import { contentPersistence } from '../content/services/contentPersistence';
 import { contentService } from '../services/contentService';
-
-import { mockReleases, mockContentItems } from '../content/mockData';
+import { fetchReleases } from '../lib/supabaseData';
+import { useCurrentUser } from '../hooks/useCurrentUser';
 
 export function ContentEngine() {
-  const [items, setItems] = React.useState<ContentItem[]>(mockContentItems);
-  const [releases, setReleases] = React.useState<Release[]>(mockReleases);
+  const { authUser } = useCurrentUser();
+  const [items, setItems] = React.useState<ContentItem[]>([]);
+  const [releases, setReleases] = React.useState<Release[]>([]);
   
   const [isEditorOpen, setIsEditorOpen] = React.useState(false);
   const [isComposerOpen, setIsComposerOpen] = React.useState(false);
@@ -42,6 +43,26 @@ export function ContentEngine() {
   const [scheduledPlatformItems, setScheduledPlatformItems] = React.useState<ContentItem[]>([]);
   const [bestTimes, setBestTimes] = React.useState<BestPostingTime[]>([]);
   const [isBestTimesLoading, setIsBestTimesLoading] = React.useState(true);
+
+  // ── Load real data from DB ────────────────────────────────────────────────
+  const loadReleases = React.useCallback(async () => {
+    try {
+      const data = await fetchReleases();
+      setReleases(data as any as Release[]);
+    } catch {}
+  }, []);
+
+  const loadContentItems = React.useCallback(async () => {
+    try {
+      const data = await contentService.getContentItemsWithPosts();
+      setItems(data as ContentItem[]);
+    } catch {}
+  }, []);
+
+  React.useEffect(() => {
+    loadReleases();
+    loadContentItems();
+  }, [loadReleases, loadContentItems]);
 
   // Register page context + handle assistant actions
   useAssistantPageContext('content');
@@ -58,7 +79,7 @@ export function ContentEngine() {
       const platformPosts = await contentService.getScheduledPlatformPosts();
       const asItems: ContentItem[] = platformPosts.map((pp: PlatformPost) => ({
         id: `pp_${pp.id}`,
-        user_id: 'user_1',
+        user_id: authUser?.id ?? '',
         title: pp.title || pp.caption || 'Scheduled Post',
         hook: pp.caption || '',
         caption: pp.caption || '',
@@ -98,7 +119,7 @@ export function ContentEngine() {
     const tempId = item.id || `cont_${Date.now()}`;
     const newItem: ContentItem = {
       id: tempId,
-      user_id: 'user_1',
+      user_id: authUser?.id ?? '',
       title: item.title || 'Untitled Content',
       hook: item.hook || '',
       caption: item.caption || '',
@@ -164,7 +185,7 @@ export function ContentEngine() {
     
     const newItem: ContentItem = {
       id: `cont_${Date.now()}`,
-      user_id: 'user_1',
+      user_id: authUser?.id ?? '',
       title: '',
       hook: '',
       caption: '',
@@ -187,7 +208,7 @@ export function ContentEngine() {
       <div className="space-y-8 pb-20">
         <header className="flex items-end justify-between">
           <div className="space-y-1">
-            <h2 className="text-4xl md:text-5xl font-black tracking-tight text-slate-900">Content</h2>
+            <h2 className="text-4xl md:text-5xl font-black tracking-tight text-text-primary">Content</h2>
             <div className="flex items-center gap-3">
               <p className="text-slate-400 font-medium text-sm">Manage, schedule, and publish your content.</p>
 

@@ -14,18 +14,13 @@ const getHeaders = () => {
 
 const hasApiKey = () => !!import.meta.env.VITE_ZERNIO_API_KEY;
 
-function mockPublishResult(): PublishResult {
-  return {
-    success: true,
-    externalPostId: `mock_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-    externalPostUrl: `https://example.com/post/mock_${Date.now()}`,
-  };
-}
+/** True when VITE_ZERNIO_API_KEY is set — exposed so UI can show setup prompts */
+export const zernioConfigured = hasApiKey;
 
-function mockScheduleResult(): PublishResult {
+function notConfiguredResult(): PublishResult {
   return {
-    success: true,
-    externalPostId: `mock_job_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+    success: false,
+    error: 'Publishing integration not configured. Set VITE_ZERNIO_API_KEY to enable external publishing.',
   };
 }
 
@@ -102,42 +97,42 @@ async function postToZernio(payload: Record<string, any>): Promise<PublishResult
 }
 
 export const zernioService = {
-  // TODO: Replace with real Zernio Instagram endpoint when finalized
+  // TODO: Replace with real Zernio Instagram endpoint when credentials are set
   async publishInstagramPost(post: PlatformPost, mediaUrl?: string): Promise<PublishResult> {
-    if (!hasApiKey()) return mockPublishResult();
+    if (!hasApiKey()) return notConfiguredResult();
     return postToZernio(buildPayload(post, mediaUrl));
   },
 
-  // TODO: Replace with real Zernio TikTok endpoint when finalized
+  // TODO: Replace with real Zernio TikTok endpoint when credentials are set
   async publishTikTokPost(post: PlatformPost, mediaUrl?: string): Promise<PublishResult> {
-    if (!hasApiKey()) return mockPublishResult();
+    if (!hasApiKey()) return notConfiguredResult();
     return postToZernio(buildPayload(post, mediaUrl));
   },
 
-  // TODO: Replace with real Zernio YouTube endpoint when finalized
+  // TODO: Replace with real Zernio YouTube endpoint when credentials are set
   async publishYouTubeShort(post: PlatformPost, mediaUrl?: string): Promise<PublishResult> {
-    if (!hasApiKey()) return mockPublishResult();
+    if (!hasApiKey()) return notConfiguredResult();
     return postToZernio(buildPayload(post, mediaUrl));
   },
 
-  // TODO: Replace with real Zernio scheduling endpoints
+  // TODO: Replace with real Zernio scheduling endpoints when credentials are set
   async scheduleInstagramPost(post: PlatformPost, scheduledAt: string, mediaUrl?: string): Promise<PublishResult> {
-    if (!hasApiKey()) return mockScheduleResult();
+    if (!hasApiKey()) return notConfiguredResult();
     return postToZernio(buildPayload(post, mediaUrl, scheduledAt));
   },
 
   async scheduleTikTokPost(post: PlatformPost, scheduledAt: string, mediaUrl?: string): Promise<PublishResult> {
-    if (!hasApiKey()) return mockScheduleResult();
+    if (!hasApiKey()) return notConfiguredResult();
     return postToZernio(buildPayload(post, mediaUrl, scheduledAt));
   },
 
   async scheduleYouTubeShort(post: PlatformPost, scheduledAt: string, mediaUrl?: string): Promise<PublishResult> {
-    if (!hasApiKey()) return mockScheduleResult();
+    if (!hasApiKey()) return notConfiguredResult();
     return postToZernio(buildPayload(post, mediaUrl, scheduledAt));
   },
 
   async cancelPost(zernioPostId: string): Promise<boolean> {
-    if (!hasApiKey()) return true;
+    if (!hasApiKey()) return false;
     const response = await fetch(`${ZERNIO_API_BASE}/posts/${zernioPostId}`, {
       method: 'DELETE',
       headers: getHeaders(),

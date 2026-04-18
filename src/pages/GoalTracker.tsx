@@ -25,8 +25,8 @@ export function GoalTracker() {
 
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
         <div className="text-center sm:text-left">
-          <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900">Goal Tracker</h2>
-          <p className="text-slate-500 mt-2">Define your targets and track your progress toward them.</p>
+          <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-text-primary">Goal Tracker</h2>
+          <p className="text-text-secondary mt-2">Define your targets and track your progress toward them.</p>
         </div>
       </header>
 

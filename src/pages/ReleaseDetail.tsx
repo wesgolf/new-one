@@ -358,30 +358,37 @@ export function ReleaseDetail({ publicMode = false }: ReleaseDetailProps) {
                 icon="🔊"
               />
             )}
-            {/* Future platform placeholders — shown greyed out when no link */}
-            <div className="flex items-center gap-3 rounded-2xl border border-dashed border-slate-100 bg-slate-50 px-4 py-3.5 opacity-50">
-              <span className="text-xl">🎶</span>
-              <span className="text-sm font-medium text-slate-400">Apple Music</span>
-            </div>
-            <div className="flex items-center gap-3 rounded-2xl border border-dashed border-slate-100 bg-slate-50 px-4 py-3.5 opacity-50">
-              <span className="text-xl">▶️</span>
-              <span className="text-sm font-medium text-slate-400">YouTube</span>
-            </div>
+            {/* Apple Music / YouTube — no stored ID fields yet */}
+            {(['Apple Music', 'YouTube'] as const).map((platform) => (
+              <div
+                key={platform}
+                className="flex items-center gap-3 rounded-2xl border border-dashed border-slate-100 bg-slate-50 px-4 py-3.5"
+              >
+                <span className="text-xl">{platform === 'Apple Music' ? '🎶' : '▶️'}</span>
+                <div className="min-w-0 flex-1">
+                  <span className="text-sm font-medium text-slate-400">{platform}</span>
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-300 mt-0.5">Not linked</p>
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              { label: 'Spotify',      icon: '🎵' },
-              { label: 'SoundCloud',   icon: '🔊' },
-              { label: 'Apple Music',  icon: '🎶' },
-              { label: 'YouTube',      icon: '▶️' },
+              { label: 'Spotify',     icon: '🎵' },
+              { label: 'SoundCloud',  icon: '🔊' },
+              { label: 'Apple Music', icon: '🎶' },
+              { label: 'YouTube',     icon: '▶️' },
             ].map(({ label, icon }) => (
               <div
                 key={label}
-                className="flex items-center gap-3 rounded-2xl border border-dashed border-slate-100 bg-slate-50 px-4 py-3.5 opacity-40"
+                className="flex items-center gap-3 rounded-2xl border border-dashed border-slate-100 bg-slate-50 px-4 py-3.5"
               >
                 <span className="text-xl">{icon}</span>
-                <span className="text-sm font-medium text-slate-400">{label}</span>
+                <div className="min-w-0 flex-1">
+                  <span className="text-sm font-medium text-slate-400">{label}</span>
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-300 mt-0.5">Not linked</p>
+                </div>
               </div>
             ))}
           </div>

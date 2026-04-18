@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Film, Upload, Plus, Instagram, Music2, Youtube, Loader2, FileText, Check } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
 import { ContentItemWithAssets } from '../types';
 import { contentService } from '../../services/contentService';

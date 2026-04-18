@@ -19,7 +19,7 @@ import {
 import { ContentItem, Platform, PostType, ContentAngle, ContentStatus } from '../types';
 import { Release } from '../../types';
 import { cn } from '../../lib/utils';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface ContentCreatorPanelProps {
   isOpen: boolean;

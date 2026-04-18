@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Send, Clock, Loader2, CheckCircle2, AlertCircle, Calendar } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
 
 interface ScheduleControlsProps {

@@ -3,7 +3,7 @@ import {
   X, Film, Instagram, Music2, Youtube, CheckCircle2, AlertCircle, Loader2,
   Upload, Library, Image, Music, ChevronDown, Sparkles, Send, Calendar, Hash
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
 import { PlatformPost, ContentItemWithAssets } from '../types';
 import { PlatformTabs } from './PlatformTabs';

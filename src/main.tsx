@@ -5,6 +5,10 @@ import * as Sentry from "@sentry/react";
 import { AuthProvider } from './context/AuthContext';
 import App from './App.tsx';
 import './index.css';
+import { reportEnvReadiness } from './lib/envConfig';
+
+// Surface missing env vars in the dev console
+reportEnvReadiness();
 
 const dsn = import.meta.env.VITE_SENTRY_DSN;
 

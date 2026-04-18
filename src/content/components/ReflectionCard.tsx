@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { ContentItem, ContentReflection } from '../types';
 import { cn } from '../../lib/utils';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 
 interface ReflectionCardProps {
   reflection: ContentReflection;

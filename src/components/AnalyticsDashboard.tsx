@@ -262,10 +262,10 @@ export const AnalyticsDashboard: React.FC = () => {
       {/* Header */}
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
+          <h2 className="text-3xl font-bold tracking-tight text-text-primary md:text-4xl">
             Analytics
           </h2>
-          <p className="mt-1 text-slate-500">
+          <p className="mt-1 text-text-secondary">
             Provider-agnostic performance overview.
             {configuredCount > 0
               ? ` ${configuredCount} source${configuredCount > 1 ? 's' : ''} active.`

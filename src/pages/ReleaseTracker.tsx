@@ -149,8 +149,8 @@ export function ReleaseTracker() {
       {/* ── Header ─────────────────────────────────────────────────── */}
       <header className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">Releases</h2>
-          <p className="mt-1 text-slate-500">Your catalogue, metadata, and playlisting intel.</p>
+          <h2 className="text-3xl font-bold tracking-tight text-text-primary md:text-4xl">Releases</h2>
+          <p className="mt-1 text-text-secondary">Your catalogue, metadata, and playlisting intel.</p>
         </div>
         {canCreateTrack && (
           <button

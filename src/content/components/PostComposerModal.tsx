@@ -27,10 +27,11 @@ import {
 import { ContentItem, Platform, PostType, ContentAngle, PublishStatus, PlatformSettings } from '../types';
 import { Release } from '../../types';
 import { cn } from '../../lib/utils';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { PlatformSettingsForm } from './PlatformSettingsForm';
 import { BestPostingTimes } from './BestPostingTimes';
 import { getDefaultSettings } from '../platformSettingsRegistry';
+import { zernioConfigured } from '../../services/zernioService';
 
 interface PostComposerModalProps {
   isOpen: boolean;
@@ -547,6 +548,18 @@ export function PostComposerModal({
           </div>
 
           <div className="pt-6 mt-6 border-t border-slate-200 space-y-2.5">
+            {/* Publishing integration banner */}
+            {(canSchedule || canPublish) && !zernioConfigured() && (
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs font-bold text-amber-700">Publishing integration not configured</p>
+                  <p className="text-[11px] text-amber-600 mt-0.5">
+                    Set <code className="font-mono bg-amber-100 px-1 rounded">VITE_ZERNIO_API_KEY</code> to enable external publishing. Local scheduling and drafts work normally.
+                  </p>
+                </div>
+              </div>
+            )}
             {canSchedule && formData.scheduled_at && (
               <button
                 onClick={handleSchedule}

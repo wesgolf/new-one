@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Film, Instagram, Music2, Youtube, Search, Filter, Clock, CheckCircle2, XCircle, AlertCircle, MoreVertical, Loader2, Eye } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
 import { ContentItemWithAssets, PlatformPost, PlatformPostStatus } from '../types';
 import { contentService } from '../../services/contentService';

@@ -22,7 +22,7 @@ import {
 import { cn } from '../../lib/utils';
 import { ContentItem, Platform, PublishStatus } from '../types';
 import { Release } from '../../types';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface SchedulingManagerProps {
   items: ContentItem[];

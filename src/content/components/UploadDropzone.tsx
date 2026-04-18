@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { Upload, Film, X, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
 
 interface UploadDropzoneProps {

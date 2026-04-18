@@ -17,7 +17,7 @@ import {
 import { ContentPlanSuggestion, Platform, PostType } from '../types';
 import { Release } from '../../types';
 import { cn } from '../../lib/utils';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 
 interface SchedulerPanelProps {
   suggestions: ContentPlanSuggestion[];
