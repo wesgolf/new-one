@@ -30,7 +30,7 @@ type DropdownChild = {
 type NavGroup = { label: string; path: string; end?: boolean } | { label: string; children: DropdownChild[] };
 
 const TOP_NAV: NavGroup[] = [
-  { label: 'Hub', path: '/', end: true },
+  { label: 'Dashboard', path: '/dashboard', end: true },
   {
     label: 'Music',
     children: [
@@ -50,7 +50,7 @@ const TOP_NAV: NavGroup[] = [
 ];
 
 const MOBILE_NAV = [
-  { icon: LayoutDashboard, label: 'Hub', path: '/', end: true },
+  { icon: LayoutDashboard, label: 'Hub', path: '/dashboard', end: true },
   { icon: Sparkles, label: 'Ideas', path: '/ideas' },
   { icon: Music, label: 'Releases', path: '/releases' },
   { icon: Brain, label: 'Coach', path: '/coach' },
@@ -79,7 +79,7 @@ function NavDropdown({ label, children }: { label: string; children: DropdownChi
         onClick={() => setOpen((v) => !v)}
         className={cn(
           'flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors select-none',
-          isActive ? 'text-white' : 'text-zinc-400 hover:text-white'
+          isActive ? 'text-brand' : 'text-text-secondary hover:text-text-primary'
         )}
       >
         {label}
@@ -94,7 +94,7 @@ function NavDropdown({ label, children }: { label: string; children: DropdownChi
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.97 }}
             transition={{ duration: 0.13, ease: 'easeOut' }}
-            className="absolute top-[calc(100%+4px)] left-0 z-50 w-54 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden"
+            className="absolute top-[calc(100%+4px)] left-0 z-50 w-54 bg-surface border border-border rounded-xl shadow-lg overflow-hidden"
           >
             {children.map((item) => (
               <NavLink
@@ -104,14 +104,14 @@ function NavDropdown({ label, children }: { label: string; children: DropdownChi
                 className={({ isActive }) =>
                   cn(
                     'flex items-start gap-3 px-4 py-3 transition-colors',
-                    isActive ? 'bg-zinc-800' : 'hover:bg-zinc-800'
+                    isActive ? 'bg-brand-dim' : 'hover:bg-background'
                   )
                 }
               >
-                <item.icon className="w-4 h-4 text-zinc-500 mt-0.5 shrink-0" />
+                <item.icon className="w-4 h-4 text-text-muted mt-0.5 shrink-0" />
                 <div>
-                  <p className="text-sm font-medium text-zinc-200 leading-none">{item.label}</p>
-                  <p className="text-xs text-zinc-500 mt-1">{item.description}</p>
+                  <p className="text-sm font-medium text-text-primary leading-none">{item.label}</p>
+                  <p className="text-xs text-text-muted mt-1">{item.description}</p>
                 </div>
               </NavLink>
             ))}
@@ -128,7 +128,7 @@ function AssistantTrigger() {
     <button
       type="button"
       onClick={toggleOpen}
-      className="flex items-center p-2 text-zinc-400 hover:text-white rounded-lg transition-colors"
+      className="flex items-center p-2 text-text-muted hover:text-text-primary rounded-lg transition-colors"
       title="Open assistant"
       aria-label="Open assistant"
     >
@@ -150,13 +150,13 @@ function LayoutInner() {
   return (
     <div className="min-h-screen bg-background text-text-secondary flex flex-col pb-16 md:pb-0">
       {/* Navbar */}
-      <header className="sticky top-0 z-50 bg-zinc-950 border-b border-zinc-800/80">
+      <header className="sticky top-0 z-50 bg-surface border-b border-border">
         <div className="max-w-7xl mx-auto px-4 md:px-6 h-14 flex items-center gap-2">
 
           {/* Mobile: hamburger */}
           <button
             onClick={() => setMobileOpen(true)}
-            className="lg:hidden p-2 -ml-1 text-zinc-400 hover:text-white transition-colors rounded-lg"
+            className="lg:hidden p-2 -ml-1 text-text-muted hover:text-text-primary transition-colors rounded-lg"
           >
             <Menu className="w-5 h-5" />
           </button>
@@ -175,7 +175,7 @@ function LayoutInner() {
                   className={({ isActive }) =>
                     cn(
                       'px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                      isActive ? 'text-white' : 'text-zinc-400 hover:text-white'
+                      isActive ? 'text-brand bg-brand-dim' : 'text-text-secondary hover:text-text-primary hover:bg-background'
                     )
                   }
                 >
@@ -194,10 +194,10 @@ function LayoutInner() {
               <span className={cn(
                 'hidden md:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border mr-1',
                 isArtist
-                  ? 'bg-brand/10 text-brand border-brand/20'
+                  ? 'bg-brand-dim text-brand border-brand/20'
                   : isManager
-                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                  : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                  ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                  : 'bg-background text-text-muted border-border'
               )}>
                 {roleDisplayName}
               </span>
@@ -206,7 +206,7 @@ function LayoutInner() {
             <AssistantTrigger />
             <button
               onClick={handleLogout}
-              className="hidden md:flex items-center p-2 text-zinc-600 hover:text-zinc-200 rounded-lg transition-colors"
+              className="hidden md:flex items-center p-2 text-text-muted hover:text-text-primary rounded-lg transition-colors"
               title="Lock"
             >
               <LogOut className="w-4 h-4" />
@@ -215,10 +215,10 @@ function LayoutInner() {
 
           {/* WES wordmark */}
           <NavLink
-            to="/"
+            to="/dashboard"
             className="ml-2 flex items-center"
           >
-            <span className="text-[13px] font-bold tracking-[0.18em] text-white uppercase select-none">
+            <span className="text-[13px] font-bold tracking-[0.18em] text-text-primary uppercase select-none">
               WES
             </span>
           </NavLink>
@@ -241,13 +241,13 @@ function LayoutInner() {
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 220 }}
-              className="absolute left-0 top-0 bottom-0 w-72 bg-zinc-950 border-r border-zinc-800 flex flex-col"
+              className="absolute left-0 top-0 bottom-0 w-72 bg-surface border-r border-border flex flex-col"
             >
-              <div className="h-14 px-4 flex items-center justify-between border-b border-zinc-800">
-                <span className="text-[13px] font-bold tracking-[0.18em] text-white uppercase">WES</span>
+              <div className="h-14 px-4 flex items-center justify-between border-b border-border">
+                <span className="text-[13px] font-bold tracking-[0.18em] text-text-primary uppercase">WES</span>
                 <button
                   onClick={() => setMobileOpen(false)}
-                  className="p-2 text-zinc-400 hover:text-white rounded-lg transition-colors"
+                  className="p-2 text-text-muted hover:text-text-primary rounded-lg transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -257,7 +257,7 @@ function LayoutInner() {
                   if ('children' in item) {
                     return (
                       <div key={item.label}>
-                        <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-600">
+                        <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-[0.15em] text-text-muted">
                           {item.label}
                         </p>
                         {item.children.map((child) => (
@@ -269,8 +269,8 @@ function LayoutInner() {
                               cn(
                                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                                 isActive
-                                  ? 'bg-zinc-800 text-white'
-                                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800/60'
+                                  ? 'bg-brand-dim text-brand'
+                                  : 'text-text-secondary hover:text-text-primary hover:bg-background'
                               )
                             }
                           >
@@ -291,8 +291,8 @@ function LayoutInner() {
                         cn(
                           'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                           isActive
-                            ? 'bg-zinc-800 text-white'
-                            : 'text-zinc-400 hover:text-white hover:bg-zinc-800/60'
+                            ? 'bg-brand-dim text-brand'
+                            : 'text-text-secondary hover:text-text-primary hover:bg-background'
                         )
                       }
                     >
@@ -301,10 +301,10 @@ function LayoutInner() {
                   );
                 })}
               </div>
-              <div className="p-4 border-t border-zinc-800">
+              <div className="p-4 border-t border-border">
                 <button
                   onClick={handleLogout}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-zinc-500 hover:text-rose-400 hover:bg-zinc-900 rounded-xl text-sm font-medium transition-colors"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-text-muted hover:text-rose-500 hover:bg-background rounded-xl text-sm font-medium transition-colors"
                 >
                   <LogOut className="w-4 h-4" />
                   Lock Dashboard
@@ -316,7 +316,7 @@ function LayoutInner() {
       </AnimatePresence>
 
       {/* Mobile bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-zinc-950 border-t border-zinc-800/80 px-4 h-16 flex items-center justify-around">
+      <nav className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-surface border-t border-border px-4 h-16 flex items-center justify-around">
         {MOBILE_NAV.map((item) => (
           <NavLink
             key={item.path}
@@ -325,7 +325,7 @@ function LayoutInner() {
             className={({ isActive }) =>
               cn(
                 'flex flex-col items-center gap-1 transition-colors',
-                isActive ? 'text-white' : 'text-zinc-600'
+                isActive ? 'text-brand' : 'text-text-muted'
               )
             }
           >
@@ -335,7 +335,7 @@ function LayoutInner() {
         ))}
         <button
           onClick={() => setMobileOpen(true)}
-          className="flex flex-col items-center gap-1 text-zinc-600"
+          className="flex flex-col items-center gap-1 text-text-muted"
         >
           <Menu className="w-5 h-5" />
           <span className="text-[9px] font-bold uppercase tracking-widest">More</span>

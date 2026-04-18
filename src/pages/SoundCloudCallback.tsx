@@ -13,13 +13,13 @@ export function SoundCloudCallback() {
 
     if (code && state) {
       exchangeToken(code, state).then(() => {
-        navigate('/');
+        navigate('/dashboard');
       }).catch(err => {
         console.error('SoundCloud auth failed:', err);
-        navigate('/');
+        navigate('/dashboard');
       });
     } else {
-      navigate('/');
+      navigate('/dashboard');
     }
   }, [searchParams, exchangeToken, navigate]);
 

@@ -1,9 +1,12 @@
 -- Supabase Schema for Artist OS
 
--- Profiles Table for Artist Settings
+-- Profiles Table
+-- id is a FK to auth.users(id) — NOT a separate auto-generated UUID
 CREATE TABLE IF NOT EXISTS profiles (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID REFERENCES auth.users(id) UNIQUE,
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'artist' CHECK (role IN ('artist', 'manager')),
+  full_name TEXT,
+  email TEXT,
   artist_name TEXT,
   bio TEXT,
   soundcloud_url TEXT,
@@ -13,6 +16,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   youtube_channel TEXT,
   email_contact TEXT,
   website TEXT,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -318,4 +322,107 @@ CREATE TABLE IF NOT EXISTS outreach_emails (
   opened_at    TIMESTAMP WITH TIME ZONE,
   created_by   UUID REFERENCES auth.users(id),
   created_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ── Tasks Table ──────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS tasks (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'in_progress', 'done', 'cancelled')),
+  priority TEXT DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high')),
+  due_date DATE,
+  linked_entity_id UUID,
+  linked_entity_type TEXT,
+  completed_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ── Ideas Table ──────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ideas (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'raw' CHECK (status IN ('raw', 'developing', 'ready', 'archived')),
+  category TEXT DEFAULT 'track' CHECK (category IN ('track', 'content', 'release', 'campaign', 'other')),
+  tags TEXT[] DEFAULT '{}',
+  is_collab BOOLEAN DEFAULT FALSE,
+  collab_token UUID DEFAULT gen_random_uuid(),
+  collab_expires_at TIMESTAMP WITH TIME ZONE,
+  voice_memo_url TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ── Idea Assets ──────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS idea_assets (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  idea_id UUID NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
+  file_url TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  asset_type TEXT NOT NULL CHECK (asset_type IN ('audio', 'image', 'video', 'document')),
+  file_size_bytes BIGINT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ── Idea Comments ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS idea_comments (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  idea_id UUID NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
+  author_name TEXT NOT NULL,
+  body TEXT NOT NULL,
+  is_internal BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ── Integrations ─────────────────────────────────────────────────────────────
+-- Stores OAuth tokens and connection state for third-party platforms.
+CREATE TABLE IF NOT EXISTS integrations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL CHECK (platform IN ('spotify', 'soundcloud', 'instagram', 'tiktok', 'youtube', 'apple_music')),
+  access_token TEXT,
+  refresh_token TEXT,
+  token_expires_at TIMESTAMP WITH TIME ZONE,
+  platform_user_id TEXT,
+  platform_username TEXT,
+  scopes TEXT[] DEFAULT '{}',
+  is_active BOOLEAN DEFAULT TRUE,
+  last_synced_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE (user_id, platform)
+);
+
+-- ── Sync Jobs ────────────────────────────────────────────────────────────────
+-- Tracks background analytics sync operations.
+CREATE TABLE IF NOT EXISTS sync_jobs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL,
+  job_type TEXT NOT NULL CHECK (job_type IN ('analytics', 'catalog', 'audience')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'completed', 'failed')),
+  started_at TIMESTAMP WITH TIME ZONE,
+  completed_at TIMESTAMP WITH TIME ZONE,
+  error_message TEXT,
+  rows_synced INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ── Report Snapshots ─────────────────────────────────────────────────────────
+-- Weekly/monthly roll-up snapshots for trend comparison.
+CREATE TABLE IF NOT EXISTS report_snapshots (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  period_type TEXT NOT NULL CHECK (period_type IN ('weekly', 'monthly')),
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  platform TEXT,
+  data JSONB NOT NULL DEFAULT '{}'::JSONB,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE (user_id, period_type, period_start, platform)
 );

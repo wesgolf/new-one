@@ -104,7 +104,7 @@ Missing tokens:
 
 ### `/` — Command Center
 - **Data:** Real (Supabase via `useDashboard` hook — pulls releases, tasks, goals, content items, calendar events)
-- **Auth:** ✅ Protected route → redirects to `/unauthorized`
+- **Auth:** ✅ Protected route → redirects to `/login`
 - **Role aware:** ✅ Manager layout vs Artist layout
 - **Features verified:** ActionBar → Generate Report (WeeklyReportModal) ✅, Sync Now → `syncService.syncNow('all')` ✅, AI Assistant → opens GlobalAssistantDrawer ✅
 
@@ -177,7 +177,7 @@ Missing tokens:
 - **Auth:** Public
 - **Data:** Loads idea by `share_slug` or `ideaId` from Supabase
 
-### `/unauthorized` — Login / Unauthorized
+### `/login` — Login / Unauthorized
 - **Data:** Supabase Auth (email/password sign in + sign up)
 
 ---
@@ -371,7 +371,7 @@ VITE_ZERNIO_API_KEY=
 
 ## Architecture Notes
 
-- **Auth:** Supabase Auth (email/password). `ProtectedRoute` redirects unauthenticated users to `/unauthorized`. `RoleRestrictedRoute` enforces role-level gates.
+- **Auth:** Supabase Auth (email/password). `ProtectedRoute` redirects unauthenticated users to `/login`. `RoleRestrictedRoute` enforces role-level gates.
 - **Role system:** `user_roles` table, `UserRoleType = 'artist' | 'manager' | 'viewer'`. `useCurrentUserRole()` derives permissions (`canCreateTrack`, `canEditContent`, etc.).
 - **Navigation:** Top navbar (`Layout.tsx`) with dropdown menus. Mobile: hamburger slide-over + bottom tab bar.
 - **Animation:** All via `motion/react` (Framer Motion v12 package named `motion`).

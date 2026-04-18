@@ -14,7 +14,7 @@ export function SpotifyCallback() {
           if (window.opener) {
             window.close();
           } else {
-            navigate('/');
+            navigate('/dashboard');
           }
         })
         .catch((err) => {
@@ -22,11 +22,11 @@ export function SpotifyCallback() {
           if (window.opener) {
             window.close();
           } else {
-            navigate('/');
+            navigate('/dashboard');
           }
         });
     } else {
-      navigate('/');
+      navigate('/dashboard');
     }
   }, [code, navigate]);
 

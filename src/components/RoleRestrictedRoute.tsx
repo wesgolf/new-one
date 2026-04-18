@@ -26,11 +26,11 @@ export const RoleRestrictedRoute: React.FC<RoleRestrictedRouteProps> = ({
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/unauthorized" replace />;
+    return <Navigate to="/login" replace />;
   }
 
   if (!role || !allowedRoles.includes(role)) {
-    return <Navigate to="/unauthorized" replace />;
+    return <Navigate to="/login" replace />;
   }
 
   return <>{children}</>;

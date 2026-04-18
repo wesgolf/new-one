@@ -43,12 +43,13 @@ export default function App() {
       {/* Public routes */}
       <Route path="/collab" element={<CollabPortal />} />
       <Route path="/collab/:ideaId" element={<CollabPortal />} />
+      <Route path="/" element={<PublicHub />} />
       <Route path="/hub" element={<PublicHub />} />
-      <Route path="/unauthorized" element={<Unauthorized />} />
+      <Route path="/login" element={<Unauthorized />} />
 
       {/* Authenticated app — all children inherit the Layout shell */}
       <Route element={<AppShell />}>
-        <Route path="/" element={<ErrorBoundary><CommandCenter /></ErrorBoundary>} />
+        <Route path="/dashboard" element={<ErrorBoundary><CommandCenter /></ErrorBoundary>} />
         <Route path="/ideas" element={<ErrorBoundary><Ideas /></ErrorBoundary>} />
         <Route path="/releases" element={<ErrorBoundary><ReleaseTracker /></ErrorBoundary>} />
         <Route path="/releases/:releaseId" element={<ErrorBoundary><ReleaseDetail /></ErrorBoundary>} />
