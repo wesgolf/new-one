@@ -187,6 +187,7 @@ export async function saveIdea(idea: Partial<IdeaRecord>) {
   }
   const payload = {
     ...idea,
+    user_id: idea.user_id || user?.id || null,
     created_by: idea.created_by || user?.id || null,
     updated_at: new Date().toISOString(),
   };

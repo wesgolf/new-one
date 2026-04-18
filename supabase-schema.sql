@@ -344,12 +344,20 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE TABLE IF NOT EXISTS ideas (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_by UUID REFERENCES auth.users(id),
   title TEXT NOT NULL,
   description TEXT,
-  status TEXT NOT NULL DEFAULT 'raw' CHECK (status IN ('raw', 'developing', 'ready', 'archived')),
+  status TEXT NOT NULL DEFAULT 'demo' CHECK (status IN ('demo', 'in_progress', 'review', 'done')),
   category TEXT DEFAULT 'track' CHECK (category IN ('track', 'content', 'release', 'campaign', 'other')),
   tags TEXT[] DEFAULT '{}',
   is_collab BOOLEAN DEFAULT FALSE,
+  is_public BOOLEAN DEFAULT FALSE,
+  share_slug TEXT,
+  artist_name TEXT,
+  bpm INTEGER,
+  key_sig TEXT,
+  genre TEXT,
+  mood TEXT,
   collab_token UUID DEFAULT gen_random_uuid(),
   collab_expires_at TIMESTAMP WITH TIME ZONE,
   voice_memo_url TEXT,
@@ -362,10 +370,12 @@ CREATE TABLE IF NOT EXISTS idea_assets (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   idea_id UUID NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
   file_url TEXT NOT NULL,
-  file_name TEXT NOT NULL,
-  mime_type TEXT NOT NULL,
-  asset_type TEXT NOT NULL CHECK (asset_type IN ('audio', 'image', 'video', 'document')),
+  file_name TEXT,
+  file_path TEXT,
+  mime_type TEXT,
+  asset_type TEXT NOT NULL CHECK (asset_type IN ('audio', 'image', 'video', 'document', 'project_link', 'link', 'cover')),
   file_size_bytes BIGINT,
+  metadata JSONB,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -373,8 +383,10 @@ CREATE TABLE IF NOT EXISTS idea_assets (
 CREATE TABLE IF NOT EXISTS idea_comments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   idea_id UUID NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
-  author_name TEXT NOT NULL,
+  author_id UUID REFERENCES auth.users(id),
+  author_name TEXT,
   body TEXT NOT NULL,
+  timestamp_seconds NUMERIC,
   is_internal BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

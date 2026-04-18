@@ -65,12 +65,17 @@ export interface IdeaRecord {
   description?: string | null;
   status: string;
   is_collab?: boolean;
+  is_public?: boolean;
   created_by?: string | null;
+  user_id?: string | null;
   created_at?: string;
   updated_at?: string;
   share_slug?: string | null;
-  is_public?: boolean;
   artist_name?: string | null;
+  bpm?: number | null;
+  key_sig?: string | null;
+  genre?: string | null;
+  mood?: string | null;
 }
 
 export type IdeaAssetType = 'audio' | 'link' | 'cover' | 'project_link';
