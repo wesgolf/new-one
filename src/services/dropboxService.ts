@@ -57,14 +57,6 @@ export async function uploadAudioToDropbox(
   const path = `/Artist OS/Ideas/${ideaId}/${safeName}`;
   const apiArg = { path, mode: 'add', autorename: true, mute: false };
 
-  console.group('[Dropbox] uploadAudioToDropbox');
-  console.log('File name:', file.name);
-  console.log('File size (bytes):', file.size);
-  console.log('File type:', file.type);
-  console.log('Target path:', path);
-  console.log('Token present:', !!getToken(), '| first 8 chars:', getToken().slice(0, 8));
-  console.log('Dropbox-API-Arg:', JSON.stringify(apiArg));
-
   // ── 1. Upload file ─────────────────────────────────────────────────────────
   const uploadRes = await fetch(`${DROPBOX_CONTENT_API}/files/upload`, {
     method: 'POST',
@@ -76,23 +68,17 @@ export async function uploadAudioToDropbox(
     body: file,
   });
 
-  console.log('[Dropbox] Upload response status:', uploadRes.status, uploadRes.statusText);
-
   if (!uploadRes.ok) {
-    const errText = await uploadRes.text().catch(() => '(could not read body)');
-    console.error('[Dropbox] Upload error body:', errText);
-    console.groupEnd();
+    const errText = await uploadRes.text().catch(() => '');
     let errSummary = `Dropbox upload failed (${uploadRes.status}): ${uploadRes.statusText}`;
     try { errSummary = JSON.parse(errText)?.error_summary ?? errSummary; } catch {}
     throw new Error(errSummary);
   }
 
   const uploadData = await uploadRes.json();
-  console.log('[Dropbox] Upload success:', uploadData);
   const uploadedPath: string = uploadData.path_display as string;
 
   // ── 2. Create shared link ──────────────────────────────────────────────────
-  console.log('[Dropbox] Creating shared link for path:', uploadedPath);
   const linkRes = await fetch(`${DROPBOX_API}/sharing/create_shared_link_with_settings`, {
     method: 'POST',
     headers: {
@@ -105,17 +91,11 @@ export async function uploadAudioToDropbox(
     }),
   });
 
-  console.log('[Dropbox] Shared link response status:', linkRes.status, linkRes.statusText);
-
   // 409 = shared link already exists — extract existing URL from error body
   if (linkRes.status === 409) {
     const conflict = await linkRes.json().catch(() => ({}));
-    console.log('[Dropbox] Shared link conflict (already exists):', conflict);
     const existingUrl: string =
       conflict?.error?.shared_link_already_exists?.metadata?.url ?? '';
-    console.log('[Dropbox] Existing shared link URL:', existingUrl);
-    console.log('[Dropbox] Raw playback URL:', toRawUrl(existingUrl));
-    console.groupEnd();
     return {
       url: toRawUrl(existingUrl),
       path: uploadedPath,
@@ -124,9 +104,7 @@ export async function uploadAudioToDropbox(
   }
 
   if (!linkRes.ok) {
-    const errText = await linkRes.text().catch(() => '(could not read body)');
-    console.error('[Dropbox] Shared link error body:', errText);
-    console.groupEnd();
+    const errText = await linkRes.text().catch(() => '');
     let errSummary = `Failed to create Dropbox shared link: ${linkRes.statusText}`;
     try { errSummary = JSON.parse(errText)?.error_summary ?? errSummary; } catch {}
     throw new Error(errSummary);
@@ -134,9 +112,6 @@ export async function uploadAudioToDropbox(
 
   const linkData = await linkRes.json();
   const sharedLink: string = linkData.url as string;
-  console.log('[Dropbox] Shared link created:', sharedLink);
-  console.log('[Dropbox] Raw playback URL:', toRawUrl(sharedLink));
-  console.groupEnd();
 
   return {
     url: toRawUrl(sharedLink),
