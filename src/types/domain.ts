@@ -66,7 +66,6 @@ export interface IdeaRecord {
   status: string;
   is_collab?: boolean;
   is_public?: boolean;
-  created_by?: string | null;
   user_id?: string | null;
   created_at?: string;
   updated_at?: string;
