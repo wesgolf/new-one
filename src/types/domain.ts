@@ -75,6 +75,7 @@ export interface IdeaRecord {
   key_sig?: string | null;
   genre?: string | null;
   mood?: string | null;
+  voice_memo_url?: string | null;
 }
 
 export type IdeaAssetType = 'audio' | 'link' | 'cover' | 'project_link';

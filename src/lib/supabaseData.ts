@@ -185,11 +185,25 @@ export async function saveIdea(idea: Partial<IdeaRecord>) {
   if (!idea.id && currentUser?.profile?.role === 'manager') {
     throw new Error('Managers can review ideas but cannot create new tracks.');
   }
-  const payload = {
-    ...idea,
+  // Explicit payload — only send columns that exist in the ideas table.
+  // Avoids schema cache errors when the type has extra fields.
+  const payload: Record<string, unknown> = {
+    title: idea.title,
+    description: idea.description ?? null,
+    status: idea.status ?? 'demo',
+    bpm: idea.bpm ?? null,
+    key_sig: idea.key_sig ?? null,
+    genre: idea.genre ?? null,
+    mood: idea.mood ?? null,
+    is_collab: idea.is_collab ?? false,
+    is_public: idea.is_public ?? false,
+    share_slug: idea.share_slug ?? null,
+    artist_name: idea.artist_name ?? null,
+    voice_memo_url: idea.voice_memo_url ?? null,
     user_id: idea.user_id || user?.id || null,
     updated_at: new Date().toISOString(),
   };
+  if (idea.id) payload.id = idea.id;
 
   if (idea.id) {
     const { data, error } = await supabase

@@ -163,12 +163,7 @@ export function IdeaFormModal({ open, idea, onClose, onSaved }: IdeaFormModalPro
 
       onSaved();
     } catch (err: any) {
-      const msg: string = err?.message ?? 'Failed to save — please try again.';
-      setFormError(
-        msg.includes('schema cache') || msg.includes('column')
-          ? 'Database schema mismatch. Please run the latest SQL migration in Supabase.'
-          : msg,
-      );
+      setFormError(err?.message ?? 'Failed to save — please try again.');
     } finally {
       setSaving(false);
     }
