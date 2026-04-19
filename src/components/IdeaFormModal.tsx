@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, Music2, Paperclip, Upload, X } from 'lucide-react';
 import { saveIdea, saveIdeaAsset, uploadIdeaAudio } from '../lib/supabaseData';
+import { dropboxConfigured, uploadAudioToDropbox } from '../services/dropboxService';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import { cn } from '../lib/utils';
 import type { IdeaRecord } from '../types/domain';
@@ -131,7 +132,17 @@ export function IdeaFormModal({ open, idea, onClose, onSaved }: IdeaFormModalPro
 
       if (audioFile && saved.id) {
         try {
-          await uploadIdeaAudio(audioFile, saved.id);
+          if (dropboxConfigured()) {
+            const { url, path } = await uploadAudioToDropbox(audioFile, saved.id);
+            await saveIdeaAsset({
+              idea_id: saved.id,
+              file_url: url,
+              asset_type: 'audio',
+              metadata: { name: audioFile.name, size: audioFile.size, dropbox_path: path },
+            });
+          } else {
+            await uploadIdeaAudio(audioFile, saved.id);
+          }
         } catch (uploadErr: any) {
           setFormError(
             `Idea saved — but audio upload failed: ${uploadErr?.message ?? 'unknown error'}`,

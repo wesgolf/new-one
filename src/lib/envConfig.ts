@@ -27,6 +27,9 @@ export const env = {
   songstatsApiKey:       import.meta.env.VITE_SONGSTATS_API_KEY       as string | undefined,
   soundchartsAppId:      import.meta.env.VITE_SOUNDCHARTS_APP_ID      as string | undefined,
   soundchartsAppSecret:  import.meta.env.VITE_SOUNDCHARTS_APP_SECRET  as string | undefined,
+
+  // Dropbox file storage
+  dropboxAccessToken:    import.meta.env.VITE_DROPBOX_ACCESS_TOKEN    as string | undefined,
 } as const;
 
 // ── Feature flags (safe booleans, never crash) ────────────────────────────────
@@ -40,6 +43,7 @@ export const features = {
   spotifyAnalytics:  !!env.spotifyAccessToken,
   songstatsAnalytics: !!env.songstatsApiKey,
   soundchartsAnalytics: !!env.soundchartsAppId && !!env.soundchartsAppSecret,
+  dropboxUpload:         !!env.dropboxAccessToken,
 } as const;
 
 // Convenience: at least one analytics provider configured
@@ -66,6 +70,7 @@ const CHECKS: EnvCheck[] = [
   { key: 'VITE_SONGSTATS_API_KEY',       label: 'Songstats API key',      required: false, configured: !!env.songstatsApiKey },
   { key: 'VITE_SOUNDCHARTS_APP_ID',      label: 'Soundcharts App ID',     required: false, configured: !!env.soundchartsAppId },
   { key: 'VITE_SOUNDCHARTS_APP_SECRET',  label: 'Soundcharts App Secret', required: false, configured: !!env.soundchartsAppSecret },
+  { key: 'VITE_DROPBOX_ACCESS_TOKEN',     label: 'Dropbox access token',   required: false, configured: !!env.dropboxAccessToken },
 ];
 
 /** Log missing env vars to the console in development only. */
