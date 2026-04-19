@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { MessageSquareMore, Pause, Play, TimerReset } from 'lucide-react';
+import { Download, MessageSquareMore, Pause, Play, TimerReset } from 'lucide-react';
 import { saveIdeaComment } from '../lib/supabaseData';
 import type { IdeaAsset, IdeaComment, IdeaRecord } from '../types/domain';
 
@@ -77,12 +77,21 @@ export function AudioReviewModal({ open, idea, assets, comments, onClose, onSave
                     <div className="p-2 bg-slate-900 rounded-lg">
                       <Play className="h-3.5 w-3.5 text-white" />
                     </div>
-                    <div>
-                      <p className="text-xs font-bold text-text-primary truncate max-w-[240px]">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-text-primary truncate">
                         {(audioAsset.metadata as any)?.name ?? 'Audio file'}
                       </p>
                       <p className="text-[10px] text-text-muted">Audio asset</p>
                     </div>
+                    <a
+                      href={audioAsset.file_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1.5 rounded-lg hover:bg-slate-200 text-text-muted hover:text-text-primary transition-colors"
+                      title="Open / download"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </a>
                   </div>
                   <audio
                     ref={audioRef}
@@ -90,8 +99,10 @@ export function AudioReviewModal({ open, idea, assets, comments, onClose, onSave
                     onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)}
                     onPlay={() => setIsPlaying(true)}
                     onPause={() => setIsPlaying(false)}
-                    className="w-full"
+                    onError={() => console.error('[AudioReview] Failed to load audio src:', audioAsset.file_url)}
+                    className="w-full rounded-xl"
                     controls
+                    preload="metadata"
                   />
                   <div className="mt-3 flex items-center gap-3">
                     <button
