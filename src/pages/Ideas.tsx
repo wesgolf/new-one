@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  CheckCircle2,
   ExternalLink,
   Link2,
   Loader2,
@@ -96,11 +97,13 @@ export function Ideas() {
     load();
   }, [load]);
 
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const handleShareLink = useCallback((idea: IdeaRecord) => {
     const slug = idea.share_slug || idea.id;
     const url  = `${window.location.origin}/collab/${slug}`;
     navigator.clipboard.writeText(url).catch(() => {});
-    alert('Share link copied!');
+    setCopiedId(idea.id);
+    setTimeout(() => setCopiedId(null), 2000);
   }, []);
 
   const filtered = useMemo(() => {
@@ -272,10 +275,17 @@ export function Ideas() {
                       <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); handleShareLink(idea); }}
-                          className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-surface-raised hover:text-brand"
+                          className={cn(
+                            'rounded-lg p-1.5 transition-colors',
+                            copiedId === idea.id
+                              ? 'text-emerald-500'
+                              : 'text-text-muted hover:bg-surface-raised hover:text-brand'
+                          )}
                           aria-label="Copy share link"
                         >
-                        <Link2 className="h-3.5 w-3.5" />
+                        {copiedId === idea.id
+                          ? <CheckCircle2 className="h-3.5 w-3.5" />
+                          : <Link2 className="h-3.5 w-3.5" />}
                       </button>
                       {canCreateTrack && (
                         <button

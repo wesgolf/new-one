@@ -23,9 +23,11 @@ function TaskModal({ open, profiles, initialTask, onClose, onSaved }: TaskModalP
     priority: 'medium',
   });
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
+      setError(null);
       setForm(
         initialTask || {
           status: 'todo',
@@ -40,10 +42,13 @@ function TaskModal({ open, profiles, initialTask, onClose, onSaved }: TaskModalP
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
+    setError(null);
     try {
       await saveTask(form);
       onSaved();
       onClose();
+    } catch {
+      setError('Failed to save task. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -137,6 +142,9 @@ function TaskModal({ open, profiles, initialTask, onClose, onSaved }: TaskModalP
             </select>
           </label>
 
+          {error && (
+            <p className="rounded-xl bg-rose-50 px-4 py-2.5 text-sm text-rose-600">{error}</p>
+          )}
           <div className="flex items-center justify-end gap-3 pt-2">
             <button type="button" className="btn-secondary" onClick={onClose}>
               Cancel

@@ -71,20 +71,28 @@ export function CalendarEventDetailModal({ isOpen, onClose, event, onDelete, onU
     setError(null);
 
     try {
+      // Events from the tasks table have a synthetic 'task_' id prefix
+      const isTask = event.id.startsWith('task_');
+      const rowId  = isTask ? event.id.slice(5) : event.id;
+
       let table = '';
-      switch (event.type) {
-        case 'release': table = 'releases'; break;
-        case 'post': table = 'content_items'; break;
-        case 'show': table = 'shows'; break;
-        case 'meeting': table = 'meetings'; break;
-        case 'todo': table = 'todos'; break;
-        case 'goal': table = 'goals'; break;
+      if (isTask) {
+        table = 'tasks';
+      } else {
+        switch (event.type) {
+          case 'release': table = 'releases'; break;
+          case 'post': table = 'content_items'; break;
+          case 'show': table = 'shows'; break;
+          case 'meeting': table = 'meetings'; break;
+          case 'todo': table = 'todos'; break;
+          case 'goal': table = 'goals'; break;
+        }
       }
 
       const { error: deleteError } = await supabase
         .from(table)
         .delete()
-        .eq('id', event.id);
+        .eq('id', rowId);
 
       if (deleteError) throw deleteError;
 
@@ -102,10 +110,17 @@ export function CalendarEventDetailModal({ isOpen, onClose, event, onDelete, onU
 
     setLoading(true);
     try {
+      const isTask = event.id.startsWith('task_');
+      const rowId  = isTask ? event.id.slice(5) : event.id;
+      const table  = isTask ? 'tasks' : 'todos';
+      const update = isTask
+        ? { status: event.status !== 'completed' ? 'done' : 'todo' }
+        : { completed: event.status !== 'completed' };
+
       const { error: updateError } = await supabase
-        .from('todos')
-        .update({ completed: event.status !== 'completed' })
-        .eq('id', event.id);
+        .from(table)
+        .update(update)
+        .eq('id', rowId);
 
       if (updateError) throw updateError;
       onUpdate();

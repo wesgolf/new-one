@@ -13,6 +13,7 @@ export function QuickCapture({ onSuccess }: QuickCaptureProps) {
   const [category, setCategory] = useState<'Idea' | 'Task' | 'Note' | 'Contact'>('Idea');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [showError, setShowError] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,6 +36,8 @@ export function QuickCapture({ onSuccess }: QuickCaptureProps) {
       setTimeout(() => setShowSuccess(false), 2000);
     } catch (err) {
       console.error('Quick capture error:', err);
+      setShowError(true);
+      setTimeout(() => setShowError(false), 3000);
     } finally {
       setIsSubmitting(false);
     }
@@ -105,6 +108,19 @@ export function QuickCapture({ onSuccess }: QuickCaptureProps) {
             <div className="flex items-center gap-2">
               <CheckSquare className="w-5 h-5" />
               <span className="font-bold">Captured to Inbox</span>
+            </div>
+          </motion.div>
+        )}
+        {showError && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-rose-500/95 backdrop-blur-sm flex items-center justify-center text-white z-10"
+          >
+            <div className="flex items-center gap-2">
+              <Send className="w-5 h-5" />
+              <span className="font-bold">Failed to capture. Try again.</span>
             </div>
           </motion.div>
         )}
