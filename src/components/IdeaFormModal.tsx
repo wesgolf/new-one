@@ -190,7 +190,7 @@ export function IdeaFormModal({ open, idea, onClose, onSaved }: IdeaFormModalPro
         {/* Header */}
         <div className="flex items-center justify-between px-8 pt-8 pb-4 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-violet-600 rounded-2xl shadow-lg shadow-violet-100">
+            <div className="p-2.5 bg-blue-600 rounded-2xl shadow-lg shadow-blue-100">
               <Music2 className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -281,7 +281,7 @@ export function IdeaFormModal({ open, idea, onClose, onSaved }: IdeaFormModalPro
                   className={cn(
                     'p-3 rounded-xl border text-left transition-all',
                     status === s.value
-                      ? 'border-violet-500 bg-violet-50'
+                      ? 'border-blue-500 bg-blue-50'
                       : 'border-slate-100 hover:border-slate-200',
                   )}
                 >
@@ -335,7 +335,7 @@ export function IdeaFormModal({ open, idea, onClose, onSaved }: IdeaFormModalPro
                   className={cn(
                     'px-3 py-1.5 rounded-xl border text-xs font-medium transition-all',
                     genre === g
-                      ? 'border-violet-500 bg-violet-50 text-violet-700'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
                       : 'border-slate-100 text-slate-600 hover:border-slate-200',
                   )}
                 >
@@ -359,10 +359,10 @@ export function IdeaFormModal({ open, idea, onClose, onSaved }: IdeaFormModalPro
               className={cn(
                 'flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 py-7 text-sm transition-all relative',
                 isDragging
-                  ? 'border-violet-400 bg-violet-50'
+                  ? 'border-blue-400 bg-blue-50'
                   : audioFile
                     ? 'border-emerald-200 bg-emerald-50 cursor-default'
-                    : 'border-slate-200 bg-slate-50 cursor-pointer hover:border-violet-300 hover:bg-violet-50/40',
+                    : 'border-slate-200 bg-slate-50 cursor-pointer hover:border-blue-300 hover:bg-blue-50/40',
               )}
             >
               {audioFile ? (
@@ -456,7 +456,7 @@ export function IdeaFormModal({ open, idea, onClose, onSaved }: IdeaFormModalPro
                   onClick={() => set(!checked)}
                   className={cn(
                     'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none',
-                    checked ? 'bg-violet-600' : 'bg-slate-200',
+                    checked ? 'bg-blue-600' : 'bg-slate-200',
                   )}
                 >
                   <span
@@ -483,7 +483,7 @@ export function IdeaFormModal({ open, idea, onClose, onSaved }: IdeaFormModalPro
             <button
               type="submit"
               disabled={saving}
-              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-violet-600 hover:bg-violet-700 transition-all flex items-center gap-2 disabled:opacity-60"
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-all flex items-center gap-2 disabled:opacity-60"
             >
               {saving ? (
                 <>
