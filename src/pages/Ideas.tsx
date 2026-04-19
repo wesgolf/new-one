@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ExternalLink,
-  Headphones,
   Link2,
   Loader2,
   Plus,
@@ -232,7 +231,8 @@ export function Ideas() {
             return (
               <article
                 key={idea.id}
-                className="group flex flex-col rounded-[1.75rem] border border-border bg-white shadow-sm transition-all hover:border-violet-300 hover:shadow-md"
+                onClick={() => openReview(idea)}
+                className="group flex flex-col rounded-[1.75rem] border border-border bg-white shadow-sm transition-all hover:border-blue-300 hover:shadow-md cursor-pointer"
               >
                 <div className="flex-1 p-5">
                   <div className="flex items-start justify-between gap-3">
@@ -260,7 +260,7 @@ export function Ideas() {
                       {(canCreateTrack || isManager) && (
                         <button
                           type="button"
-                          onClick={() => { setEditingIdea(idea); setFormOpen(true); }}
+                          onClick={(e) => { e.stopPropagation(); setEditingIdea(idea); setFormOpen(true); }}
                           className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-surface-raised hover:text-brand"
                           aria-label="Edit"
                         >
@@ -270,17 +270,17 @@ export function Ideas() {
                         </button>
                       )}
                       <button
-                        type="button"
-                        onClick={() => handleShareLink(idea)}
-                        className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-surface-raised hover:text-brand"
-                        aria-label="Copy share link"
-                      >
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleShareLink(idea); }}
+                          className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-surface-raised hover:text-brand"
+                          aria-label="Copy share link"
+                        >
                         <Link2 className="h-3.5 w-3.5" />
                       </button>
                       {canCreateTrack && (
                         <button
                           type="button"
-                          onClick={() => handleDelete(idea.id)}
+                          onClick={(e) => { e.stopPropagation(); handleDelete(idea.id); }}
                           className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-rose-50 hover:text-rose-500"
                           aria-label="Delete"
                         >
@@ -300,16 +300,6 @@ export function Ideas() {
                       {format(parseISO(idea.created_at), 'MMM d, yyyy')}
                     </p>
                   )}
-                </div>
-                <div className="border-t border-border px-5 py-3">
-                  <button
-                    type="button"
-                    onClick={() => openReview(idea)}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 py-2.5 text-xs font-bold text-white transition-all hover:bg-violet-700"
-                  >
-                    <Headphones className="h-4 w-4" />
-                    Open Review
-                  </button>
                 </div>
               </article>
             );

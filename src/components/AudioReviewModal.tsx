@@ -71,23 +71,29 @@ export function AudioReviewModal({ open, idea, assets, comments, onClose, onSave
         <div className="grid flex-1 gap-0 overflow-hidden lg:grid-cols-[1.1fr_0.9fr]">
           <div className="border-r border-border p-6">
             <div className="rounded-[1.75rem] border border-border bg-slate-50 p-5">
-              <p className="text-sm text-text-secondary">
-                {audioAsset ? 'Primary MP3 asset loaded for review.' : 'No audio asset uploaded yet.'}
-              </p>
-
               {audioAsset ? (
                 <>
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="p-2 bg-slate-900 rounded-lg">
+                      <Play className="h-3.5 w-3.5 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-text-primary truncate max-w-[240px]">
+                        {(audioAsset.metadata as any)?.name ?? 'Audio file'}
+                      </p>
+                      <p className="text-[10px] text-text-muted">Audio asset</p>
+                    </div>
+                  </div>
                   <audio
                     ref={audioRef}
                     src={audioAsset.file_url}
                     onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)}
                     onPlay={() => setIsPlaying(true)}
                     onPause={() => setIsPlaying(false)}
-                    className="mt-5 w-full"
+                    className="w-full"
                     controls
                   />
-
-                  <div className="mt-4 flex items-center gap-3">
+                  <div className="mt-3 flex items-center gap-3">
                     <button
                       type="button"
                       className="btn-secondary"
@@ -106,7 +112,9 @@ export function AudioReviewModal({ open, idea, assets, comments, onClose, onSave
                     </div>
                   </div>
                 </>
-              ) : null}
+              ) : (
+                <p className="text-sm text-text-secondary">No audio asset uploaded yet.</p>
+              )}
             </div>
 
             <div className="mt-5 rounded-[1.75rem] border border-border bg-white p-5">
