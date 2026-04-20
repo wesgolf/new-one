@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Download, MessageSquare, Pause, Play, Send, X } from 'lucide-react';
+import { ChevronDown, Download, MessageSquare, Pause, Play, Send, X } from 'lucide-react';
 import { saveIdeaComment } from '../lib/supabaseData';
 import type { IdeaAsset, IdeaComment, IdeaRecord } from '../types/domain';
 
@@ -7,6 +7,36 @@ function fmt(value: number) {
   const m = Math.floor(value / 60);
   const s = Math.floor(value % 60).toString().padStart(2, '0');
   return `${m}:${s}`;
+}
+
+/** Assign version numbers to audio assets — oldest = v1 */
+function labeledAudioAssets(assets: IdeaAsset[]) {
+  return [...assets]
+    .filter((a) => a.asset_type === 'audio')
+    .sort((a, b) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime())
+    .map((a, i) => ({
+      ...a,
+      version: (a.metadata as any)?.version ?? i + 1,
+      versionLabel: `Version ${(a.metadata as any)?.version ?? i + 1}`,
+    }));
+}
+
+/** Return comments that were created while `asset` was the active version.
+ *  = created_at >= asset.created_at AND < next_asset.created_at (or all remaining) */
+function commentsForVersion(
+  comments: IdeaComment[],
+  asset: IdeaAsset & { version: number },
+  allVersions: (IdeaAsset & { version: number })[],
+): IdeaComment[] {
+  const from = asset.created_at ? new Date(asset.created_at).getTime() : 0;
+  const idx = allVersions.findIndex((a) => a.id === asset.id);
+  const next = allVersions[idx + 1];
+  const to = next?.created_at ? new Date(next.created_at).getTime() : Infinity;
+  return comments.filter((c) => {
+    if (!c.created_at) return true; // include if no timestamp
+    const t = new Date(c.created_at).getTime();
+    return t >= from && t < to;
+  });
 }
 
 interface AudioReviewModalProps {
@@ -27,17 +57,33 @@ export function AudioReviewModal({ open, idea, assets, comments, onClose, onSave
   const [body, setBody] = useState('');
   const [generalNote, setGeneralNote] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [versionOpen, setVersionOpen] = useState(false);
 
-  const audioAsset = assets.find((a) => a.asset_type === 'audio');
+  const versions = useMemo(() => labeledAudioAssets(assets), [assets]);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+
+  // Always default to the latest version
+  const audioAsset = useMemo(() => {
+    if (versions.length === 0) return null;
+    if (selectedVersionId) {
+      return versions.find((v) => v.id === selectedVersionId) ?? versions[versions.length - 1];
+    }
+    return versions[versions.length - 1];
+  }, [versions, selectedVersionId]);
+
+  const versionComments = useMemo(() => {
+    if (!audioAsset) return [];
+    return commentsForVersion(comments, audioAsset, versions);
+  }, [comments, audioAsset, versions]);
 
   const sortedComments = useMemo(
     () =>
-      [...comments].sort(
+      [...versionComments].sort(
         (a, b) =>
           (a.timestamp_seconds ?? Number.MAX_SAFE_INTEGER) -
           (b.timestamp_seconds ?? Number.MAX_SAFE_INTEGER),
       ),
-    [comments],
+    [versionComments],
   );
 
   if (!open || !idea) return null;
@@ -95,17 +141,49 @@ export function AudioReviewModal({ open, idea, assets, comments, onClose, onSave
 
         {/* ── Header ───────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-6 py-5 shrink-0 border-b border-slate-100">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Audio Review</p>
             <h3 className="mt-0.5 text-base font-bold text-slate-900 truncate">{idea.title}</h3>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="ml-4 shrink-0 p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2 ml-4 shrink-0">
+            {/* Version selector */}
+            {versions.length > 1 && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setVersionOpen((v) => !v)}
+                  className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
+                >
+                  {audioAsset ? `Version ${audioAsset.version}` : 'Version'}
+                  <ChevronDown className="h-3 w-3 text-slate-400" />
+                </button>
+                {versionOpen && (
+                  <div className="absolute right-0 top-full mt-1 z-10 min-w-[140px] rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden">
+                    {[...versions].reverse().map((v) => (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => { setSelectedVersionId(v.id); setVersionOpen(false); setCurrentTime(0); setDuration(0); setIsPlaying(false); }}
+                        className={`w-full text-left px-4 py-2.5 text-xs font-semibold transition-colors hover:bg-slate-50 ${v.id === audioAsset?.id ? 'text-slate-900 bg-slate-50' : 'text-slate-600'}`}
+                      >
+                        {v.versionLabel}
+                        {v.id === versions[versions.length - 1].id && (
+                          <span className="ml-2 text-[10px] text-emerald-500 font-bold">latest</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {/* ── Player ───────────────────────────────────────────── */}

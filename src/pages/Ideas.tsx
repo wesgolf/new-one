@@ -4,6 +4,7 @@ import {
   ExternalLink,
   Link2,
   Loader2,
+  Play,
   Plus,
   Search,
   Share2,
@@ -51,6 +52,7 @@ export function Ideas() {
 
   const [formOpen,    setFormOpen]    = useState(false);
   const [editingIdea, setEditingIdea] = useState<IdeaRecord | null>(null);
+  const [editAudioCount, setEditAudioCount] = useState(0);
 
   const [reviewOpen,     setReviewOpen]     = useState(false);
   const [reviewIdea,     setReviewIdea]     = useState<IdeaRecord | null>(null);
@@ -235,7 +237,7 @@ export function Ideas() {
               <article
                 key={idea.id}
                 onClick={() => openReview(idea)}
-                className="group flex flex-col rounded-[1.75rem] border border-border bg-white shadow-sm transition-all hover:border-blue-300 hover:shadow-md cursor-pointer"
+                className="group flex flex-col rounded-[1.75rem] border border-border bg-white shadow-sm transition-all hover:border-slate-300 hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 active:shadow-sm cursor-pointer"
               >
                 <div className="flex-1 p-5">
                   <div className="flex items-start justify-between gap-3">
@@ -259,11 +261,18 @@ export function Ideas() {
                         </span>
                       )}
                     </div>
-                    <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <div className="flex shrink-0 items-center gap-1">
                       {(canCreateTrack || isManager) && (
                         <button
                           type="button"
-                          onClick={(e) => { e.stopPropagation(); setEditingIdea(idea); setFormOpen(true); }}
+                                      onClick={(e) => {
+              e.stopPropagation();
+              fetchIdeaAssets(idea.id).then(assets => {
+                setEditAudioCount(assets.filter(a => a.asset_type === 'audio').length);
+              }).catch(() => setEditAudioCount(0));
+              setEditingIdea(idea);
+              setFormOpen(true);
+            }}
                           className="rounded-lg p-1.5 text-text-muted transition-colors hover:bg-surface-raised hover:text-brand"
                           aria-label="Edit"
                         >
@@ -311,6 +320,29 @@ export function Ideas() {
                     </p>
                   )}
                 </div>
+                <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50/60 rounded-b-[1.75rem]">
+                  <span className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 group-hover:text-slate-600 transition-colors">
+                    <Play className="h-3 w-3" />
+                    Open review
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {(idea as any).is_collab && (
+                      <a
+                        href={`/collab-lab/${idea.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex items-center gap-1 text-[10px] font-semibold text-purple-500 hover:text-purple-700 transition-colors"
+                      >
+                        <Users className="h-3 w-3" />
+                        Collab Lab
+                      </a>
+                    )}
+                    {(idea as any).idea_assets_count > 0 && (
+                      <span className="text-[10px] text-slate-400">🎵 Audio</span>
+                    )}
+                  </div>
+                </div>
               </article>
             );
           })}
@@ -320,6 +352,7 @@ export function Ideas() {
       <IdeaFormModal
         open={formOpen}
         idea={editingIdea}
+        existingAudioCount={editAudioCount}
         onClose={() => setFormOpen(false)}
         onSaved={() => { setFormOpen(false); load(); }}
       />

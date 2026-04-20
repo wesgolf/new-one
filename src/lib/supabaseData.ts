@@ -232,7 +232,7 @@ export async function saveIdeaComment(comment: Partial<IdeaComment>) {
   return data as IdeaComment;
 }
 
-export async function uploadIdeaAudio(file: File, ideaId: string) {
+export async function uploadIdeaAudio(file: File, ideaId: string, extraMeta: Record<string, unknown> = {}) {
   const user = await getCurrentAuthUser();
   const ext = file.name.split('.').pop() || 'mp3';
   const path = `${user?.id || 'public'}/${ideaId}/${Date.now()}.${ext}`;
@@ -254,6 +254,7 @@ export async function uploadIdeaAudio(file: File, ideaId: string) {
           name: file.name,
           size: file.size,
           mime_type: file.type,
+          ...extraMeta,
         },
       },
     ])

@@ -16,6 +16,7 @@ import { SoundCloudCallback } from './pages/SoundCloudCallback';
 import { BrandVault } from './pages/BrandVault';
 import { ArtistCoach } from './pages/ArtistCoach';
 import { CollabPortal } from './pages/CollabPortal';
+import { CollabLab } from './pages/CollabLab';
 import { Opportunities } from './pages/Opportunities';
 import { CareerMap } from './pages/CareerMap';
 import { Tasks } from './pages/Tasks';
@@ -43,6 +44,8 @@ export default function App() {
       {/* Public routes */}
       <Route path="/collab" element={<CollabPortal />} />
       <Route path="/collab/:ideaId" element={<CollabPortal />} />
+      <Route path="/collab-lab" element={<CollabLab />} />
+      <Route path="/collab-lab/:ideaId" element={<CollabLab />} />
       <Route path="/" element={<PublicHub />} />
       <Route path="/hub" element={<PublicHub />} />
       <Route path="/login" element={<Unauthorized />} />

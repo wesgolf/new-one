@@ -23,11 +23,12 @@ const labelCls =
 interface IdeaFormModalProps {
   open: boolean;
   idea: IdeaRecord | null;
+  existingAudioCount?: number;
   onClose: () => void;
   onSaved: () => void;
 }
 
-export function IdeaFormModal({ open, idea, onClose, onSaved }: IdeaFormModalProps) {
+export function IdeaFormModal({ open, idea, existingAudioCount = 0, onClose, onSaved }: IdeaFormModalProps) {
   const { authUser } = useCurrentUser();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -35,6 +36,7 @@ export function IdeaFormModal({ open, idea, onClose, onSaved }: IdeaFormModalPro
   const [titleError, setTitleError] = useState(false);
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<string>('demo');
+  const [isCollab, setIsCollab] = useState(false);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -47,6 +49,7 @@ export function IdeaFormModal({ open, idea, onClose, onSaved }: IdeaFormModalPro
     setTitleError(false);
     setDescription(idea?.description ?? '');
     setStatus(idea?.status ?? 'demo');
+    setIsCollab(idea?.is_collab ?? false);
     setAudioFile(null);
     setIsDragging(false);
     setFileError(null);
@@ -100,12 +103,13 @@ export function IdeaFormModal({ open, idea, onClose, onSaved }: IdeaFormModalPro
         title: title.trim(),
         description: description.trim() || null,
         status,
-        is_collab: false,
-        is_public: false,
+        is_collab: isCollab,
+        is_public: isCollab,  // public collab lab listing
         user_id: idea?.user_id ?? authUser?.id ?? null,
       });
 
       if (audioFile && saved.id) {
+        const nextVersion = existingAudioCount + 1;
         try {
           if (dropboxConfigured()) {
             const { url, path } = await uploadAudioToDropbox(audioFile, saved.id);
@@ -113,10 +117,10 @@ export function IdeaFormModal({ open, idea, onClose, onSaved }: IdeaFormModalPro
               idea_id: saved.id,
               file_url: url,
               asset_type: 'audio',
-              metadata: { name: audioFile.name, size: audioFile.size, dropbox_path: path },
+              metadata: { name: audioFile.name, size: audioFile.size, dropbox_path: path, version: nextVersion },
             });
           } else {
-            await uploadIdeaAudio(audioFile, saved.id);
+            await uploadIdeaAudio(audioFile, saved.id, { version: nextVersion });
           }
         } catch (uploadErr: any) {
           setFormError(
@@ -291,6 +295,31 @@ export function IdeaFormModal({ open, idea, onClose, onSaved }: IdeaFormModalPro
               <p className="mt-1.5 text-xs text-rose-500 font-medium">{fileError}</p>
             )}
           </div>
+
+          {/* Collab toggle */}
+          <label className="flex items-center justify-between cursor-pointer pt-1">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Open for collab</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">List this track on the public Collab Lab for feedback &amp; contributions</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isCollab}
+              onClick={() => setIsCollab((v) => !v)}
+              className={cn(
+                'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none ml-4',
+                isCollab ? 'bg-blue-600' : 'bg-slate-200',
+              )}
+            >
+              <span
+                className={cn(
+                  'inline-block h-4 w-4 rounded-full bg-white shadow transition-transform',
+                  isCollab ? 'translate-x-4' : 'translate-x-0',
+                )}
+              />
+            </button>
+          </label>
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-2">
