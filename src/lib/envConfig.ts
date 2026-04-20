@@ -25,6 +25,7 @@ export const env = {
   // Analytics APIs
   spotifyAccessToken:    import.meta.env.VITE_SPOTIFY_ACCESS_TOKEN   as string | undefined,
   songstatsApiKey:       import.meta.env.VITE_SONGSTATS_API_KEY       as string | undefined,
+  songstatsArtistId:     import.meta.env.VITE_SONGSTATS_ARTIST_ID     as string | undefined,
   soundchartsAppId:      import.meta.env.VITE_SOUNDCHARTS_APP_ID      as string | undefined,
   soundchartsAppSecret:  import.meta.env.VITE_SOUNDCHARTS_APP_SECRET  as string | undefined,
 
@@ -41,7 +42,7 @@ export const features = {
   spotifyAuth:       !!env.spotifyClientId,
   soundcloudAuth:    !!env.soundcloudClientId,
   spotifyAnalytics:  !!env.spotifyAccessToken,
-  songstatsAnalytics: !!env.songstatsApiKey,
+  songstatsAnalytics: !!env.songstatsApiKey && !!env.songstatsArtistId,
   soundchartsAnalytics: !!env.soundchartsAppId && !!env.soundchartsAppSecret,
   dropboxUpload:         !!env.dropboxAccessToken,
 } as const;
