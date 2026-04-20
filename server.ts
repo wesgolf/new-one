@@ -244,12 +244,12 @@ async function startServer() {
   // ── Songstats Proxy ─────────────────────────────────────────────────────
   // The Songstats API only allows calls originating from their own domain,
   // so all requests must be proxied server-side to avoid CORS errors.
-  const SONGSTATS_API_KEY = process.env.VITE_SONGSTATS_API_KEY;
+  const SONGSTATS_API_KEY = process.env.SONGSTATS_API_KEY || process.env.VITE_SONGSTATS_API_KEY;
   const SONGSTATS_API_BASE = 'https://api.songstats.com/enterprise/v1';
 
   app.get('/api/songstats/*', async (req: any, res: any) => {
     if (!SONGSTATS_API_KEY) {
-      return res.status(401).json({ error: 'VITE_SONGSTATS_API_KEY is not configured.' });
+      return res.status(401).json({ error: 'SONGSTATS_API_KEY (or VITE_SONGSTATS_API_KEY) is not configured.' });
     }
     // Strip the /api/songstats prefix to get the upstream path
     const upstreamPath = req.path.replace(/^\/api\/songstats/, '');
