@@ -241,6 +241,36 @@ async function startServer() {
     }
   });
 
+  // ── Songstats Proxy ─────────────────────────────────────────────────────
+  // The Songstats API only allows calls originating from their own domain,
+  // so all requests must be proxied server-side to avoid CORS errors.
+  const SONGSTATS_API_KEY = process.env.VITE_SONGSTATS_API_KEY;
+  const SONGSTATS_API_BASE = 'https://api.songstats.com/enterprise/v1';
+
+  app.get('/api/songstats/*', async (req: any, res: any) => {
+    if (!SONGSTATS_API_KEY) {
+      return res.status(401).json({ error: 'VITE_SONGSTATS_API_KEY is not configured.' });
+    }
+    // Strip the /api/songstats prefix to get the upstream path
+    const upstreamPath = req.path.replace(/^\/api\/songstats/, '');
+    const query = new URLSearchParams(req.query as Record<string, string>).toString();
+    const url = `${SONGSTATS_API_BASE}${upstreamPath}${query ? '?' + query : ''}`;
+    try {
+      const response = await axios.get(url, {
+        headers: {
+          Accept: 'application/json',
+          apikey: SONGSTATS_API_KEY,
+        },
+      });
+      res.json(response.data);
+    } catch (err: any) {
+      const status = err.response?.status || 500;
+      const data = err.response?.data || { message: err.message };
+      console.error(`[songstats proxy] ${url} → ${status}`, data);
+      res.status(status).json({ error: 'Songstats proxy error', details: data });
+    }
+  });
+
   // Zernio API Config
   const ZERNIO_API_KEY = process.env.VITE_ZERNIO_KEY || process.env.VITE_ZERNIO_API_KEY || process.env.ZERNIO_API_KEY;
   const ZERNIO_API_BASE = 'https://zernio.com/api/v1';

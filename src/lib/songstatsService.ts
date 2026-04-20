@@ -9,22 +9,17 @@
  *   VITE_SONGSTATS_ARTIST_ID — your songstats_artist_id (e.g. "48ra1cnv")
  */
 
-const BASE = 'https://api.songstats.com/enterprise/v1';
-
-function apiKey(): string {
-  return import.meta.env.VITE_SONGSTATS_API_KEY ?? '';
-}
+// All calls go through the server-side proxy at /api/songstats
+// to avoid CORS — the proxy (server.ts) injects the API key.
+const BASE = '/api/songstats';
 
 async function get<T>(path: string, params?: Record<string, string>): Promise<T> {
-  const url = new URL(`${BASE}${path}`);
+  const url = new URL(`${BASE}${path}`, window.location.origin);
   if (params) {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   }
   const res = await fetch(url.toString(), {
-    headers: {
-      Accept: 'application/json',
-      apikey: apiKey(),
-    },
+    headers: { Accept: 'application/json' },
   });
   if (!res.ok) {
     throw new Error(`Songstats ${path} → HTTP ${res.status}`);
