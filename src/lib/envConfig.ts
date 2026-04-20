@@ -24,7 +24,6 @@ export const env = {
 
   // Analytics APIs
   spotifyAccessToken:    import.meta.env.VITE_SPOTIFY_ACCESS_TOKEN   as string | undefined,
-  songstatsApiKey:       import.meta.env.VITE_SONGSTATS_API_KEY       as string | undefined,
   songstatsArtistId:     import.meta.env.VITE_SONGSTATS_ARTIST_ID     as string | undefined,
   soundchartsAppId:      import.meta.env.VITE_SOUNDCHARTS_APP_ID      as string | undefined,
   soundchartsAppSecret:  import.meta.env.VITE_SOUNDCHARTS_APP_SECRET  as string | undefined,
@@ -42,7 +41,7 @@ export const features = {
   spotifyAuth:       !!env.spotifyClientId,
   soundcloudAuth:    !!env.soundcloudClientId,
   spotifyAnalytics:  !!env.spotifyAccessToken,
-  songstatsAnalytics: !!env.songstatsApiKey && !!env.songstatsArtistId,
+  songstatsAnalytics: !!env.songstatsArtistId,
   soundchartsAnalytics: !!env.soundchartsAppId && !!env.soundchartsAppSecret,
   dropboxUpload:         !!env.dropboxAccessToken,
 } as const;
@@ -68,7 +67,7 @@ const CHECKS: EnvCheck[] = [
   { key: 'VITE_SPOTIFY_CLIENT_ID',       label: 'Spotify OAuth client',   required: false, configured: !!env.spotifyClientId },
   { key: 'VITE_SOUNDCLOUD_CLIENT_ID',    label: 'SoundCloud OAuth client',required: false, configured: !!env.soundcloudClientId },
   { key: 'VITE_SPOTIFY_ACCESS_TOKEN',    label: 'Spotify analytics token',required: false, configured: !!env.spotifyAccessToken },
-  { key: 'VITE_SONGSTATS_API_KEY',       label: 'Songstats API key',      required: false, configured: !!env.songstatsApiKey },
+
   { key: 'VITE_SOUNDCHARTS_APP_ID',      label: 'Soundcharts App ID',     required: false, configured: !!env.soundchartsAppId },
   { key: 'VITE_SOUNDCHARTS_APP_SECRET',  label: 'Soundcharts App Secret', required: false, configured: !!env.soundchartsAppSecret },
   { key: 'VITE_DROPBOX_ACCESS_TOKEN',     label: 'Dropbox access token',   required: false, configured: !!env.dropboxAccessToken },
