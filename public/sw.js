@@ -1,4 +1,4 @@
-const CACHE_NAME = 'artist-os-v3';
+const CACHE_NAME = 'artist-os-v4';
 const ASSETS = [
   '/',
   '/index.html',
