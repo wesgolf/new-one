@@ -2,9 +2,8 @@ import { emptyAnalyticsPayload, type AnalyticsProvider } from './baseProvider';
 import type { AnalyticsDomainPayload, AnalyticsOverviewMetric, AnalyticsProviderState } from '../../types/domain';
 import { fetchArtistStats, type ArtistStatEntry } from '../../lib/songstatsService';
 
-const apiKey    = import.meta.env.VITE_SONGSTATS_API_KEY  as string | undefined;
 const artistId  = import.meta.env.VITE_SONGSTATS_ARTIST_ID as string | undefined;
-const configured = !!apiKey && !!artistId;
+const configured = !!artistId;
 
 // ── Helper: turn a numeric field into a metric card ──────────────────────────
 
@@ -120,13 +119,6 @@ export const songstatsProvider: AnalyticsProvider = {
   },
 
   async getState(): Promise<AnalyticsProviderState> {
-    if (!apiKey) {
-      return {
-        provider: 'Songstats',
-        status: 'not_configured',
-        errorMessage: 'Set VITE_SONGSTATS_API_KEY in .env to enable Songstats.',
-      };
-    }
     if (!artistId) {
       return {
         provider: 'Songstats',
