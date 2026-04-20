@@ -51,6 +51,7 @@ export function useAnalytics(): UseAnalyticsResult {
           playlist:  payloadResults.flatMap(p => p.playlist),
           social:    payloadResults.flatMap(p => p.social),
           releases:  payloadResults.flatMap(p => p.releases),
+          platforms: payloadResults.flatMap(p => p.platforms ?? []),
         };
         setPayload(merged);
       } catch (err) {

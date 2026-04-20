@@ -271,12 +271,34 @@ export interface AnalyticsOverviewMetric {
   trend?: number | null;
 }
 
+export interface PlatformStat {
+  label: string;
+  value: number;
+  unit?: string;
+}
+
+export interface PlatformSnapshot {
+  id: string;
+  label: string;
+  brandColor: string;
+  category: 'streaming' | 'social' | 'dj';
+  primary: PlatformStat | null;
+  secondary: PlatformStat[];
+  audienceSize: number;
+  chartsCount?: number;
+  chartedTracks?: number;
+  playlistReach?: number;
+  editorialCount?: number;
+  totalPlaylists?: number;
+}
+
 export interface AnalyticsDomainPayload {
   audience: AnalyticsOverviewMetric[];
   streaming: AnalyticsOverviewMetric[];
   playlist: AnalyticsOverviewMetric[];
   social: AnalyticsOverviewMetric[];
   releases: AnalyticsOverviewMetric[];
+  platforms?: PlatformSnapshot[];
 }
 
 export interface AnalyticsProviderState {

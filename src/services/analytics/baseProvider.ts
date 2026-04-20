@@ -14,6 +14,7 @@ export function emptyAnalyticsPayload(provider: string): AnalyticsDomainPayload 
     playlist: [],
     social: [],
     releases: [],
+    platforms: [],
   };
 }
 
