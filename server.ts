@@ -2,6 +2,7 @@ import "dotenv/config";
 import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 import express from "express";
+import http from "http";
 import path from "path";
 import axios from "axios";
 
@@ -284,60 +285,29 @@ async function startServer() {
     });
   });
 
-  app.get('/api/zernio/accounts', async (req, res) => {
+  // Generic GET proxy — handles ALL Zernio v1 GET endpoints (accounts, posts, analytics,
+  // follower-stats, daily-metrics, best-time, instagram insights, youtube demographics, etc.)
+  // config-check is registered above and takes precedence since Express matches in order.
+  app.get('/api/zernio/*', async (req: any, res: any) => {
     if (!ZERNIO_API_KEY) {
       return res.status(401).json({ error: 'ZERNIO_API_KEY is not configured in environment variables.' });
     }
+    const upstreamPath = req.path.replace(/^\/api\/zernio/, '');
+    const query = new URLSearchParams(req.query as Record<string, string>).toString();
+    const url = `${ZERNIO_API_BASE}${upstreamPath}${query ? '?' + query : ''}`;
     try {
-      const response = await axios.get(`${ZERNIO_API_BASE}/accounts`, {
-        headers: { 
-          'Authorization': `Bearer ${ZERNIO_API_KEY}`,
-          'Accept': 'application/json'
-        }
+      const response = await axios.get(url, {
+        headers: {
+          Authorization: `Bearer ${ZERNIO_API_KEY}`,
+          Accept: 'application/json',
+        },
       });
       res.json(response.data);
     } catch (err: any) {
       const status = err.response?.status || 500;
       const data = err.response?.data || { message: err.message };
-      res.status(status).json({ error: 'Failed to fetch Zernio accounts', details: data });
-    }
-  });
-
-  app.get('/api/zernio/posts', async (req, res) => {
-    if (!ZERNIO_API_KEY) {
-      return res.status(401).json({ error: 'ZERNIO_API_KEY is not configured in environment variables.' });
-    }
-    try {
-      const response = await axios.get(`${ZERNIO_API_BASE}/posts`, {
-        headers: { 
-          'Authorization': `Bearer ${ZERNIO_API_KEY}`,
-          'Accept': 'application/json'
-        }
-      });
-      res.json(response.data);
-    } catch (err: any) {
-      const status = err.response?.status || 500;
-      const data = err.response?.data || { message: err.message };
-      res.status(status).json({ error: 'Failed to fetch Zernio posts', details: data });
-    }
-  });
-
-  app.get('/api/zernio/analytics', async (req, res) => {
-    if (!ZERNIO_API_KEY) {
-      return res.status(401).json({ error: 'ZERNIO_API_KEY is not configured in environment variables.' });
-    }
-    try {
-      const response = await axios.get(`${ZERNIO_API_BASE}/analytics`, {
-        headers: { 
-          'Authorization': `Bearer ${ZERNIO_API_KEY}`,
-          'Accept': 'application/json'
-        }
-      });
-      res.json(response.data);
-    } catch (err: any) {
-      const status = err.response?.status || 500;
-      const data = err.response?.data || { message: err.message };
-      res.status(status).json({ error: 'Failed to fetch Zernio analytics', details: data });
+      console.error(`[zernio proxy] ${url} → ${status}`, data);
+      res.status(status).json({ error: 'Zernio proxy error', details: data });
     }
   });
 
@@ -421,12 +391,14 @@ async function startServer() {
     }
   }, 5000);
 
+  const httpServer = http.createServer(app);
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     try {
       const { createServer: createViteServer } = await import("vite");
       const vite = await createViteServer({
-        server: { middlewareMode: true },
+        server: { middlewareMode: true, hmr: { server: httpServer } },
         appType: "spa",
       });
       app.use(vite.middlewares);
@@ -441,7 +413,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

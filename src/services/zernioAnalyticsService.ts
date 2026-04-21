@@ -39,8 +39,65 @@ export interface ZernioAnalyticsSnapshot {
   error?: string;
   accounts: ZernioAccount[];
   posts: ZernioPost[];
+  followerStats?: ZernioFollowerStats;
+  dailyMetrics?: ZernioDailyMetrics;
+  bestTime?: { slots: ZernioBestTimeSlot[] };
+  contentDecay?: { buckets: ZernioContentDecayBucket[] };
+  postingFrequency?: { frequency: ZernioPostingFrequencyRow[] };
   rawAnalytics?: any;
   fetchedAt?: string;
+}
+
+export interface ZernioFollowerAccount {
+  _id: string;
+  platform: string;
+  username: string;
+  currentFollowers: number;
+  growth: number;
+  growthPercentage: number;
+  dataPoints: number;
+}
+
+export interface ZernioFollowerStats {
+  accounts: ZernioFollowerAccount[];
+  stats: Record<string, Array<{ date: string; followers: number }>>;
+  dateRange: { from: string; to: string };
+  granularity: string;
+}
+
+export interface ZernioDailyMetricsDay {
+  date: string;
+  postCount: number;
+  platforms: Record<string, number>;
+  metrics: {
+    impressions: number; reach: number; likes: number; comments: number;
+    shares: number; saves: number; clicks: number; views: number;
+  };
+}
+
+export interface ZernioPlatformBreakdown {
+  platform: string;
+  postCount: number;
+  impressions: number; reach: number; likes: number; comments: number;
+  shares: number; saves: number; clicks: number; views: number;
+}
+
+export interface ZernioDailyMetrics {
+  dailyData: ZernioDailyMetricsDay[];
+  platformBreakdown: ZernioPlatformBreakdown[];
+}
+
+export interface ZernioBestTimeSlot {
+  day_of_week: number; hour: number; avg_engagement: number; post_count: number;
+}
+
+export interface ZernioContentDecayBucket {
+  bucket_order: number; bucket_label: string; avg_pct_of_final: number; post_count: number;
+}
+
+export interface ZernioPostingFrequencyRow {
+  platform: string; posts_per_week: number; avg_engagement_rate: number;
+  avg_engagement: number; weeks_count: number;
 }
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -143,6 +200,48 @@ async function safeFetch<T = any>(url: string): Promise<{ ok: boolean; data?: T;
   }
 }
 
+/** Proxy GET to any Zernio v1 endpoint. Returns null on any error. */
+async function zernioGet<T = any>(path: string, params?: Record<string, string>): Promise<T | null> {
+  const qs = params && Object.keys(params).length > 0 ? '?' + new URLSearchParams(params).toString() : '';
+  const res = await safeFetch<T>(`/api/zernio${path}${qs}`);
+  return res.ok ? (res.data ?? null) : null;
+}
+
+// ── Individual endpoint exports ───────────────────────────────────────────────
+
+export const fetchFollowerStats         = (params?: Record<string, string>) =>
+  zernioGet<ZernioFollowerStats>('/accounts/follower-stats', params);
+
+export const fetchDailyMetrics          = (params?: Record<string, string>) =>
+  zernioGet<ZernioDailyMetrics>('/analytics/daily-metrics', params);
+
+export const fetchBestTime              = () =>
+  zernioGet<{ slots: ZernioBestTimeSlot[] }>('/analytics/best-time');
+
+export const fetchContentDecay          = () =>
+  zernioGet<{ buckets: ZernioContentDecayBucket[] }>('/analytics/content-decay');
+
+export const fetchPostingFrequency      = () =>
+  zernioGet<{ frequency: ZernioPostingFrequencyRow[] }>('/analytics/posting-frequency');
+
+export const fetchPostAnalytics         = (postId?: string) =>
+  zernioGet('/analytics', postId ? { postId } : undefined);
+
+export const fetchPostTimeline          = (postId: string) =>
+  zernioGet('/analytics/post-timeline', { postId });
+
+export const fetchInstagramInsights     = (accountId: string, params?: Record<string, string>) =>
+  zernioGet('/analytics/instagram/account-insights', { accountId, ...params });
+
+export const fetchInstagramDemographics = (accountId: string) =>
+  zernioGet('/analytics/instagram/demographics', { accountId });
+
+export const fetchYouTubeDailyViews     = (videoId: string, accountId: string, params?: Record<string, string>) =>
+  zernioGet('/analytics/youtube/daily-views', { videoId, accountId, ...params });
+
+export const fetchYouTubeDemographics   = (accountId: string) =>
+  zernioGet('/analytics/youtube/demographics', { accountId });
+
 export async function fetchZernioOverview(): Promise<ZernioAnalyticsSnapshot> {
   // First check if Zernio is configured at all
   const cfg = await safeFetch<{ hasKey: boolean }>('/api/zernio/config-check');
@@ -157,26 +256,37 @@ export async function fetchZernioOverview(): Promise<ZernioAnalyticsSnapshot> {
     };
   }
 
-  const [accountsRes, postsRes, analyticsRes] = await Promise.all([
+  const [accountsRes, postsRes, analyticsRes, followerRes, dailyRes, bestTimeRes, decayRes, freqRes] = await Promise.all([
     safeFetch('/api/zernio/accounts'),
     safeFetch('/api/zernio/posts'),
     safeFetch('/api/zernio/analytics'),
+    safeFetch<ZernioFollowerStats>('/api/zernio/accounts/follower-stats'),
+    safeFetch<ZernioDailyMetrics>('/api/zernio/analytics/daily-metrics'),
+    safeFetch<{ slots: ZernioBestTimeSlot[] }>('/api/zernio/analytics/best-time'),
+    safeFetch<{ buckets: ZernioContentDecayBucket[] }>('/api/zernio/analytics/content-decay'),
+    safeFetch<{ frequency: ZernioPostingFrequencyRow[] }>('/api/zernio/analytics/posting-frequency'),
   ]);
 
   const errors: string[] = [];
   if (!accountsRes.ok)  errors.push(`accounts: ${accountsRes.error ?? '—'}`);
   if (!postsRes.ok)     errors.push(`posts: ${postsRes.error ?? '—'}`);
   if (!analyticsRes.ok) errors.push(`analytics: ${analyticsRes.error ?? '—'}`);
+  // follower-stats and daily-metrics are best-effort — don't surface as errors
 
   const rawAccounts = accountsRes.ok ? unwrapList(accountsRes.data, 'accounts', 'items', 'results') : [];
   const rawPosts    = postsRes.ok    ? unwrapList(postsRes.data,    'posts',    'items', 'results') : [];
 
   return {
-    configured: true,
-    error:      errors.length > 0 ? errors.join(' • ') : undefined,
-    accounts:   rawAccounts.map(normalizeAccount),
-    posts:      rawPosts.map(normalizePost),
-    rawAnalytics: analyticsRes.ok ? analyticsRes.data : undefined,
-    fetchedAt:  new Date().toISOString(),
+    configured:       true,
+    error:            errors.length > 0 ? errors.join(' • ') : undefined,
+    accounts:         rawAccounts.map(normalizeAccount),
+    posts:            rawPosts.map(normalizePost),
+    followerStats:    followerRes.ok   ? followerRes.data   : undefined,
+    dailyMetrics:     dailyRes.ok      ? dailyRes.data      : undefined,
+    bestTime:         bestTimeRes.ok   ? bestTimeRes.data   : undefined,
+    contentDecay:     decayRes.ok      ? decayRes.data      : undefined,
+    postingFrequency: freqRes.ok       ? freqRes.data       : undefined,
+    rawAnalytics:     analyticsRes.ok  ? analyticsRes.data  : undefined,
+    fetchedAt:        new Date().toISOString(),
   };
 }

@@ -1,6 +1,6 @@
 /**
  * Social Analytics — Zernio-driven (Instagram, TikTok, YouTube, etc.)
- * Augments with Songstats follower/engagement data for the same platforms when available.
+ * Data sourced entirely from Zernio: follower stats, post analytics, and account data.
  * Interactive: search, filter chips, account cards, sortable post table, donut.
  */
 import React, { useMemo, useState, useEffect } from 'react';
@@ -22,7 +22,18 @@ import {
   Zap,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { useAnalytics } from '../../hooks/useAnalytics';
+import {
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+  Legend,
+} from 'recharts';
 import { useZernioAnalytics } from '../../hooks/useZernioAnalytics';
 import {
   formatNumber,
@@ -35,9 +46,15 @@ import {
   timeAgo,
 } from './utils';
 import type { PlatformSnapshot } from '../../types/domain';
-import type { ZernioAccount, ZernioPost } from '../../services/zernioAnalyticsService';
-
-const SOCIAL_IDS = new Set(['instagram', 'tiktok', 'facebook', 'twitter']);
+import type {
+  ZernioAccount,
+  ZernioPost,
+  ZernioBestTimeSlot,
+  ZernioContentDecayBucket,
+  ZernioPostingFrequencyRow,
+  ZernioPlatformBreakdown,
+  ZernioDailyMetricsDay,
+} from '../../services/zernioAnalyticsService';
 
 const PLATFORM_COLORS: Record<string, string> = {
   instagram: '#E1306C',
@@ -68,28 +85,36 @@ const labelOf = (id: string) => PLATFORM_LABELS[id] ?? (id.charAt(0).toUpperCase
 type PostSortKey = 'date' | 'likes' | 'comments' | 'views' | 'engagement';
 
 export const SocialAnalyticsView: React.FC = () => {
-  const { payload }                 = useAnalytics();
   const { snapshot, loading, error, refresh } = useZernioAnalytics();
-
-  // Songstats social platform snapshots (Instagram, TikTok, Facebook, Twitter)
-  const songstatsSocial = useMemo(
-    () => (payload.platforms ?? []).filter(p => SOCIAL_IDS.has(p.id)),
-    [payload.platforms],
-  );
 
   const accounts = snapshot?.accounts ?? [];
   const posts    = snapshot?.posts    ?? [];
 
-  // Combined per-platform synthetic snapshot for donut + headline
+  // Build per-platform snapshot from Zernio follower stats + account data
   const platformSnapshots: PlatformSnapshot[] = useMemo(() => {
     const map = new Map<string, PlatformSnapshot>();
 
-    // Seed from Songstats
-    for (const p of songstatsSocial) {
-      map.set(p.id, { ...p });
+    // Primary: Zernio follower stats (accurate per-account follower counts with growth)
+    for (const fa of (snapshot?.followerStats?.accounts ?? [])) {
+      const pid = fa.platform.toLowerCase();
+      const existing = map.get(pid);
+      if (existing) {
+        existing.audienceSize += fa.currentFollowers;
+        existing.primary = { label: 'Followers', value: existing.audienceSize };
+      } else {
+        map.set(pid, {
+          id:          pid,
+          label:       labelOf(pid),
+          brandColor:  colorOf(pid),
+          category:    'social',
+          primary:     { label: 'Followers', value: fa.currentFollowers },
+          secondary:   fa.growth !== 0 ? [{ label: 'Growth', value: fa.growth }] : [],
+          audienceSize: fa.currentFollowers,
+        });
+      }
     }
 
-    // Augment from Zernio account aggregates
+    // Secondary: Zernio account data (fills in platforms not in follower stats)
     const zAccountMap = new Map<string, ZernioAccount[]>();
     for (const a of accounts) {
       const arr = zAccountMap.get(a.platform) ?? [];
@@ -99,17 +124,10 @@ export const SocialAnalyticsView: React.FC = () => {
     for (const [pid, accts] of zAccountMap) {
       const followers  = accts.reduce((s, a) => s + (a.followers ?? 0), 0);
       const totalPosts = accts.reduce((s, a) => s + (a.posts ?? 0), 0);
-      const existing = map.get(pid);
+      const existing   = map.get(pid);
       if (existing) {
-        if (followers > existing.audienceSize) {
-          existing.audienceSize = followers;
-          existing.primary = { label: 'Followers', value: followers };
-        }
         if (totalPosts > 0) {
-          existing.secondary = [
-            ...existing.secondary,
-            { label: 'Zernio Posts', value: totalPosts },
-          ];
+          existing.secondary = [...existing.secondary, { label: 'Posts', value: totalPosts }];
         }
       } else {
         map.set(pid, {
@@ -124,7 +142,7 @@ export const SocialAnalyticsView: React.FC = () => {
       }
     }
     return Array.from(map.values()).sort((a, b) => b.audienceSize - a.audienceSize);
-  }, [songstatsSocial, accounts]);
+  }, [snapshot?.followerStats, accounts]);
 
   // ── Interactive state ──────────────────────────────────────────────────────
   const [search, setSearch]           = useState('');
@@ -314,6 +332,33 @@ export const SocialAnalyticsView: React.FC = () => {
             onSelect={() => { /* no detail panel for social platforms */ }}
           />
         </section>
+      )}
+
+      {/* Daily Performance Chart */}
+      {(snapshot?.dailyMetrics?.dailyData?.length ?? 0) >= 2 && (
+        <DailyMetricsChart data={snapshot!.dailyMetrics!.dailyData} />
+      )}
+
+      {/* Platform Breakdown */}
+      {(snapshot?.dailyMetrics?.platformBreakdown?.length ?? 0) > 0 && (
+        <PlatformBreakdownTable rows={snapshot!.dailyMetrics!.platformBreakdown} />
+      )}
+
+      {/* Best Time + Content Decay */}
+      {((snapshot?.bestTime?.slots?.length ?? 0) > 0 || (snapshot?.contentDecay?.buckets?.length ?? 0) > 0) && (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {(snapshot?.bestTime?.slots?.length ?? 0) > 0 && (
+            <BestTimeHeatmap slots={snapshot!.bestTime!.slots} />
+          )}
+          {(snapshot?.contentDecay?.buckets?.length ?? 0) > 0 && (
+            <ContentDecayChart buckets={snapshot!.contentDecay!.buckets} />
+          )}
+        </div>
+      )}
+
+      {/* Posting Frequency */}
+      {(snapshot?.postingFrequency?.frequency?.length ?? 0) > 0 && (
+        <PostingFrequencyTable rows={snapshot!.postingFrequency!.frequency} />
       )}
 
       {/* Recent posts table */}
@@ -532,5 +577,247 @@ function PostRow({ post }: { post: ZernioPost }) {
         )}
       </td>
     </tr>
+  );
+}
+
+// ── Daily Metrics Chart ───────────────────────────────────────────────────────
+
+function DailyMetricsChart({ data }: { data: ZernioDailyMetricsDay[] }) {
+  const chartData = data.map(d => ({
+    date: d.date.slice(5),
+    Views: d.metrics.views,
+    Impressions: d.metrics.impressions,
+    Likes: d.metrics.likes,
+  }));
+  return (
+    <section className="overflow-hidden rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
+      <p className="text-sm font-black text-slate-900 mb-4">Daily Performance</p>
+      <ResponsiveContainer width="100%" height={200}>
+        <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
+          <defs>
+            <linearGradient id="gViews" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#FF0000" stopOpacity={0.3} />
+              <stop offset="95%" stopColor="#FF0000" stopOpacity={0} />
+            </linearGradient>
+            <linearGradient id="gLikes" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#E1306C" stopOpacity={0.3} />
+              <stop offset="95%" stopColor="#E1306C" stopOpacity={0} />
+            </linearGradient>
+            <linearGradient id="gImpr" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#1877F2" stopOpacity={0.3} />
+              <stop offset="95%" stopColor="#1877F2" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+          <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+          <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={(v) => formatNumber(v)} width={45} />
+          <RechartsTooltip
+            contentStyle={{ fontSize: 11, borderRadius: 12, border: '1px solid #E2E8F0' }}
+            formatter={(value: any) => formatNumber(value)}
+          />
+          <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 10 }} />
+          <Area type="monotone" dataKey="Views" stroke="#FF0000" fill="url(#gViews)" strokeWidth={2} dot={false} />
+          <Area type="monotone" dataKey="Impressions" stroke="#1877F2" fill="url(#gImpr)" strokeWidth={2} dot={false} />
+          <Area type="monotone" dataKey="Likes" stroke="#E1306C" fill="url(#gLikes)" strokeWidth={2} dot={false} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </section>
+  );
+}
+
+// ── Platform Breakdown Table ──────────────────────────────────────────────────
+
+function PlatformBreakdownTable({ rows }: { rows: ZernioPlatformBreakdown[] }) {
+  return (
+    <section className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm">
+      <p className="px-5 pt-5 pb-3 text-sm font-black text-slate-900">Platform Breakdown</p>
+      <div className="overflow-x-auto pb-2">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-500">
+            <tr>
+              <th className="text-left px-5 py-2">Platform</th>
+              <th className="text-right px-3 py-2">Posts</th>
+              <th className="text-right px-3 py-2">Impressions</th>
+              <th className="text-right px-3 py-2">Reach</th>
+              <th className="text-right px-3 py-2">Likes</th>
+              <th className="text-right px-3 py-2">Comments</th>
+              <th className="text-right px-3 py-2 hidden md:table-cell">Views</th>
+              <th className="text-right px-5 py-2 hidden md:table-cell">Saves</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(row => {
+              const color = colorOf(row.platform);
+              return (
+                <tr key={row.platform} className="border-t border-slate-100 hover:bg-slate-50 transition-colors">
+                  <td className="px-5 py-3">
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-black"
+                      style={{ background: hexToRgba(color, 0.12), color }}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
+                      {labelOf(row.platform)}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 text-right font-bold tabular-nums text-slate-700">{formatNumber(row.postCount)}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-600">{formatNumber(row.impressions)}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-600">{formatNumber(row.reach)}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-600">{formatNumber(row.likes)}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-600">{formatNumber(row.comments)}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-600 hidden md:table-cell">{formatNumber(row.views)}</td>
+                  <td className="px-5 py-3 text-right tabular-nums text-slate-600 hidden md:table-cell">{formatNumber(row.saves)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+// ── Best Time Heatmap ─────────────────────────────────────────────────────────
+
+const DAY_LABELS_HEATMAP = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function BestTimeHeatmap({ slots }: { slots: ZernioBestTimeSlot[] }) {
+  const maxEngagement = Math.max(...slots.map(s => s.avg_engagement), 0.001);
+  const days  = Array.from(new Set(slots.map(s => s.day_of_week))).sort((a, b) => a - b);
+  const hours = Array.from(new Set(slots.map(s => s.hour))).sort((a, b) => a - b);
+  const lookup = new Map(slots.map(s => [`${s.day_of_week}-${s.hour}`, s]));
+
+  return (
+    <section className="overflow-hidden rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
+      <div className="mb-4">
+        <p className="text-sm font-black text-slate-900">Best Time to Post</p>
+        <p className="text-[10px] text-slate-400 mt-0.5">Average engagement rate by day &amp; hour</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="text-[9px] font-bold select-none">
+          <thead>
+            <tr>
+              <th className="w-8 pr-2" />
+              {hours.map(h => (
+                <th key={h} className="px-0.5 pb-1 text-center font-bold text-slate-400 w-7">
+                  {h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {days.map(day => (
+              <tr key={day}>
+                <td className="pr-2 text-slate-500 py-0.5">{DAY_LABELS_HEATMAP[day]}</td>
+                {hours.map(hour => {
+                  const slot = lookup.get(`${day}-${hour}`);
+                  const intensity = slot ? slot.avg_engagement / maxEngagement : 0;
+                  return (
+                    <td key={hour} className="px-0.5 py-0.5">
+                      <div
+                        title={slot
+                          ? `${DAY_LABELS_HEATMAP[day]} ${hour}:00 — ${slot.avg_engagement.toFixed(2)}% eng (${slot.post_count} posts)`
+                          : 'No data'}
+                        className="h-6 w-6 rounded cursor-help transition-transform hover:scale-110"
+                        style={{ background: slot ? `rgba(99,102,241,${(0.08 + intensity * 0.82).toFixed(2)})` : '#F8FAFC' }}
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-3 flex items-center gap-2 text-[9px] font-bold text-slate-400">
+        <span>Low</span>
+        <div className="flex gap-0.5">
+          {[0.1, 0.3, 0.5, 0.7, 0.9].map(v => (
+            <div key={v} className="h-3 w-5 rounded" style={{ background: `rgba(99,102,241,${(0.08 + v * 0.82).toFixed(2)})` }} />
+          ))}
+        </div>
+        <span>High</span>
+      </div>
+    </section>
+  );
+}
+
+// ── Content Decay Chart ───────────────────────────────────────────────────────
+
+function ContentDecayChart({ buckets }: { buckets: ZernioContentDecayBucket[] }) {
+  const chartData = [...buckets]
+    .sort((a, b) => a.bucket_order - b.bucket_order)
+    .map(b => ({
+      label: b.bucket_label,
+      'Eng %': Math.round(b.avg_pct_of_final * 100),
+    }));
+  return (
+    <section className="overflow-hidden rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
+      <div className="mb-4">
+        <p className="text-sm font-black text-slate-900">Content Decay</p>
+        <p className="text-[10px] text-slate-400 mt-0.5">% of final engagement reached per time window</p>
+      </div>
+      <ResponsiveContainer width="100%" height={180}>
+        <BarChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+          <XAxis dataKey="label" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} />
+          <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} unit="%" domain={[0, 100]} width={32} />
+          <RechartsTooltip
+            contentStyle={{ fontSize: 11, borderRadius: 12, border: '1px solid #E2E8F0' }}
+            formatter={(value: any) => [`${value}%`, 'Engagement']}
+          />
+          <Bar dataKey="Eng %" fill="#6366F1" radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </section>
+  );
+}
+
+// ── Posting Frequency Table ───────────────────────────────────────────────────
+
+function PostingFrequencyTable({ rows }: { rows: ZernioPostingFrequencyRow[] }) {
+  const sorted = [...rows].sort((a, b) => b.avg_engagement_rate - a.avg_engagement_rate);
+  return (
+    <section className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm">
+      <p className="px-5 pt-5 pb-3 text-sm font-black text-slate-900">Posting Frequency vs Engagement</p>
+      <div className="overflow-x-auto pb-2">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-500">
+            <tr>
+              <th className="text-left px-5 py-2">Platform</th>
+              <th className="text-right px-3 py-2">Posts / wk</th>
+              <th className="text-right px-3 py-2">Avg Engagements</th>
+              <th className="text-right px-5 py-2">Eng. Rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map(row => {
+              const color = colorOf(row.platform);
+              return (
+                <tr key={row.platform} className="border-t border-slate-100 hover:bg-slate-50 transition-colors">
+                  <td className="px-5 py-3">
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-black"
+                      style={{ background: hexToRgba(color, 0.12), color }}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
+                      {labelOf(row.platform)}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 text-right font-bold tabular-nums text-slate-700">
+                    {row.posts_per_week.toFixed(1)}
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-600">
+                    {formatNumber(Math.round(row.avg_engagement))}
+                  </td>
+                  <td className="px-5 py-3 text-right font-black tabular-nums" style={{ color }}>
+                    {row.avg_engagement_rate.toFixed(2)}%
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
