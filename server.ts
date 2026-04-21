@@ -1,7 +1,7 @@
 import "dotenv/config";
 import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
-import express from "express";
+import express, { type Request, type Response } from "express";
 import http from "http";
 import path from "path";
 import axios from "axios";
@@ -286,64 +286,93 @@ async function startServer() {
     res.json({ hasKey: !!ZERNIO_API_KEY, keyPrefix: ZERNIO_API_KEY?.substring(0, 3) ?? null, baseUrl: ZERNIO_API_BASE });
   });
 
-  // Shared GET proxy handler — req.path is the full path like /api/zernio/accounts/follower-stats
-  const zernioGetProxy = async (req: any, res: any) => {
-    if (!ZERNIO_API_KEY) return res.status(401).json({ error: 'ZERNIO_API_KEY is not configured.' });
-    const upstreamPath = req.path.replace(/^\/api\/zernio/, '');
-    const query = new URLSearchParams(req.query as Record<string, string>).toString();
-    const url = `${ZERNIO_API_BASE}${upstreamPath}${query ? '?' + query : ''}`;
-    console.log(`[zernio proxy] GET ${url}`);
-    try {
-      const response = await axios.get(url, {
-        headers: { Authorization: `Bearer ${ZERNIO_API_KEY}`, Accept: 'application/json' },
-      });
-      res.json(response.data);
-    } catch (err: any) {
-      const status = err.response?.status || 500;
-      const data = err.response?.data || { message: err.message };
-      console.error(`[zernio proxy] ${url} → ${status}`, data);
-      res.status(status).json({ error: 'Zernio proxy error', details: data });
+  const zernioAllowedGetPaths = new Set([
+    '/accounts',
+    '/accounts/follower-stats',
+    '/analytics',
+    '/analytics/best-time',
+    '/analytics/content-decay',
+    '/analytics/daily-metrics',
+    '/analytics/overview',
+    '/analytics/posting-frequency',
+    '/calendar',
+    '/settings',
+    '/user',
+    '/posts',
+  ]);
+
+  const zernioAllowedPostPaths = new Set([
+    '/posts',
+    '/posts/schedule',
+  ]);
+
+  const isDynamicZernioGetPath = (requestPath: string) => (
+    /^\/posts\/[^/]+$/.test(requestPath) ||
+    /^\/posts\/[^/]+\/analytics$/.test(requestPath) ||
+    /^\/calendar\/[^/]+$/.test(requestPath)
+  );
+
+  const buildZernioUrl = (requestPath: string, query: Request['query']) => {
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (item != null) search.append(key, String(item));
+        }
+      } else if (value != null) {
+        search.append(key, String(value));
+      }
     }
+    const qs = search.toString();
+    return `${ZERNIO_API_BASE}${requestPath}${qs ? `?${qs}` : ''}`;
   };
 
-  // Explicit GET registrations for every known Zernio v1 endpoint
-  app.get('/api/zernio/accounts',                              zernioGetProxy);
-  app.get('/api/zernio/accounts/follower-stats',               zernioGetProxy);
-  app.get('/api/zernio/posts',                                 zernioGetProxy);
-  app.get('/api/zernio/analytics',                             zernioGetProxy);
-  app.get('/api/zernio/analytics/daily-metrics',               zernioGetProxy);
-  app.get('/api/zernio/analytics/best-time',                   zernioGetProxy);
-  app.get('/api/zernio/analytics/content-decay',               zernioGetProxy);
-  app.get('/api/zernio/analytics/posting-frequency',           zernioGetProxy);
-  app.get('/api/zernio/analytics/post-timeline',               zernioGetProxy);
-  app.get('/api/zernio/analytics/instagram/account-insights',  zernioGetProxy);
-  app.get('/api/zernio/analytics/instagram/demographics',      zernioGetProxy);
-  app.get('/api/zernio/analytics/youtube/daily-views',         zernioGetProxy);
-  app.get('/api/zernio/analytics/youtube/demographics',        zernioGetProxy);
-  app.get('/api/zernio/queue/slots',                           zernioGetProxy);
-  app.get('/api/zernio/profiles/:profileId',                   zernioGetProxy);
-
-  app.post('/api/zernio/posts', async (req: any, res: any) => {
-    try {
-      const response = await axios.post(`${ZERNIO_API_BASE}/posts`, req.body, {
-        headers: { Authorization: `Bearer ${ZERNIO_API_KEY}`, 'Content-Type': 'application/json' },
-      });
-      res.json(response.data);
-    } catch (err: any) {
-      console.error('Zernio create post failed:', err.response?.data || err.message);
-      res.status(err.response?.status || 500).json({ error: 'Failed to create Zernio post' });
+  app.use('/api/zernio', async (req: Request, res: Response, next) => {
+    if (req.path === '/config-check') {
+      return next();
     }
-  });
 
-  app.post('/api/zernio/schedule', async (req: any, res: any) => {
+    const zernioApiKey = ZERNIO_API_KEY;
+    if (!zernioApiKey) {
+      return res.status(401).json({ error: 'Zernio API key not configured on server' });
+    }
+
+    const requestPath = req.path;
+    const isAllowedGet = req.method === 'GET' && (zernioAllowedGetPaths.has(requestPath) || isDynamicZernioGetPath(requestPath));
+    const isAllowedPost = req.method === 'POST' && zernioAllowedPostPaths.has(requestPath);
+
+    if (!isAllowedGet && !isAllowedPost) {
+      return next();
+    }
+
+    const targetUrl = buildZernioUrl(requestPath, req.query);
+    console.log(`[zernio proxy] ${req.method} ${req.originalUrl} -> ${targetUrl}`);
+
     try {
-      const response = await axios.post(`${ZERNIO_API_BASE}/schedule`, req.body, {
-        headers: { Authorization: `Bearer ${ZERNIO_API_KEY}`, 'Content-Type': 'application/json' },
+      if (req.method === 'GET') {
+        const response = await axios.get(targetUrl, {
+          headers: {
+            Authorization: `Bearer ${zernioApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 15000,
+        });
+        return res.status(response.status).json(response.data);
+      }
+
+      const response = await axios.post(targetUrl, req.body, {
+        headers: {
+          Authorization: `Bearer ${zernioApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 15000,
       });
-      res.json(response.data);
-    } catch (err: any) {
-      console.error('Zernio schedule post failed:', err.response?.data || err.message);
-      res.status(err.response?.status || 500).json({ error: 'Failed to schedule Zernio post' });
+      return res.status(response.status).json(response.data);
+    } catch (error: any) {
+      const status = error.response?.status || 500;
+      const data = error.response?.data || { error: 'Proxy error' };
+      console.error(`[zernio proxy] ${req.method} ${targetUrl} -> ${status}`, data);
+      return res.status(status).json(data);
     }
   });
 
@@ -413,7 +442,12 @@ async function startServer() {
         server: { middlewareMode: true, hmr: { server: httpServer } },
         appType: "custom",
       });
-      app.use(vite.middlewares);
+      app.use((req, res, next) => {
+        if (req.path.startsWith('/api/')) {
+          return next();
+        }
+        return vite.middlewares(req, res, next);
+      });
       // SPA fallback: transform and serve index.html for all non-API GET requests.
       // This replaces what appType:'spa' did, but only for real browser navigation.
       app.get('*', async (req: any, res: any, next: any) => {

@@ -799,10 +799,17 @@ function PostingFrequencyTable({ rows }: { rows: ZernioPostingFrequencyRow[] }) 
             </tr>
           </thead>
           <tbody>
-            {sorted.map(row => {
+            {sorted.map((row, index) => {
               const color = colorOf(row.platform);
+              const rowKey = [
+                row.platform,
+                row.posts_per_week,
+                row.avg_engagement,
+                row.avg_engagement_rate,
+                index,
+              ].join('-');
               return (
-                <tr key={row.platform} className="border-t border-slate-100 hover:bg-slate-50 transition-colors">
+                <tr key={rowKey} className="border-t border-slate-100 hover:bg-slate-50 transition-colors">
                   <td className="px-5 py-3">
                     <span
                       className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-black"
