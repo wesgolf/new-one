@@ -258,15 +258,20 @@ export async function fetchZernioOverview(): Promise<ZernioAnalyticsSnapshot> {
     };
   }
 
+  // Default date range: last 30 days (most Zernio analytics endpoints require this)
+  const dateTo   = new Date().toISOString().slice(0, 10);
+  const dateFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const dateParams = `from=${dateFrom}&to=${dateTo}`;
+
   const [accountsRes, postsRes, analyticsRes, followerRes, dailyRes, bestTimeRes, decayRes, freqRes] = await Promise.all([
     safeFetch('/api/zernio/accounts'),
     safeFetch('/api/zernio/posts'),
     safeFetch('/api/zernio/analytics'),
-    safeFetch<ZernioFollowerStats>('/api/zernio/accounts/follower-stats'),
-    safeFetch<ZernioDailyMetrics>('/api/zernio/analytics/daily-metrics'),
-    safeFetch<{ slots: ZernioBestTimeSlot[] }>('/api/zernio/analytics/best-time'),
-    safeFetch<{ buckets: ZernioContentDecayBucket[] }>('/api/zernio/analytics/content-decay'),
-    safeFetch<{ frequency: ZernioPostingFrequencyRow[] }>('/api/zernio/analytics/posting-frequency'),
+    safeFetch<ZernioFollowerStats>(`/api/zernio/accounts/follower-stats?${dateParams}`),
+    safeFetch<ZernioDailyMetrics>(`/api/zernio/analytics/daily-metrics?${dateParams}`),
+    safeFetch<{ slots: ZernioBestTimeSlot[] }>(`/api/zernio/analytics/best-time?${dateParams}`),
+    safeFetch<{ buckets: ZernioContentDecayBucket[] }>(`/api/zernio/analytics/content-decay?${dateParams}`),
+    safeFetch<{ frequency: ZernioPostingFrequencyRow[] }>(`/api/zernio/analytics/posting-frequency?${dateParams}`),
   ]);
 
   const errors: string[] = [];
@@ -279,13 +284,17 @@ export async function fetchZernioOverview(): Promise<ZernioAnalyticsSnapshot> {
   if (!decayRes.ok)     errors.push(`content-decay: ${decayRes.error ?? '—'}`);
   if (!freqRes.ok)      errors.push(`posting-frequency: ${freqRes.error ?? '—'}`);
 
-  // Debug: log raw responses so response shapes are visible in the browser console
-  console.debug('[Zernio] accounts raw:', accountsRes.data);
-  console.debug('[Zernio] follower-stats raw:', followerRes.data);
-  console.debug('[Zernio] daily-metrics raw:', dailyRes.data);
-  console.debug('[Zernio] best-time raw:', bestTimeRes.data);
-  console.debug('[Zernio] content-decay raw:', decayRes.data);
-  console.debug('[Zernio] posting-frequency raw:', freqRes.data);
+  // Debug: log full result (data when ok, or status+error when failed) so we can diagnose
+  const dbg = (name: string, r: { ok: boolean; data?: any; status?: number; error?: string }) =>
+    console.debug(`[Zernio] ${name}:`, r.ok ? r.data : `HTTP ${r.status ?? '?'} — ${r.error ?? 'unknown error'}`);
+  dbg('accounts', accountsRes);
+  dbg('posts', postsRes);
+  dbg('analytics', analyticsRes);
+  dbg('follower-stats', followerRes);
+  dbg('daily-metrics', dailyRes);
+  dbg('best-time', bestTimeRes);
+  dbg('content-decay', decayRes);
+  dbg('posting-frequency', freqRes);
 
   const rawAccounts = accountsRes.ok ? unwrapList(accountsRes.data, 'accounts', 'items', 'results') : [];
   const rawPosts    = postsRes.ok    ? unwrapList(postsRes.data,    'posts',    'items', 'results') : [];
