@@ -276,37 +276,59 @@ async function startServer() {
   const ZERNIO_API_KEY = process.env.VITE_ZERNIO_KEY || process.env.VITE_ZERNIO_API_KEY || process.env.ZERNIO_API_KEY;
   const ZERNIO_API_BASE = 'https://zernio.com/api/v1';
 
-  // Zernio Proxy Routes
-  app.get('/api/zernio/config-check', (req, res) => {
+  // ── Zernio Router ──────────────────────────────────────────────────────────
+  // Mounted at /api/zernio so req.path inside is already relative (no prefix).
+  // Specific routes are registered first; the catch-all GET proxy handles everything else.
+  // Using express.Router() guarantees all sub-paths are handled — unlike app.get('/*')
+  // which does not match multi-segment paths reliably in Express 4.
+  const zernioRouter = express.Router();
+
+  zernioRouter.get('/config-check', (req, res) => {
     res.json({
       hasKey: !!ZERNIO_API_KEY,
       keyPrefix: ZERNIO_API_KEY ? ZERNIO_API_KEY.substring(0, 3) : null,
-      baseUrl: ZERNIO_API_BASE
+      baseUrl: ZERNIO_API_BASE,
     });
   });
 
-  // Generic GET proxy — handles ALL Zernio v1 GET endpoints including multi-segment paths
-  // (accounts/follower-stats, analytics/daily-metrics, analytics/best-time, etc.)
-  // Uses app.use prefix matching instead of app.get wildcard because Express 4 wildcards
-  // don't reliably match paths with multiple segments (falls through to Vite index.html).
-  // Non-GET requests call next() so POST routes below are still reachable.
-  // req.path inside app.use is already relative to the mount point (/api/zernio stripped).
-  app.use('/api/zernio', async (req: any, res: any, next: any) => {
+  zernioRouter.post('/posts', async (req, res) => {
+    try {
+      const response = await axios.post(`${ZERNIO_API_BASE}/posts`, req.body, {
+        headers: { Authorization: `Bearer ${ZERNIO_API_KEY}`, 'Content-Type': 'application/json' },
+      });
+      res.json(response.data);
+    } catch (err: any) {
+      console.error('Zernio create post failed:', err.response?.data || err.message);
+      res.status(err.response?.status || 500).json({ error: 'Failed to create Zernio post' });
+    }
+  });
+
+  zernioRouter.post('/schedule', async (req, res) => {
+    try {
+      const response = await axios.post(`${ZERNIO_API_BASE}/schedule`, req.body, {
+        headers: { Authorization: `Bearer ${ZERNIO_API_KEY}`, 'Content-Type': 'application/json' },
+      });
+      res.json(response.data);
+    } catch (err: any) {
+      console.error('Zernio schedule post failed:', err.response?.data || err.message);
+      res.status(err.response?.status || 500).json({ error: 'Failed to schedule Zernio post' });
+    }
+  });
+
+  // Catch-all GET proxy — no path argument so router.use matches EVERY remaining path
+  // including multi-segment ones (/accounts/follower-stats, /analytics/daily-metrics, etc.)
+  zernioRouter.use(async (req: any, res: any, next: any) => {
     if (req.method !== 'GET') return next();
     if (!ZERNIO_API_KEY) {
-      return res.status(401).json({ error: 'ZERNIO_API_KEY is not configured in environment variables.' });
+      return res.status(401).json({ error: 'ZERNIO_API_KEY is not configured.' });
     }
-    // req.path is relative to /api/zernio, e.g. /accounts/follower-stats
-    const upstreamPath = req.path;
+    const upstreamPath = req.path; // already stripped of /api/zernio prefix by router mount
     const query = new URLSearchParams(req.query as Record<string, string>).toString();
     const url = `${ZERNIO_API_BASE}${upstreamPath}${query ? '?' + query : ''}`;
     console.log(`[zernio proxy] GET ${url}`);
     try {
       const response = await axios.get(url, {
-        headers: {
-          Authorization: `Bearer ${ZERNIO_API_KEY}`,
-          Accept: 'application/json',
-        },
+        headers: { Authorization: `Bearer ${ZERNIO_API_KEY}`, Accept: 'application/json' },
       });
       res.json(response.data);
     } catch (err: any) {
@@ -317,35 +339,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/zernio/posts', async (req, res) => {
-    try {
-      const response = await axios.post(`${ZERNIO_API_BASE}/posts`, req.body, {
-        headers: { 
-          'Authorization': `Bearer ${ZERNIO_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      res.json(response.data);
-    } catch (err: any) {
-      console.error('Zernio create post failed:', err.response?.data || err.message);
-      res.status(err.response?.status || 500).json({ error: 'Failed to create Zernio post' });
-    }
-  });
-
-  app.post('/api/zernio/schedule', async (req, res) => {
-    try {
-      const response = await axios.post(`${ZERNIO_API_BASE}/schedule`, req.body, {
-        headers: { 
-          'Authorization': `Bearer ${ZERNIO_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      res.json(response.data);
-    } catch (err: any) {
-      console.error('Zernio schedule post failed:', err.response?.data || err.message);
-      res.status(err.response?.status || 500).json({ error: 'Failed to schedule Zernio post' });
-    }
-  });
+  app.use('/api/zernio', zernioRouter);
 
   // ── Email send endpoint ───────────────────────────────────────────────────
   // SMTP credentials are kept server-side only (never sent to the client).
