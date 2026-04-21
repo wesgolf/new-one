@@ -397,17 +397,29 @@ async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     try {
       const { createServer: createViteServer } = await import("vite");
+      const { readFileSync } = await import("fs");
+      // appType:'custom' tells Vite NOT to add its own SPA fallback middleware.
+      // With 'spa', Vite's internal connect-history-api-fallback serves index.html
+      // for EVERY unmatched path (including /api/zernio/accounts/follower-stats)
+      // before Express ever sees the request — bypassing all our route handlers.
+      // With 'custom', Vite only handles HMR + module transforms; Express owns routing.
       const vite = await createViteServer({
         server: { middlewareMode: true, hmr: { server: httpServer } },
-        appType: "spa",
+        appType: "custom",
       });
-      // Explicitly exclude /api/ paths from Vite's SPA fallback.
-      // Without this, Vite intercepts any unmatched path (including multi-segment
-      // /api/zernio/accounts/follower-stats) and serves index.html with 200 OK,
-      // causing JSON parse failures on the client.
-      app.use((req, res, next) => {
+      app.use(vite.middlewares);
+      // SPA fallback: transform and serve index.html for all non-API GET requests.
+      // This replaces what appType:'spa' did, but only for real browser navigation.
+      app.get('*', async (req: any, res: any, next: any) => {
         if (req.path.startsWith('/api/')) return next();
-        vite.middlewares(req, res, next);
+        try {
+          const template = readFileSync(path.join(process.cwd(), 'index.html'), 'utf-8');
+          const html = await vite.transformIndexHtml(req.originalUrl, template);
+          res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+        } catch (e: any) {
+          vite.ssrFixStacktrace(e);
+          next(e);
+        }
       });
     } catch (err) {
       console.error('Failed to initialize Vite middleware:', err);
