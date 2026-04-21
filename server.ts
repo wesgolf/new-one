@@ -285,16 +285,22 @@ async function startServer() {
     });
   });
 
-  // Generic GET proxy — handles ALL Zernio v1 GET endpoints (accounts, posts, analytics,
-  // follower-stats, daily-metrics, best-time, instagram insights, youtube demographics, etc.)
-  // config-check is registered above and takes precedence since Express matches in order.
-  app.get('/api/zernio/*', async (req: any, res: any) => {
+  // Generic GET proxy — handles ALL Zernio v1 GET endpoints including multi-segment paths
+  // (accounts/follower-stats, analytics/daily-metrics, analytics/best-time, etc.)
+  // Uses app.use prefix matching instead of app.get wildcard because Express 4 wildcards
+  // don't reliably match paths with multiple segments (falls through to Vite index.html).
+  // Non-GET requests call next() so POST routes below are still reachable.
+  // req.path inside app.use is already relative to the mount point (/api/zernio stripped).
+  app.use('/api/zernio', async (req: any, res: any, next: any) => {
+    if (req.method !== 'GET') return next();
     if (!ZERNIO_API_KEY) {
       return res.status(401).json({ error: 'ZERNIO_API_KEY is not configured in environment variables.' });
     }
-    const upstreamPath = req.path.replace(/^\/api\/zernio/, '');
+    // req.path is relative to /api/zernio, e.g. /accounts/follower-stats
+    const upstreamPath = req.path;
     const query = new URLSearchParams(req.query as Record<string, string>).toString();
     const url = `${ZERNIO_API_BASE}${upstreamPath}${query ? '?' + query : ''}`;
+    console.log(`[zernio proxy] GET ${url}`);
     try {
       const response = await axios.get(url, {
         headers: {
