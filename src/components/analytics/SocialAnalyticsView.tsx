@@ -271,9 +271,14 @@ export const SocialAnalyticsView: React.FC = () => {
           {error.message}
         </div>
       )}
-      {snapshot?.error && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-700">
-          Some Zernio endpoints returned errors: {snapshot.error}
+      {snapshot?.endpointErrors && snapshot.endpointErrors.length > 0 && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-xs font-black text-amber-700 mb-1">Zernio endpoint errors — check browser console for raw responses:</p>
+          <ul className="list-disc list-inside space-y-0.5">
+            {snapshot.endpointErrors.map(e => (
+              <li key={e} className="text-[11px] text-amber-700 font-mono">{e}</li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -592,6 +597,7 @@ function DailyMetricsChart({ data }: { data: ZernioDailyMetricsDay[] }) {
   return (
     <section className="overflow-hidden rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
       <p className="text-sm font-black text-slate-900 mb-4">Daily Performance</p>
+      <div style={{ minWidth: 0 }}>
       <ResponsiveContainer width="100%" height={200}>
         <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
           <defs>
@@ -621,6 +627,7 @@ function DailyMetricsChart({ data }: { data: ZernioDailyMetricsDay[] }) {
           <Area type="monotone" dataKey="Likes" stroke="#E1306C" fill="url(#gLikes)" strokeWidth={2} dot={false} />
         </AreaChart>
       </ResponsiveContainer>
+      </div>
     </section>
   );
 }
@@ -756,6 +763,7 @@ function ContentDecayChart({ buckets }: { buckets: ZernioContentDecayBucket[] })
         <p className="text-sm font-black text-slate-900">Content Decay</p>
         <p className="text-[10px] text-slate-400 mt-0.5">% of final engagement reached per time window</p>
       </div>
+      <div style={{ minWidth: 0 }}>
       <ResponsiveContainer width="100%" height={180}>
         <BarChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
@@ -768,6 +776,7 @@ function ContentDecayChart({ buckets }: { buckets: ZernioContentDecayBucket[] })
           <Bar dataKey="Eng %" fill="#6366F1" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
+      </div>
     </section>
   );
 }

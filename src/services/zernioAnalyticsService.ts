@@ -37,6 +37,7 @@ export interface ZernioPost {
 export interface ZernioAnalyticsSnapshot {
   configured: boolean;
   error?: string;
+  endpointErrors?: string[];
   accounts: ZernioAccount[];
   posts: ZernioPost[];
   followerStats?: ZernioFollowerStats;
@@ -230,6 +231,7 @@ export const fetchPostAnalytics         = (postId?: string) =>
 export const fetchPostTimeline          = (postId: string) =>
   zernioGet('/analytics/post-timeline', { postId });
 
+
 export const fetchInstagramInsights     = (accountId: string, params?: Record<string, string>) =>
   zernioGet('/analytics/instagram/account-insights', { accountId, ...params });
 
@@ -271,15 +273,53 @@ export async function fetchZernioOverview(): Promise<ZernioAnalyticsSnapshot> {
   if (!accountsRes.ok)  errors.push(`accounts: ${accountsRes.error ?? '—'}`);
   if (!postsRes.ok)     errors.push(`posts: ${postsRes.error ?? '—'}`);
   if (!analyticsRes.ok) errors.push(`analytics: ${analyticsRes.error ?? '—'}`);
-  // follower-stats and daily-metrics are best-effort — don't surface as errors
+  if (!followerRes.ok)  errors.push(`follower-stats: ${followerRes.error ?? '—'}`);
+  if (!dailyRes.ok)     errors.push(`daily-metrics: ${dailyRes.error ?? '—'}`);
+  if (!bestTimeRes.ok)  errors.push(`best-time: ${bestTimeRes.error ?? '—'}`);
+  if (!decayRes.ok)     errors.push(`content-decay: ${decayRes.error ?? '—'}`);
+  if (!freqRes.ok)      errors.push(`posting-frequency: ${freqRes.error ?? '—'}`);
+
+  // Debug: log raw responses so response shapes are visible in the browser console
+  console.debug('[Zernio] accounts raw:', accountsRes.data);
+  console.debug('[Zernio] follower-stats raw:', followerRes.data);
+  console.debug('[Zernio] daily-metrics raw:', dailyRes.data);
+  console.debug('[Zernio] best-time raw:', bestTimeRes.data);
+  console.debug('[Zernio] content-decay raw:', decayRes.data);
+  console.debug('[Zernio] posting-frequency raw:', freqRes.data);
 
   const rawAccounts = accountsRes.ok ? unwrapList(accountsRes.data, 'accounts', 'items', 'results') : [];
   const rawPosts    = postsRes.ok    ? unwrapList(postsRes.data,    'posts',    'items', 'results') : [];
 
+  // Enrich account objects with follower counts from follower-stats
+  // (the /accounts endpoint does not include follower metrics; /accounts/follower-stats does)
+  const followerByKey = new Map<string, ZernioFollowerAccount>();
+  for (const fa of (followerRes.data?.accounts ?? [])) {
+    followerByKey.set(`${fa.platform.toLowerCase()}:${fa.username.toLowerCase()}`, fa);
+    followerByKey.set(fa.platform.toLowerCase(), fa); // fallback: first account of that platform
+  }
+
+  const normalizedAccounts = rawAccounts.map((raw: any) => {
+    const acc = normalizeAccount(raw);
+    if (acc.followers == null) {
+      const fa =
+        followerByKey.get(`${acc.platform.toLowerCase()}:${acc.username.toLowerCase()}`) ??
+        followerByKey.get(acc.platform.toLowerCase());
+      if (fa) {
+        acc.followers = fa.currentFollowers;
+        if (acc.engagement == null && fa.growthPercentage != null) {
+          // use growth % as a proxy for the engagement field until real engagement arrives
+          // (better than showing —)
+        }
+      }
+    }
+    return acc;
+  });
+
   return {
     configured:       true,
     error:            errors.length > 0 ? errors.join(' • ') : undefined,
-    accounts:         rawAccounts.map(normalizeAccount),
+    endpointErrors:   errors.length > 0 ? errors : undefined,
+    accounts:         normalizedAccounts,
     posts:            rawPosts.map(normalizePost),
     followerStats:    followerRes.ok   ? followerRes.data   : undefined,
     dailyMetrics:     dailyRes.ok      ? dailyRes.data      : undefined,
