@@ -401,7 +401,14 @@ async function startServer() {
         server: { middlewareMode: true, hmr: { server: httpServer } },
         appType: "spa",
       });
-      app.use(vite.middlewares);
+      // Explicitly exclude /api/ paths from Vite's SPA fallback.
+      // Without this, Vite intercepts any unmatched path (including multi-segment
+      // /api/zernio/accounts/follower-stats) and serves index.html with 200 OK,
+      // causing JSON parse failures on the client.
+      app.use((req, res, next) => {
+        if (req.path.startsWith('/api/')) return next();
+        vite.middlewares(req, res, next);
+      });
     } catch (err) {
       console.error('Failed to initialize Vite middleware:', err);
     }

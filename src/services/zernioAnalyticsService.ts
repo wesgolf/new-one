@@ -189,10 +189,17 @@ function normalizePost(raw: any): ZernioPost {
 async function safeFetch<T = any>(url: string): Promise<{ ok: boolean; data?: T; status?: number; error?: string }> {
   try {
     const res = await fetch(url);
+    const ct = res.headers.get('content-type') ?? '';
+    // If Express isn't handling this path, Vite returns 200 OK with HTML.
+    // Detect that early so we get a useful error instead of a JSON parse failure.
+    if (ct.includes('text/html')) {
+      console.error(`[safeFetch] ${url} → HTTP ${res.status} text/html — API route not reached (Vite SPA fallback). Restart the server.`);
+      return { ok: false, status: res.status, error: 'Server returned HTML — API proxy not matched. Restart dev server.' };
+    }
     if (!res.ok) {
       let errBody: any = null;
       try { errBody = await res.json(); } catch { /* ignore */ }
-      return { ok: false, status: res.status, error: errBody?.error || res.statusText };
+      return { ok: false, status: res.status, error: errBody?.error || errBody?.message || res.statusText };
     }
     const data = await res.json();
     return { ok: true, data, status: res.status };
