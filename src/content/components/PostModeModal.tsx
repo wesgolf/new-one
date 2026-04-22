@@ -156,7 +156,7 @@ export const PostModeModal: React.FC<PostModeModalProps> = ({
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Post Format</p>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-white rounded-xl border border-slate-200 flex items-center justify-center shadow-sm">
-                    <Sparkles className="w-5 h-5 text-purple-500" />
+                    <Sparkles className="w-5 h-5 text-blue-500" />
                   </div>
                   <p className="text-sm font-black text-slate-900 uppercase tracking-widest">{item.post_type.replace('_', ' ')}</p>
                 </div>

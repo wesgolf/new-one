@@ -415,6 +415,284 @@ async function startServer() {
     res.json({ sent: true, message: 'Email queued. Configure SMTP_HOST and SMTP_USER to enable live sending.' });
   });
 
+  // ── Coach AI Proxy ────────────────────────────────────────────────────────
+  // Gemini is called server-side only. The API key is never sent to the browser.
+  const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+
+  // Hard cap on context payload to control token spend
+  const MAX_CONTEXT_CHARS = 3000;
+
+  function trimContext(ctx: string): string {
+    if (ctx.length <= MAX_CONTEXT_CHARS) return ctx;
+    return ctx.slice(0, MAX_CONTEXT_CHARS) + '\n[context trimmed for brevity]';
+  }
+
+  app.post('/api/coach/chat', async (req: Request, res: Response) => {
+    if (!GEMINI_API_KEY) {
+      return res.status(503).json({ error: 'AI service not configured on server.' });
+    }
+
+    const { messages, contextText, summary } = req.body as {
+      messages?: Array<{ role: string; content: string }>;
+      contextText?: string;
+      summary?: string | null;
+    };
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: 'messages array is required' });
+    }
+
+    // Validate message shape — prevent prompt injection via unexpected fields
+    const cleanMessages = messages.map((m) => ({
+      role: String(m.role),
+      content: String(m.content).slice(0, 8000), // per-message cap
+    }));
+
+    const summaryBlock = summary
+      ? `CONVERSATION CONTEXT (prior summary):\n${summary}\n\n`
+      : '';
+
+    const systemInstruction =
+      `You are the "Artist OS Coach" — a strategic AI mentor for independent music artists. ` +
+      `Use the USER DATA CONTEXT to personalise your advice. Be concise, cite data when relevant, use Markdown for structure.\n\n` +
+      `USER DATA:\n${trimContext(contextText ?? '')}\n${summaryBlock}`;
+
+    try {
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: cleanMessages.map((m) => ({
+          role: m.role === 'user' ? 'user' : 'model',
+          parts: [{ text: m.content }],
+        })),
+        config: { systemInstruction, temperature: 0.7 },
+      });
+
+      const text = response.text ?? "I couldn't process that — please try again.";
+      console.log(`[coach/chat] ok — ${cleanMessages.length} messages, ~${systemInstruction.length} sys chars`);
+      res.json({ text });
+    } catch (err: any) {
+      console.error('[coach/chat] Gemini error:', err.message);
+      res.status(500).json({ error: 'AI service error. Please try again.' });
+    }
+  });
+
+  app.post('/api/coach/summarize', async (req: Request, res: Response) => {
+    if (!GEMINI_API_KEY) {
+      return res.status(503).json({ error: 'AI service not configured on server.' });
+    }
+
+    const { transcript } = req.body as { transcript?: string };
+    if (!transcript) {
+      return res.status(400).json({ error: 'transcript is required' });
+    }
+
+    try {
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: [{
+          role: 'user',
+          parts: [{
+            text: `Summarize this coaching conversation in 3–4 sentences. Capture: the main topics discussed, any key decisions or action items, and the artist's current focus. Be concise and write in third-person. Do not use bullet points.\n\n${transcript.slice(0, 12000)}`,
+          }],
+        }],
+        config: { temperature: 0.3 },
+      });
+
+      const summary = response.text?.trim() ?? null;
+      res.json({ summary });
+    } catch (err: any) {
+      console.error('[coach/summarize] Gemini error:', err.message);
+      res.status(500).json({ error: 'Summarization failed' });
+    }
+  });
+
+  // ── Global Assistant chat ──────────────────────────────────────────────────
+  app.post('/api/assistant/chat', async (req: Request, res: Response) => {
+    if (!GEMINI_API_KEY) {
+      return res.status(503).json({ error: 'AI service not configured on server.' });
+    }
+    const { message, pageContext } = req.body as { message?: string; pageContext?: string };
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ error: 'message is required' });
+    }
+    try {
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+      const systemPrompt = `You are an AI assistant embedded in an artist management app called Artist OS.
+The user is currently on the "${String(pageContext ?? 'dashboard')}" page.
+Today is ${new Date().toDateString()}.
+Parse the user's message and respond with a JSON object:
+{"reply":"a short natural-language confirmation (1-2 sentences)","actions":[{"type":"create_task|create_calendar_event|open_content_scheduler|navigate","label":"human-readable label","payload":{"title":"...","startsAt":"ISO string","to":"/path"},"requiresConfirmation":true}]}
+Available action types: create_task, create_calendar_event, open_content_scheduler, navigate (/dashboard /releases /calendar /tasks /goals /analytics /content /coach /strategy /network).
+If nothing actionable, set actions to []. Always respond with valid JSON only — no markdown, no extra text.`;
+      const result = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        config: { systemInstruction: systemPrompt, responseMimeType: 'application/json', temperature: 0.3 },
+        contents: [{ role: 'user', parts: [{ text: String(message).slice(0, 4000) }] }],
+      });
+      const raw = result.text?.trim() ?? '{}';
+      let parsed: { reply?: string; actions?: unknown[] } = {};
+      try { parsed = JSON.parse(raw); } catch { parsed = { reply: raw }; }
+      res.json({ reply: parsed.reply ?? 'Done.', actions: parsed.actions ?? [] });
+    } catch (err: any) {
+      console.error('[assistant/chat] Gemini error:', err.message);
+      res.status(500).json({ error: 'AI service error. Please try again.' });
+    }
+  });
+
+  // ── AI engine — artist state analysis ─────────────────────────────────────
+  app.post('/api/ai/analyze', async (req: Request, res: Response) => {
+    if (!GEMINI_API_KEY) {
+      return res.status(503).json({ error: 'AI service not configured on server.' });
+    }
+    const { releases, content, goals, todos } = req.body;
+    try {
+      const { GoogleGenAI, Type } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+      const prompt = `Analyze the current state of an independent artist and generate a strategic game plan.
+Releases: ${JSON.stringify(releases ?? [])}
+Content: ${JSON.stringify(content ?? [])}
+Goals: ${JSON.stringify(goals ?? [])}
+Todos: ${JSON.stringify(todos ?? [])}
+Current Date: ${new Date().toISOString()}
+Tasks: 1) Select the Focus Track needing most attention. 2) Rationale. 3) Generate momentum/warning/opportunity/insight Signals. 4) Generate 3-5 Daily Tasks. Be specific and data-driven.`;
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              focusTrackId:   { type: Type.STRING },
+              focusRationale: { type: Type.STRING },
+              signals: {
+                type: Type.ARRAY,
+                items: { type: Type.OBJECT, properties: { type: { type: Type.STRING }, title: { type: Type.STRING }, description: { type: Type.STRING }, action: { type: Type.STRING }, impact: { type: Type.STRING }, category: { type: Type.STRING } }, required: ['type','title','description','action','impact','category'] },
+              },
+              dailyTasks: {
+                type: Type.ARRAY,
+                items: { type: Type.OBJECT, properties: { task: { type: Type.STRING }, reason: { type: Type.STRING }, priority: { type: Type.STRING }, category: { type: Type.STRING } }, required: ['task','reason','priority','category'] },
+              },
+            },
+            required: ['focusTrackId','focusRationale','signals','dailyTasks'],
+          },
+        },
+      });
+      res.json(JSON.parse(response.text ?? '{}'));
+    } catch (err: any) {
+      console.error('[ai/analyze] Gemini error:', err.message);
+      res.status(500).json({ error: 'AI analysis failed.' });
+    }
+  });
+
+  // ── Email draft generation ─────────────────────────────────────────────────
+  app.post('/api/email/draft', async (req: Request, res: Response) => {
+    if (!GEMINI_API_KEY) {
+      return res.status(503).json({ error: 'AI service not configured on server.' });
+    }
+    const { contact, intent, artistContext, intentContext } = req.body as {
+      contact?: Record<string, unknown>;
+      intent?: string;
+      artistContext?: Record<string, string | undefined>;
+      intentContext?: string;
+    };
+    if (!contact || !intent) {
+      return res.status(400).json({ error: 'contact and intent are required' });
+    }
+    try {
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+      const artistLine  = artistContext?.artistName   ? `Artist name: ${artistContext.artistName}`          : 'Artist name: (your name)';
+      const releaseLine = artistContext?.recentRelease ? `Most recent release: "${artistContext.recentRelease}"` : '';
+      const genreLine   = artistContext?.genre         ? `Genre / style: ${artistContext.genre}`              : '';
+      const notesLine   = contact.notes               ? `Notes about contact: ${String(contact.notes)}`      : '';
+      const tagsLine    = Array.isArray(contact.tags) && contact.tags.length ? `Contact tags: ${(contact.tags as string[]).join(', ')}` : '';
+      const prompt = `You are an email copywriter for an independent music artist.
+Write a concise, genuine, professional outreach email.
+Recipient: ${String(contact.name ?? '')} (${String(contact.category ?? '')})
+Email purpose: ${intentContext ?? String(intent)}
+Context:\n${artistLine}\n${releaseLine}\n${genreLine}\n${notesLine}\n${tagsLine}
+Rules: Under 180 words in the body. Warm but professional tone. No markdown — plain text paragraphs. Subject line: concise, no clickbait.
+Return valid JSON exactly like this: {"subject":"...","body":"..."}`.trim();
+      const response = await ai.models.generateContent({ model: 'gemini-2.0-flash', contents: prompt });
+      const raw = (response.text ?? '').trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+      res.json(JSON.parse(raw));
+    } catch (err: any) {
+      console.error('[email/draft] Gemini error:', err.message);
+      res.status(500).json({ error: 'Email draft generation failed.' });
+    }
+  });
+
+  // ── Weekly report executive summary ───────────────────────────────────────
+  app.post('/api/report/summary', async (req: Request, res: Response) => {
+    if (!GEMINI_API_KEY) {
+      return res.status(503).json({ error: 'AI service not configured on server.' });
+    }
+    const { sections, artistName, start, end } = req.body as {
+      sections?: unknown[]; artistName?: string; start?: string; end?: string;
+    };
+    if (!sections?.length) return res.json({ summary: null });
+    try {
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+      const digest = (sections as any[]).map((s) => ({
+        section: s.title,
+        stats: s.stats,
+        items: (s.items ?? []).slice(0, 3).map((i: any) => `${i.status === 'positive' ? '✓' : i.status === 'negative' ? '✗' : '·'} ${i.text}`),
+      }));
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: `You are writing a 2-3 sentence executive summary for ${String(artistName ?? 'the artist')}'s weekly artist report.\nPeriod: ${start ?? ''} – ${end ?? ''}\nData: ${JSON.stringify(digest)}\nBe direct, specific, and action-oriented. Avoid fluff. Focus on the most impactful insight.`,
+      });
+      res.json({ summary: response.text?.trim() ?? null });
+    } catch (err: any) {
+      console.error('[report/summary] Gemini error:', err.message);
+      res.status(500).json({ error: 'Summary generation failed.' });
+    }
+  });
+
+  // ── Goals AI analysis ──────────────────────────────────────────────────────
+  app.post('/api/goals/analyze', async (req: Request, res: Response) => {
+    if (!GEMINI_API_KEY) {
+      return res.status(503).json({ error: 'AI service not configured on server.' });
+    }
+    const { goals, shows, currentDate } = req.body as {
+      goals?: unknown[]; shows?: unknown[]; currentDate?: string;
+    };
+    if (!goals?.length) return res.status(400).json({ error: 'goals is required' });
+    try {
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+      const today = String(currentDate ?? new Date().toISOString().split('T')[0]);
+
+      const statusRes = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        config: { responseMimeType: 'application/json' },
+        contents: `Today: ${today}. Analyze these artist goals. For each return { status: 'on-track'|'at-risk'|'behind', reasoning: max 10 words }. Shows context: ${JSON.stringify((shows ?? []).slice(0, 5))}. Goals: ${JSON.stringify(goals)}`,
+      });
+
+      let statuses: Record<string, unknown> = {};
+      try { statuses = JSON.parse(statusRes.text ?? '{}'); } catch { /* ignore */ }
+
+      const summaryRes = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: `Today: ${today}. Artist goals: ${JSON.stringify((goals as any[]).map((g: any) => ({ title: g.title, progress: g.target > 0 ? Math.round((g.current / g.target) * 100) + '%' : 'timeless' })))}. Give a short 2-sentence strategic insight.`,
+      });
+
+      res.json({ statuses, analysis: summaryRes.text?.trim() ?? 'Keep pushing towards your targets!' });
+    } catch (err: any) {
+      console.error('[goals/analyze] Gemini error:', err.message);
+      res.status(500).json({ error: 'Goals analysis failed.' });
+    }
+  });
+
   // Start the daily scheduler lazily
   setTimeout(async () => {
     try {

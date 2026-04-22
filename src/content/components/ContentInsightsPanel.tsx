@@ -96,7 +96,7 @@ export const ContentInsightsPanel: React.FC<ContentInsightsPanelProps> = ({
 
         {/* Best Posting Windows */}
         <div className="space-y-6">
-          <h4 className="text-[10px] font-black text-purple-400 uppercase tracking-widest flex items-center gap-2">
+          <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2">
             <Clock className="w-3.5 h-3.5" />
             Best Posting Windows
           </h4>
@@ -108,7 +108,7 @@ export const ContentInsightsPanel: React.FC<ContentInsightsPanelProps> = ({
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Avg. Engagement</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-black text-purple-400">{window.engagement}%</p>
+                  <p className="text-lg font-black text-blue-400">{window.engagement}%</p>
                 </div>
               </div>
             ))}

@@ -15,6 +15,8 @@ import { supabase } from '../lib/supabase';
 import { fetchIdeaAssets, fetchIdeaComments } from '../lib/supabaseData';
 import type { IdeaAsset, IdeaComment, IdeaRecord } from '../types/domain';
 import { cn } from '../lib/utils';
+import { AudioWaveform } from '../components/AudioWaveform';
+import type { WaveformMarker } from '../components/AudioWaveform';
 
 const CONTACT_EMAIL = 'wesleyrob27@gmail.com';
 
@@ -189,7 +191,6 @@ function DetailView({ idea, assets, comments, onBack, onRefreshComments, onColla
   onCollab: () => void;
 }) {
   const audioRef    = useRef<HTMLAudioElement>(null);
-  const progressRef = useRef<HTMLDivElement>(null);
 
   const audioAsset = assets.find((a) => a.asset_type === 'audio');
 
@@ -202,18 +203,13 @@ function DetailView({ idea, assets, comments, onBack, onRefreshComments, onColla
   const [saving,      setSaving]      = useState(false);
   const [saveError,   setSaveError]   = useState<string | null>(null);
 
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const meta = STATUS_META[idea.status] ?? STATUS_META.demo;
   const pinnedComments = comments.filter((c) => c.timestamp_seconds != null);
-
-  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
-    const bar   = progressRef.current;
-    const audio = audioRef.current;
-    if (!bar || !audio || !duration) return;
-    const rect = bar.getBoundingClientRect();
-    const pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    audio.currentTime = pct * duration;
-  };
+  const waveformMarkers: WaveformMarker[] = pinnedComments.map((c) => ({
+    id: c.id!,
+    time: c.timestamp_seconds!,
+    color: '#a855f7', // purple to match neon-purple theme
+  }));
 
   const toggle = () => {
     const a = audioRef.current;
@@ -289,30 +285,15 @@ function DetailView({ idea, assets, comments, onBack, onRefreshComments, onColla
               </p>
             </div>
 
-            {/* Scrubber */}
-            <div
-              ref={progressRef}
-              onClick={seek}
-              className="relative h-10 cursor-pointer flex items-center"
-            >
-              <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1.5 rounded-full bg-surface-raised border border-border" />
-              <div
-                className="absolute left-0 top-1/2 -translate-y-1/2 h-1.5 rounded-full bg-brand pointer-events-none"
-                style={{ width: `${progress}%` }}
-              />
-              {duration > 0 && pinnedComments.map((c) => (
-                <div
-                  key={c.id}
-                  title={`${fmt(c.timestamp_seconds!)} — ${c.author_name ?? 'anon'}: ${c.body}`}
-                  className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-neon-purple ring-[1.5px] ring-white pointer-events-none shadow-sm"
-                  style={{ left: `calc(${(c.timestamp_seconds! / duration) * 100}% - 5px)` }}
-                />
-              ))}
-              <div
-                className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-brand shadow-md pointer-events-none"
-                style={{ left: `calc(${progress}% - 8px)` }}
-              />
-            </div>
+            {/* Waveform scrubber */}
+            <AudioWaveform
+              audioUrl={audioAsset.file_url}
+              currentTime={currentTime}
+              duration={duration}
+              onSeek={(t) => { if (audioRef.current) audioRef.current.currentTime = t; }}
+              markers={waveformMarkers}
+              height={56}
+            />
 
             <div className="flex items-center gap-4 mt-3">
               <button

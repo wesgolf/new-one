@@ -31,6 +31,8 @@ interface SchedulingManagerProps {
   onPublishNow: (item: ContentItem) => Promise<void>;
   onCancel: (item: ContentItem) => Promise<void>;
   onReschedule: (item: ContentItem) => void;
+  /** When true, all publish/cancel/reschedule/edit actions are hidden */
+  readOnly?: boolean;
 }
 
 const platformIcons: Record<string, any> = {
@@ -48,7 +50,7 @@ const statusConfig: Record<PublishStatus, { label: string; color: string; bg: st
   cancelled: { label: 'Cancelled', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', icon: XCircle },
 };
 
-export function SchedulingManager({ items, releases, onEdit, onPublishNow, onCancel, onReschedule }: SchedulingManagerProps) {
+export function SchedulingManager({ items, releases, onEdit, onPublishNow, onCancel, onReschedule, readOnly = false }: SchedulingManagerProps) {
   const [platformFilter, setPlatformFilter] = React.useState<Platform | 'all'>('all');
   const [statusFilter, setStatusFilter] = React.useState<PublishStatus | 'all'>('all');
   const [dateFilter, setDateFilter] = React.useState<'all' | 'today' | 'week' | 'month'>('all');
@@ -131,7 +133,9 @@ export function SchedulingManager({ items, releases, onEdit, onPublishNow, onCan
         </div>
         <div className="space-y-1">
           <h3 className="text-2xl font-black text-slate-900 tracking-tight">Scheduling Manager</h3>
-          <p className="text-slate-500 font-medium text-sm">Manage all your scheduled and draft posts.</p>
+          <p className="text-slate-500 font-medium text-sm">
+            {readOnly ? 'View scheduled and published posts.' : 'Manage all your scheduled and draft posts.'}
+          </p>
         </div>
       </div>
 
@@ -225,10 +229,11 @@ export function SchedulingManager({ items, releases, onEdit, onPublishNow, onCan
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   className={cn(
-                    "glass-card p-5 hover:shadow-lg transition-all cursor-pointer group",
+                    "glass-card p-5 hover:shadow-lg transition-all group",
+                    !readOnly && "cursor-pointer",
                     config.bg, config.border
                   )}
-                  onClick={() => onEdit(item)}
+                  onClick={() => !readOnly && onEdit(item)}
                 >
                   <div className="flex items-center gap-4">
                     <div className={cn("p-3 rounded-2xl border shadow-sm", config.bg, config.border)}>
@@ -266,45 +271,47 @@ export function SchedulingManager({ items, releases, onEdit, onPublishNow, onCan
                     </div>
 
                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                      {isLoading ? (
-                        <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
-                      ) : (
-                        <>
-                          {(ps === 'draft' || ps === 'scheduled') && (
-                            <button
-                              onClick={() => handleQuickPublish(item)}
-                              className="p-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition-colors border border-emerald-200"
-                              title="Publish Now"
-                            >
-                              <Send className="w-3.5 h-3.5" />
-                            </button>
+                      {!readOnly && (
+                        isLoading ? (
+                          <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+                        ) : (
+                          <>
+                            {(ps === 'draft' || ps === 'scheduled') && (
+                              <button
+                                onClick={() => handleQuickPublish(item)}
+                                className="p-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition-colors border border-emerald-200"
+                                title="Publish Now"
+                              >
+                                <Send className="w-3.5 h-3.5" />
+                              </button>
                           )}
                           {ps === 'scheduled' && (
+                              <button
+                                onClick={() => handleQuickCancel(item)}
+                                className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors border border-red-200"
+                                title="Cancel"
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {(ps === 'failed' || ps === 'cancelled') && (
+                              <button
+                                onClick={() => onReschedule(item)}
+                                className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors border border-blue-200"
+                                title="Reschedule"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <button
-                              onClick={() => handleQuickCancel(item)}
-                              className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors border border-red-200"
-                              title="Cancel"
+                              onClick={() => onEdit(item)}
+                              className="p-2 bg-white text-slate-500 rounded-xl hover:bg-slate-100 transition-colors border border-slate-200"
+                              title="Edit"
                             >
-                              <XCircle className="w-3.5 h-3.5" />
+                              <Edit2 className="w-3.5 h-3.5" />
                             </button>
-                          )}
-                          {(ps === 'failed' || ps === 'cancelled') && (
-                            <button
-                              onClick={() => onReschedule(item)}
-                              className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors border border-blue-200"
-                              title="Reschedule"
-                            >
-                              <RefreshCw className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => onEdit(item)}
-                            className="p-2 bg-white text-slate-500 rounded-xl hover:bg-slate-100 transition-colors border border-slate-200"
-                            title="Edit"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                        </>
+                          </>
+                        )
                       )}
                     </div>
                   </div>

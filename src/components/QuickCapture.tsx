@@ -46,7 +46,7 @@ export function QuickCapture({ onSuccess }: QuickCaptureProps) {
   const categories = [
     { id: 'Idea', icon: Lightbulb, color: 'text-amber-500', bg: 'bg-amber-50' },
     { id: 'Task', icon: CheckSquare, color: 'text-blue-500', bg: 'bg-blue-50' },
-    { id: 'Note', icon: StickyNote, color: 'text-purple-500', bg: 'bg-purple-50' },
+    { id: 'Note', icon: StickyNote, color: 'text-blue-500', bg: 'bg-blue-50' },
     { id: 'Contact', icon: UserPlus, color: 'text-emerald-500', bg: 'bg-emerald-50' },
   ];
 

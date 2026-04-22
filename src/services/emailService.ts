@@ -9,7 +9,6 @@
  *  - Persistence: Supabase `outreach_emails` table (no API keys on client)
  *  - Sending: POST /api/email/send (server owns SMTP credentials)
  */
-import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../lib/supabase';
 import type { OutreachEmail, OpportunityContact } from '../types/domain';
 
@@ -51,57 +50,18 @@ export async function generateEmailDraft(
   intent: EmailIntent,
   artistContext?: { artistName?: string; recentRelease?: string; genre?: string }
 ): Promise<EmailDraft> {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!apiKey) throw new Error('VITE_GEMINI_API_KEY is not set.');
-
-  const ai = new GoogleGenAI({ apiKey });
-
-  const artistLine = artistContext?.artistName
-    ? `Artist name: ${artistContext.artistName}`
-    : 'Artist name: (your name)';
-  const releaseLine = artistContext?.recentRelease
-    ? `Most recent release: "${artistContext.recentRelease}"`
-    : '';
-  const genreLine = artistContext?.genre ? `Genre / style: ${artistContext.genre}` : '';
-  const notesLine = contact.notes ? `Notes about contact: ${contact.notes}` : '';
-  const tagsLine = contact.tags?.length ? `Contact tags: ${contact.tags.join(', ')}` : '';
-
-  const prompt = `
-You are an email copywriter for an independent music artist.
-Write a concise, genuine, professional outreach email.
-
-Recipient: ${contact.name} (${contact.category})
-Email purpose: ${INTENT_CONTEXT[intent]}
-
-Context:
-${artistLine}
-${releaseLine}
-${genreLine}
-${notesLine}
-${tagsLine}
-
-Rules:
-- Under 180 words in the body
-- Warm but professional tone
-- First paragraph: personalised hook referencing who they are
-- Second paragraph: the ask or proposition
-- Third paragraph: brief credibility line + clear call to action
-- No markdown — plain text paragraphs only
-- Subject line: concise, no clickbait
-
-Return valid JSON exactly like this:
-{"subject":"...","body":"..."}
-`.trim();
-
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.0-flash',
-    contents: prompt,
+  const res = await fetch('/api/email/draft', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contact,
+      intent,
+      artistContext,
+      intentContext: INTENT_CONTEXT[intent],
+    }),
   });
-
-  const raw = (response.text ?? '').trim();
-  // Strip markdown code fences if model wraps the JSON
-  const json = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
-  return JSON.parse(json) as EmailDraft;
+  if (!res.ok) throw new Error(`Email draft generation failed: HTTP ${res.status}`);
+  return res.json() as Promise<EmailDraft>;
 }
 
 // ── Persistence ───────────────────────────────────────────────────────────────

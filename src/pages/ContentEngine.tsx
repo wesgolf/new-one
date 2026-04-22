@@ -26,9 +26,18 @@ import { contentPersistence } from '../content/services/contentPersistence';
 import { contentService } from '../services/contentService';
 import { fetchReleases } from '../lib/supabaseData';
 import { useCurrentUser } from '../hooks/useCurrentUser';
+import { usePermissions } from '../hooks/usePermissions';
 
 export function ContentEngine() {
   const { authUser } = useCurrentUser();
+  const {
+    canCreateContent,
+    canEditContent,
+    canPostContent,
+    canDeleteContent,
+    canUploadMedia,
+    canScheduleContent,
+  } = usePermissions();
   const [items, setItems] = React.useState<ContentItem[]>([]);
   const [releases, setReleases] = React.useState<Release[]>([]);
   
@@ -210,10 +219,12 @@ export function ContentEngine() {
           <div className="space-y-1">
             <h2 className="text-4xl md:text-5xl font-black tracking-tight text-text-primary">Content</h2>
             <div className="flex items-center gap-3">
-              <p className="text-slate-400 font-medium text-sm">Manage, schedule, and publish your content.</p>
-
+              <p className="text-slate-400 font-medium text-sm">
+                {canCreateContent ? 'Manage, schedule, and publish your content.' : 'View content schedules and performance.'}
+              </p>
             </div>
           </div>
+          {canCreateContent && (
           <button 
             onClick={() => {
               setEditorItem(null);
@@ -224,6 +235,7 @@ export function ContentEngine() {
             <Upload className="w-4 h-4" />
             New Post
           </button>
+          )}
         </header>
 
         <WeeklyContentCalendar 
@@ -232,7 +244,7 @@ export function ContentEngine() {
             setSelectedItem(item);
             setIsComposerOpen(true);
           }}
-          onAddPost={handleAddPostFromCalendar}
+          onAddPost={canScheduleContent ? handleAddPostFromCalendar : undefined}
           bestTimes={bestTimes}
         />
 
@@ -273,14 +285,14 @@ export function ContentEngine() {
           >
             {activeTab === 'library' && (
               <ContentLibrary
-                onEditItem={(item) => {
+                onEditItem={canEditContent ? (item) => {
                   setEditorItem(item);
                   setIsEditorOpen(true);
-                }}
-                onUploadNew={() => {
+                } : undefined}
+                onUploadNew={canUploadMedia ? () => {
                   setEditorItem(null);
                   setIsEditorOpen(true);
-                }}
+                } : undefined}
                 refreshTrigger={contentListRefresh}
               />
             )}
@@ -289,18 +301,18 @@ export function ContentEngine() {
               <ContentPipelineBoard 
                 items={items}
                 releases={releases}
-                onEdit={(item) => {
+                onEdit={canEditContent ? (item) => {
                   setSelectedItem(item);
                   setIsCreatorOpen(true);
-                }}
-                onDelete={handleDeleteContent}
-                onPostNow={(item) => {
+                } : undefined}
+                onDelete={canDeleteContent ? handleDeleteContent : undefined}
+                onPostNow={canPostContent ? (item) => {
                   setSelectedItem(item);
                   setIsPostModeOpen(true);
-                }}
-                onStatusChange={(id, status) => {
+                } : undefined}
+                onStatusChange={canEditContent ? (id, status) => {
                   setItems(prev => prev.map(i => i.id === id ? { ...i, status } : i));
-                }}
+                } : undefined}
               />
             )}
 

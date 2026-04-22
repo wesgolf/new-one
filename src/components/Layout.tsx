@@ -98,7 +98,8 @@ function NavDropdown({ label, children }: { label: string; children: DropdownChi
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.97 }}
             transition={{ duration: 0.13, ease: 'easeOut' }}
-            className="absolute top-[calc(100%+4px)] left-0 z-50 w-54 bg-surface border border-border rounded-xl shadow-lg overflow-hidden"
+      className="absolute top-[calc(100%+6px)] left-0 z-50 min-w-[13rem] overflow-hidden rounded-2xl border border-border/60 shadow-[var(--shadow-lifted)]"
+            style={{ background: 'rgba(255,255,255,0.96)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
           >
             {children.map((item) => (
               <NavLink
@@ -108,7 +109,7 @@ function NavDropdown({ label, children }: { label: string; children: DropdownChi
                 className={({ isActive }) =>
                   cn(
                     'flex items-start gap-3 px-4 py-3 transition-colors',
-                    isActive ? 'bg-brand-dim' : 'hover:bg-background'
+                    isActive ? 'bg-brand-dim' : 'hover:bg-background/70'
                   )
                 }
               >
@@ -154,7 +155,8 @@ function LayoutInner() {
   return (
     <div className="min-h-screen bg-background text-text-secondary flex flex-col pb-16 md:pb-0">
       {/* Navbar */}
-      <header className="sticky top-0 z-50 bg-surface border-b border-border">
+      <header className="sticky top-0 z-50 border-b border-border/50"
+        style={{ background: 'rgba(255,255,255,0.82)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
         <div className="max-w-7xl mx-auto px-4 md:px-6 h-14 flex items-center gap-2">
 
           {/* Mobile: hamburger */}
@@ -179,7 +181,7 @@ function LayoutInner() {
                   className={({ isActive }) =>
                     cn(
                       'px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                      isActive ? 'text-brand bg-brand-dim' : 'text-text-secondary hover:text-text-primary hover:bg-background'
+                      isActive ? 'text-brand bg-brand-dim rounded-lg font-semibold' : 'text-text-secondary hover:text-text-primary hover:bg-background/80 rounded-lg'
                     )
                   }
                 >
@@ -201,7 +203,7 @@ function LayoutInner() {
                   ? 'bg-brand-dim text-brand border-brand/20'
                   : isManager
                   ? 'bg-amber-500/10 text-amber-600 border-amber-500/20'
-                  : 'bg-background text-text-muted border-border'
+                  : 'bg-background text-text-muted border-border/70'
               )}>
                 {roleDisplayName}
               </span>
@@ -245,9 +247,10 @@ function LayoutInner() {
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 220 }}
-              className="absolute left-0 top-0 bottom-0 w-72 bg-surface border-r border-border flex flex-col"
+              className="absolute left-0 top-0 bottom-0 w-72 flex flex-col border-r border-border/50"
+              style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' }}
             >
-              <div className="h-14 px-4 flex items-center justify-between border-b border-border">
+              <div className="h-14 px-4 flex items-center justify-between border-b border-border/50">
                 <span className="text-[13px] font-bold tracking-[0.18em] text-text-primary uppercase">WES</span>
                 <button
                   onClick={() => setMobileOpen(false)}
@@ -273,8 +276,8 @@ function LayoutInner() {
                               cn(
                                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                                 isActive
-                                  ? 'bg-brand-dim text-brand'
-                                  : 'text-text-secondary hover:text-text-primary hover:bg-background'
+                                  ? 'bg-brand-dim text-brand font-semibold'
+                                  : 'text-text-secondary hover:text-text-primary hover:bg-background/80'
                               )
                             }
                           >
@@ -295,8 +298,8 @@ function LayoutInner() {
                         cn(
                           'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                           isActive
-                            ? 'bg-brand-dim text-brand'
-                            : 'text-text-secondary hover:text-text-primary hover:bg-background'
+                            ? 'bg-brand-dim text-brand font-semibold'
+                            : 'text-text-secondary hover:text-text-primary hover:bg-background/80'
                         )
                       }
                     >
@@ -305,10 +308,10 @@ function LayoutInner() {
                   );
                 })}
               </div>
-              <div className="p-4 border-t border-border">
+              <div className="p-4 border-t border-border/50">
                 <button
                   onClick={handleLogout}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-text-muted hover:text-rose-500 hover:bg-background rounded-xl text-sm font-medium transition-colors"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-text-muted hover:text-rose-500 hover:bg-background/70 rounded-xl text-sm font-medium transition-colors"
                 >
                   <LogOut className="w-4 h-4" />
                   Lock Dashboard
@@ -320,7 +323,8 @@ function LayoutInner() {
       </AnimatePresence>
 
       {/* Mobile bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-surface border-t border-border px-4 h-16 flex items-center justify-around">
+      <nav className="fixed bottom-0 left-0 right-0 z-50 lg:hidden border-t border-border/50 px-4 h-16 flex items-center justify-around"
+        style={{ background: 'rgba(255,255,255,0.90)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
         {MOBILE_NAV.map((item) => (
           <NavLink
             key={item.path}
@@ -355,7 +359,7 @@ function LayoutInner() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.18 }}
-            className="p-4 md:p-10 max-w-7xl mx-auto"
+            className="p-5 md:p-10 max-w-7xl mx-auto"
           >
             <Outlet />
           </motion.div>

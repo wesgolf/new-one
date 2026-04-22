@@ -370,14 +370,14 @@ export function PostComposerModal({
 
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                <MessageSquare className="w-3.5 h-3.5 text-purple-500" />
+                <MessageSquare className="w-3.5 h-3.5 text-blue-500" />
                 Caption
               </label>
               <textarea
                 value={formData.caption || ''}
                 onChange={(e) => setFormData({ ...formData, caption: e.target.value })}
                 placeholder="Your caption text..."
-                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-5 text-sm font-bold text-slate-700 placeholder:text-slate-300 focus:outline-none focus:border-purple-500/30 transition-all resize-none min-h-[100px]"
+                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl p-5 text-sm font-bold text-slate-700 placeholder:text-slate-300 focus:outline-none focus:border-blue-500/30 transition-all resize-none min-h-[100px]"
               />
             </div>
 

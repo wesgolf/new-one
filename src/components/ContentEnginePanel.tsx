@@ -29,11 +29,11 @@ export function ContentEnginePanel({ data, onAction }: { data?: ContentData | nu
   const content = data || { ideasReady: 0, postsThisWeek: 0, scheduledContent: 0, nextPostDate: 'No posts scheduled' };
   
   return (
-    <section className="glass-card p-8 group hover:border-purple-200 transition-all">
+    <section className="glass-card p-8 group hover:border-blue-200 transition-all">
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-purple-100 rounded-lg">
-            <Layout className="w-5 h-5 text-purple-600" />
+          <div className="p-2 bg-blue-100 rounded-lg">
+            <Layout className="w-5 h-5 text-blue-600" />
           </div>
           <h3 className="text-xl font-bold text-slate-900">Content Engine</h3>
         </div>
@@ -57,19 +57,19 @@ export function ContentEnginePanel({ data, onAction }: { data?: ContentData | nu
         </div>
       </div>
 
-      <div className="p-4 bg-purple-50 border border-purple-100 rounded-2xl flex items-center justify-between mb-8">
+      <div className="p-4 bg-blue-50 border border-blue-100 rounded-2xl flex items-center justify-between mb-8">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-purple-600 shadow-sm">
+          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-blue-600 shadow-sm">
             <Calendar className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">Next Post</p>
-            <p className="text-sm font-bold text-purple-900">{content.nextPostDate}</p>
+            <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Next Post</p>
+            <p className="text-sm font-bold text-blue-900">{content.nextPostDate}</p>
           </div>
         </div>
         <button 
           onClick={() => onAction?.("Opening Content Calendar...")}
-          className="text-xs font-bold text-purple-600 hover:underline flex items-center gap-1"
+          className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"
         >
           View Calendar <ArrowRight className="w-3 h-3" />
         </button>
@@ -78,9 +78,9 @@ export function ContentEnginePanel({ data, onAction }: { data?: ContentData | nu
       <div className="space-y-3">
         <button 
           onClick={() => onAction?.("AI is thinking of new ideas...")}
-          className="w-full btn-secondary justify-start py-4 border-dashed hover:border-purple-300 hover:text-purple-600"
+          className="w-full btn-secondary justify-start py-4 border-dashed hover:border-blue-300 hover:text-blue-600"
         >
-          <Lightbulb className="w-5 h-5 text-purple-500" />
+          <Lightbulb className="w-5 h-5 text-blue-500" />
           Generate Idea
         </button>
         <button 
@@ -92,7 +92,7 @@ export function ContentEnginePanel({ data, onAction }: { data?: ContentData | nu
         </button>
         <button 
           onClick={() => onAction?.("Planning your content week...")}
-          className="w-full btn-primary py-4 bg-purple-600 hover:bg-purple-500"
+          className="w-full btn-primary py-4 bg-blue-600 hover:bg-blue-700"
         >
           <Calendar className="w-5 h-5" />
           Plan Week

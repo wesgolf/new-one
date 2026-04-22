@@ -20,7 +20,7 @@ import { motion } from 'motion/react';
 interface WeeklyContentCalendarProps {
   items: ContentItem[];
   onSelectItem: (item: ContentItem) => void;
-  onAddPost: (date: Date, time?: string) => void;
+  onAddPost?: (date: Date, time?: string) => void;
   bestTimes?: BestPostingTime[];
 }
 
@@ -216,7 +216,7 @@ export function WeeklyContentCalendar({ items, onSelectItem, onAddPost, bestTime
                     {dayBestTimes.map((bt, j) => (
                       <button
                         key={j}
-                        onClick={() => onAddPost(date, bt.time)}
+                        onClick={() => onAddPost?.(date, bt.time)}
                         className="w-full flex items-center gap-1 px-1.5 py-1 rounded-lg bg-amber-50/60 border border-amber-100/50 text-[9px] font-bold text-amber-600 hover:bg-amber-100/80 transition-all group"
                       >
                         <TrendingUp className="w-2.5 h-2.5 text-amber-400 group-hover:text-amber-600" />
@@ -230,7 +230,7 @@ export function WeeklyContentCalendar({ items, onSelectItem, onAddPost, bestTime
 
                 {dayItems.length === 0 && dayBestTimes.length === 0 && (
                   <button
-                    onClick={() => onAddPost(date)}
+                    onClick={() => onAddPost?.(date)}
                     className="w-full h-full min-h-[60px] flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-transparent hover:border-blue-200 hover:bg-blue-50/20 transition-all group"
                   >
                     <Plus className="w-4 h-4 text-slate-200 group-hover:text-blue-400 transition-colors" />

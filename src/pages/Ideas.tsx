@@ -169,8 +169,8 @@ export function Ideas() {
             className={cn(
               'rounded-xl border p-4 text-left transition-all',
               statusFilter === s
-                ? 'border-brand bg-violet-50 ring-1 ring-violet-200 shadow-sm'
-                : 'border-border bg-white shadow-sm hover:border-violet-200'
+                ? 'border-brand bg-blue-50 ring-1 ring-blue-200 shadow-sm'
+                : 'border-border bg-white shadow-sm hover:border-blue-200'
             )}
           >
             <p className="text-xs font-bold uppercase tracking-widest text-text-muted">
@@ -246,7 +246,7 @@ export function Ideas() {
                         {meta.label}
                       </span>
                       {idea.is_collab && (
-                        <span className="flex items-center gap-1 rounded-full border border-purple-100 bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-600">
+                        <span className="flex items-center gap-1 rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-600">
                           <Users className="h-2.5 w-2.5" />Collab
                         </span>
                       )}
@@ -332,7 +332,7 @@ export function Ideas() {
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1 text-[10px] font-semibold text-purple-500 hover:text-purple-700 transition-colors"
+                        className="flex items-center gap-1 text-[10px] font-semibold text-blue-500 hover:text-blue-700 transition-colors"
                       >
                         <Users className="h-3 w-3" />
                         Collab Lab

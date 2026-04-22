@@ -21,8 +21,8 @@ export function TrackFocusCard({ track, onAction }: { track?: Release | null, on
     <section className="glass-card p-8 group hover:border-blue-200 transition-all">
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-purple-100 rounded-lg">
-            <Music className="w-5 h-5 text-purple-600" />
+          <div className="p-2 bg-blue-100 rounded-lg">
+            <Music className="w-5 h-5 text-blue-600" />
           </div>
           <h3 className="text-xl font-bold text-slate-900">Track Command Center</h3>
         </div>
@@ -105,7 +105,7 @@ export function TrackFocusCard({ track, onAction }: { track?: Release | null, on
                 </button>
                 <button 
                   onClick={() => onAction?.("Generating viral content ideas...")}
-                  className="btn-primary text-xs py-2.5 bg-purple-600 hover:bg-purple-500"
+                  className="btn-primary text-xs py-2.5 bg-blue-600 hover:bg-blue-500"
                 >
                   <TrendingUp className="w-4 h-4" />
                   Generate Content Idea

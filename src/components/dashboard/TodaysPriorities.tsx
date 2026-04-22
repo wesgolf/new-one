@@ -19,7 +19,7 @@ const TYPE_CONFIG = {
   post:     { Icon: Send,          label: 'Post',      bg: 'bg-emerald-50', iconColor: 'text-emerald-500' },
   error:    { Icon: AlertTriangle, label: 'Failed',    bg: 'bg-red-50',     iconColor: 'text-red-500'     },
   deadline: { Icon: Flame,         label: 'Deadline',  bg: 'bg-orange-50',  iconColor: 'text-orange-500'  },
-  release:  { Icon: Music,         label: 'Release',   bg: 'bg-purple-50',  iconColor: 'text-purple-500'  },
+  release:  { Icon: Music,         label: 'Release',   bg: 'bg-blue-50',  iconColor: 'text-blue-500'  },
 } as const;
 
 const PRIORITY_CONFIG = {

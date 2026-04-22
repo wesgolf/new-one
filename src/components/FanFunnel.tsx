@@ -19,7 +19,7 @@ interface FunnelData {
 export function FanFunnel({ data }: { data: FunnelData | null }) {
   const steps = [
     { label: 'Views', value: data?.views || 0, icon: Eye, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'Profile Clicks', value: data?.profileClicks || 0, icon: MousePointer2, color: 'text-purple-600', bg: 'bg-purple-50' },
+    { label: 'Profile Clicks', value: data?.profileClicks || 0, icon: MousePointer2, color: 'text-blue-600', bg: 'bg-blue-50' },
     { label: 'Streams', value: data?.streams || 0, icon: Play, color: 'text-emerald-600', bg: 'bg-emerald-50' },
     { label: 'Saves', value: data?.saves || 0, icon: Heart, color: 'text-rose-600', bg: 'bg-rose-50' },
   ];

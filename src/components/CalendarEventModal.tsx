@@ -450,15 +450,15 @@ export function CalendarEventModal({ isOpen, onClose, onSave, initialDate, initi
                   </div>
                 </div>
                 
-                <div className="p-4 bg-purple-50 border border-purple-100 rounded-2xl space-y-4">
+                <div className="p-4 bg-blue-50 border border-blue-100 rounded-2xl space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="p-2 bg-white rounded-lg shadow-sm">
-                        <Share2 className="w-4 h-4 text-purple-600" />
+                        <Share2 className="w-4 h-4 text-blue-600" />
                       </div>
                       <div>
-                        <p className="text-xs font-bold text-purple-900">Zernio API Scheduling</p>
-                        <p className="text-[10px] text-purple-600">Auto-post to platforms via Zernio</p>
+                        <p className="text-xs font-bold text-blue-900">Zernio API Scheduling</p>
+                        <p className="text-[10px] text-blue-600">Auto-post to platforms via Zernio</p>
                       </div>
                     </div>
                     <button
@@ -466,7 +466,7 @@ export function CalendarEventModal({ isOpen, onClose, onSave, initialDate, initi
                       onClick={() => setUseZernio(!useZernio)}
                       className={cn(
                         "w-10 h-5 rounded-full transition-all relative",
-                        useZernio ? "bg-purple-600" : "bg-slate-200"
+                        useZernio ? "bg-blue-600" : "bg-slate-200"
                       )}
                     >
                       <div className={cn(
@@ -477,37 +477,37 @@ export function CalendarEventModal({ isOpen, onClose, onSave, initialDate, initi
                   </div>
 
                   {useZernio && (
-                    <div className="space-y-3 pt-2 border-t border-purple-100 animate-in fade-in slide-in-from-top-1">
+                    <div className="space-y-3 pt-2 border-t border-blue-100 animate-in fade-in slide-in-from-top-1">
                       <div className="space-y-1.5">
-                        <label className="text-[9px] font-bold text-purple-400 uppercase tracking-widest">Media URL (Required for IG)</label>
+                        <label className="text-[9px] font-bold text-blue-400 uppercase tracking-widest">Media URL (Required for IG)</label>
                         <input
                           type="url"
                           value={mediaUrl}
                           onChange={(e) => setMediaUrl(e.target.value)}
                           placeholder="https://cdn.example.com/photo.jpg"
-                          className="w-full bg-white border border-purple-100 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition-all"
+                          className="w-full bg-white border border-blue-100 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1.5">
-                          <label className="text-[9px] font-bold text-purple-400 uppercase tracking-widest">Media Type</label>
+                          <label className="text-[9px] font-bold text-blue-400 uppercase tracking-widest">Media Type</label>
                           <select
                             value={mediaType}
                             onChange={(e) => setMediaType(e.target.value as 'image' | 'video')}
-                            className="w-full bg-white border border-purple-100 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition-all"
+                            className="w-full bg-white border border-blue-100 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                           >
                             <option value="image">Image</option>
                             <option value="video">Video</option>
                           </select>
                         </div>
                         <div className="space-y-1.5">
-                          <label className="text-[9px] font-bold text-purple-400 uppercase tracking-widest">Account ID</label>
+                          <label className="text-[9px] font-bold text-blue-400 uppercase tracking-widest">Account ID</label>
                           <input
                             type="text"
                             value={accountId}
                             onChange={(e) => setAccountId(e.target.value)}
                             placeholder="YOUR_ACCOUNT_ID"
-                            className="w-full bg-white border border-purple-100 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition-all"
+                            className="w-full bg-white border border-blue-100 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                           />
                         </div>
                       </div>
@@ -515,35 +515,35 @@ export function CalendarEventModal({ isOpen, onClose, onSave, initialDate, initi
                       {platform.toLowerCase() === 'instagram' && (
                         <div className="space-y-3 animate-in fade-in slide-in-from-top-1">
                           <div className="space-y-1.5">
-                            <label className="text-[9px] font-bold text-purple-400 uppercase tracking-widest">First Comment</label>
+                            <label className="text-[9px] font-bold text-blue-400 uppercase tracking-widest">First Comment</label>
                             <input
                               type="text"
                               value={firstComment}
                               onChange={(e) => setFirstComment(e.target.value)}
                               placeholder="Auto-posted first comment (e.g. link in bio)"
-                              className="w-full bg-white border border-purple-100 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition-all"
+                              className="w-full bg-white border border-blue-100 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                             />
                           </div>
                           <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-1.5">
-                              <label className="text-[9px] font-bold text-purple-400 uppercase tracking-widest">Collaborators</label>
+                              <label className="text-[9px] font-bold text-blue-400 uppercase tracking-widest">Collaborators</label>
                               <input
                                 type="text"
                                 value={collaborators}
                                 onChange={(e) => setCollaborators(e.target.value)}
                                 placeholder="user1, user2"
-                                className="w-full bg-white border border-purple-100 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition-all"
+                                className="w-full bg-white border border-blue-100 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                               />
                             </div>
                             <div className="space-y-1.5">
-                              <label className="text-[9px] font-bold text-purple-400 uppercase tracking-widest">User Tags</label>
+                              <label className="text-[9px] font-bold text-blue-400 uppercase tracking-widest">User Tags</label>
                               <input
                                 type="text"
                                 value={userTags}
                                 onChange={(e) => setUserTags(e.target.value)}
                                 placeholder="user:0.5:0.5"
                                 title="Format: username:x:y (coordinates 0.0 to 1.0)"
-                                className="w-full bg-white border border-purple-100 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition-all"
+                                className="w-full bg-white border border-blue-100 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                               />
                             </div>
                           </div>
@@ -554,11 +554,11 @@ export function CalendarEventModal({ isOpen, onClose, onSave, initialDate, initi
                         <div className="space-y-3 animate-in fade-in slide-in-from-top-1">
                           <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-1.5">
-                              <label className="text-[9px] font-bold text-purple-400 uppercase tracking-widest">Privacy Level</label>
+                              <label className="text-[9px] font-bold text-blue-400 uppercase tracking-widest">Privacy Level</label>
                               <select
                                 value={tiktokPrivacy}
                                 onChange={(e) => setTiktokPrivacy(e.target.value as any)}
-                                className="w-full bg-white border border-purple-100 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition-all"
+                                className="w-full bg-white border border-blue-100 rounded-xl py-2 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                               >
                                 <option value="PUBLIC_TO_EVERYONE">Public</option>
                                 <option value="MUTUAL_FOLLOW_FRIENDS">Friends</option>
@@ -572,9 +572,9 @@ export function CalendarEventModal({ isOpen, onClose, onSave, initialDate, initi
                                 id="ai-disclosure"
                                 checked={tiktokVideoMadeWithAI}
                                 onChange={(e) => setTiktokVideoMadeWithAI(e.target.checked)}
-                                className="rounded border-purple-200 text-purple-600 focus:ring-purple-500"
+                                className="rounded border-blue-200 text-blue-600 focus:ring-blue-500"
                               />
-                              <label htmlFor="ai-disclosure" className="text-[9px] font-bold text-purple-400 uppercase tracking-widest cursor-pointer">AI Disclosure</label>
+                              <label htmlFor="ai-disclosure" className="text-[9px] font-bold text-blue-400 uppercase tracking-widest cursor-pointer">AI Disclosure</label>
                             </div>
                           </div>
                           <div className="grid grid-cols-3 gap-2">
@@ -584,9 +584,9 @@ export function CalendarEventModal({ isOpen, onClose, onSave, initialDate, initi
                                 id="allow-comment"
                                 checked={tiktokAllowComment}
                                 onChange={(e) => setTiktokAllowComment(e.target.checked)}
-                                className="rounded border-purple-200 text-purple-600 focus:ring-purple-500"
+                                className="rounded border-blue-200 text-blue-600 focus:ring-blue-500"
                               />
-                              <label htmlFor="allow-comment" className="text-[9px] font-bold text-purple-400 uppercase tracking-widest cursor-pointer">Comments</label>
+                              <label htmlFor="allow-comment" className="text-[9px] font-bold text-blue-400 uppercase tracking-widest cursor-pointer">Comments</label>
                             </div>
                             <div className="flex items-center gap-2">
                               <input
@@ -594,9 +594,9 @@ export function CalendarEventModal({ isOpen, onClose, onSave, initialDate, initi
                                 id="allow-duet"
                                 checked={tiktokAllowDuet}
                                 onChange={(e) => setTiktokAllowDuet(e.target.checked)}
-                                className="rounded border-purple-200 text-purple-600 focus:ring-purple-500"
+                                className="rounded border-blue-200 text-blue-600 focus:ring-blue-500"
                               />
-                              <label htmlFor="allow-duet" className="text-[9px] font-bold text-purple-400 uppercase tracking-widest cursor-pointer">Duet</label>
+                              <label htmlFor="allow-duet" className="text-[9px] font-bold text-blue-400 uppercase tracking-widest cursor-pointer">Duet</label>
                             </div>
                             <div className="flex items-center gap-2">
                               <input
@@ -604,9 +604,9 @@ export function CalendarEventModal({ isOpen, onClose, onSave, initialDate, initi
                                 id="allow-stitch"
                                 checked={tiktokAllowStitch}
                                 onChange={(e) => setTiktokAllowStitch(e.target.checked)}
-                                className="rounded border-purple-200 text-purple-600 focus:ring-purple-500"
+                                className="rounded border-blue-200 text-blue-600 focus:ring-blue-500"
                               />
-                              <label htmlFor="allow-stitch" className="text-[9px] font-bold text-purple-400 uppercase tracking-widest cursor-pointer">Stitch</label>
+                              <label htmlFor="allow-stitch" className="text-[9px] font-bold text-blue-400 uppercase tracking-widest cursor-pointer">Stitch</label>
                             </div>
                           </div>
                         </div>

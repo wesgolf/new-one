@@ -289,7 +289,7 @@ function InstagramStory({ mediaUrl, coverImageUrl, soundLabel }: FeedPreviewProp
         ))}
       </div>
       <div className="absolute top-[40px] left-3 right-3 flex items-center gap-2 z-20">
-        <div className="w-6 h-6 rounded-full ring-2 ring-white overflow-hidden bg-gradient-to-br from-pink-400 to-purple-500 shrink-0" />
+        <div className="w-6 h-6 rounded-full ring-2 ring-white overflow-hidden bg-gradient-to-br from-pink-400 to-blue-500 shrink-0" />
         <span className="text-white font-bold leading-none" style={{ fontSize: 8.5 }}>{USERNAME}</span>
         <span className="text-white/60 leading-none" style={{ fontSize: 7.5 }}>2m</span>
         <MoreHorizontal className="w-3.5 h-3.5 text-white ml-auto" />
@@ -316,7 +316,7 @@ function InstagramPost({ mediaUrl, coverImageUrl, caption, hashtags, carouselIte
           </div>
         </div>
         <div className="flex items-center gap-2 px-3 py-[5px] shrink-0">
-          <div className="w-6 h-6 rounded-full ring-[2px] ring-[#e1306c] ring-offset-[1px] overflow-hidden bg-gradient-to-br from-pink-400 to-purple-500" />
+          <div className="w-6 h-6 rounded-full ring-[2px] ring-[#e1306c] ring-offset-[1px] overflow-hidden bg-gradient-to-br from-pink-400 to-blue-500" />
           <span className="text-slate-900 font-bold flex-1" style={{ fontSize: 9 }}>{USERNAME}</span>
           <MoreHorizontal className="w-3 h-3 text-slate-500" />
         </div>

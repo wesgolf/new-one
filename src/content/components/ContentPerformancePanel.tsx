@@ -85,7 +85,7 @@ export const ContentPerformancePanel: React.FC<ContentPerformancePanelProps> = (
           { label: 'Total Views', value: analytics.reduce((acc, a) => acc + a.views, 0), icon: Eye, color: 'text-blue-500', bg: 'bg-blue-50' },
           { label: 'Avg Engagement', value: (analytics.reduce((acc, a) => acc + a.engagement_rate, 0) / (analytics.length || 1)).toFixed(1) + '%', icon: Zap, color: 'text-amber-500', bg: 'bg-amber-50' },
           { label: 'Total Likes', value: analytics.reduce((acc, a) => acc + a.likes, 0), icon: Heart, color: 'text-pink-500', bg: 'bg-pink-50' },
-          { label: 'Save Rate', value: (analytics.reduce((acc, a) => acc + (a.saves / (a.views || 1)), 0) / (analytics.length || 1) * 100).toFixed(1) + '%', icon: Bookmark, color: 'text-purple-500', bg: 'bg-purple-50' },
+          { label: 'Save Rate', value: (analytics.reduce((acc, a) => acc + (a.saves / (a.views || 1)), 0) / (analytics.length || 1) * 100).toFixed(1) + '%', icon: Bookmark, color: 'text-blue-500', bg: 'bg-blue-50' },
         ].map((stat, i) => (
           <motion.div 
             key={i}

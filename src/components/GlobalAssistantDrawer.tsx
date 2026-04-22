@@ -12,7 +12,6 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
 import { dispatchAssistantAction } from '../lib/commandBus';
 import { useAssistantContext } from '../context/AssistantContext';
 import type { AssistantAction } from '../types/domain';
@@ -125,81 +124,24 @@ export function GlobalAssistantDrawer() {
     setMessages(prev => [...prev, { role: 'user', content: trimmed }]);
     setAiLoading(true);
 
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
-
-    if (!apiKey) {
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: 'Gemini API key not configured (VITE_GEMINI_API_KEY). Set it in your .env to enable AI actions.',
-        },
-      ]);
-      setAiLoading(false);
-      return;
-    }
-
     try {
-      const ai = new GoogleGenAI({ apiKey });
-
-      const systemPrompt = `You are an AI assistant embedded in an artist management app called Artist OS.
-The user is currently on the "${pageContext}" page.
-Today is ${new Date().toDateString()}.
-
-Parse the user's message and respond with a JSON object:
-{
-  "reply": "a short natural-language confirmation of what you're doing (1-2 sentences)",
-  "actions": [
-    {
-      "type": "create_task | create_calendar_event | open_content_scheduler | navigate",
-      "label": "human-readable label",
-      "payload": {
-        "title": "...",       // for tasks/events
-        "startsAt": "ISO string", // for calendar events
-        "to": "/path"         // for navigate actions
-      },
-      "requiresConfirmation": true
-    }
-  ]
-}
-
-Available action types:
-- create_task: create a new task/to-do
-- create_calendar_event: schedule something on the calendar
-- open_content_scheduler: open content/post scheduler
-- navigate: go to a page (/dashboard, /releases, /calendar, /tasks, /goals, /analytics, /content, /coach, /strategy, /network)
-
-If nothing actionable is detected, set actions to [].
-Always respond with valid JSON only — no markdown, no extra text.`;
-
-      const result = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        config: {
-          systemInstruction: systemPrompt,
-          responseMimeType: 'application/json',
-          temperature: 0.3,
-        },
-        contents: [{ role: 'user', parts: [{ text: trimmed }] }],
+      const res = await fetch('/api/assistant/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: trimmed, pageContext }),
       });
-
-      const raw = result.text?.trim() ?? '{}';
-      let parsed: { reply?: string; actions?: AssistantAction[] } = {};
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        parsed = { reply: raw };
-      }
-
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { reply, actions } = await res.json();
       setMessages(prev => [
         ...prev,
         {
           role: 'assistant',
-          content: parsed.reply || 'Done.',
-          actions: parsed.actions ?? [],
+          content: reply || 'Done.',
+          actions: actions ?? [],
         },
       ]);
     } catch (err) {
-      console.error('[Assistant] Gemini error:', err);
+      console.error('[Assistant] error:', err);
       setMessages(prev => [
         ...prev,
         {

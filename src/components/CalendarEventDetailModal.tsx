@@ -148,7 +148,7 @@ export function CalendarEventDetailModal({ isOpen, onClose, event, onDelete, onU
   const getTypeColor = () => {
     switch (event.type) {
       case 'release': return 'bg-blue-600 text-white';
-      case 'post': return 'bg-purple-600 text-white';
+      case 'post': return 'bg-blue-600 text-white';
       case 'show': return 'bg-rose-600 text-white';
       case 'meeting': return 'bg-slate-600 text-white';
       case 'todo': return 'bg-emerald-600 text-white';
@@ -268,7 +268,7 @@ export function CalendarEventDetailModal({ isOpen, onClose, event, onDelete, onU
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-white rounded-xl shadow-sm">
-                    <Video className="w-5 h-5 text-purple-600" />
+                    <Video className="w-5 h-5 text-blue-600" />
                   </div>
                   <div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Platform</p>
@@ -276,7 +276,7 @@ export function CalendarEventDetailModal({ isOpen, onClose, event, onDelete, onU
                   </div>
                 </div>
                 {event.zernioId && (
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-100 text-purple-600 rounded-full text-[10px] font-black uppercase tracking-wider">
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-wider">
                     <Share2 className="w-3 h-3" />
                     Zernio Scheduled
                   </div>

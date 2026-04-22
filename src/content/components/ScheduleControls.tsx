@@ -89,10 +89,10 @@ export function ScheduleControls({
           className={cn(
             "flex-1 flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl font-black text-sm transition-all border-2",
             mode === 'schedule'
-              ? "border-purple-500 bg-purple-50 text-purple-700"
+              ? "border-blue-500 bg-blue-50 text-blue-700"
               : isPublishDisabled || processing
                 ? "border-slate-100 text-slate-300 cursor-not-allowed"
-                : "border-slate-200 text-slate-600 hover:border-purple-300 hover:bg-purple-50/50"
+                : "border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50/50"
           )}
         >
           <Clock className="w-4 h-4" />
@@ -115,8 +115,8 @@ export function ScheduleControls({
             exit={{ opacity: 0, height: 0 }}
             className="overflow-hidden"
           >
-            <div className="bg-purple-50/50 border border-purple-100 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-purple-500">
+            <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-blue-500">
                 <Calendar className="w-3.5 h-3.5" />
                 Schedule for Later
               </div>
@@ -128,7 +128,7 @@ export function ScheduleControls({
                     value={scheduledDate}
                     onChange={(e) => setScheduledDate(e.target.value)}
                     min={new Date().toISOString().split('T')[0]}
-                    className="w-full px-3 py-2.5 bg-white border border-purple-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400"
+                    className="w-full px-3 py-2.5 bg-white border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
                   />
                 </div>
                 <div>
@@ -137,7 +137,7 @@ export function ScheduleControls({
                     type="time"
                     value={scheduledTime}
                     onChange={(e) => setScheduledTime(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-white border border-purple-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400"
+                    className="w-full px-3 py-2.5 bg-white border border-blue-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
                   />
                 </div>
               </div>
@@ -148,7 +148,7 @@ export function ScheduleControls({
                   "w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-black text-sm transition-all",
                   processing || !scheduledDate || !scheduledTime
                     ? "bg-slate-100 text-slate-300 cursor-not-allowed"
-                    : "bg-purple-600 text-white hover:bg-purple-700 shadow-lg shadow-purple-200"
+                    : "bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-200"
                 )}
               >
                 {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Clock className="w-4 h-4" />}

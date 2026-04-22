@@ -1,7 +1,9 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Download, MessageSquare, Pause, Play, Send, X } from 'lucide-react';
 import { saveIdeaComment } from '../lib/supabaseData';
 import type { IdeaAsset, IdeaComment, IdeaRecord } from '../types/domain';
+import { AudioWaveform } from './AudioWaveform';
+import type { WaveformMarker } from './AudioWaveform';
 
 function fmt(value: number) {
   const m = Math.floor(value / 60);
@@ -50,7 +52,6 @@ interface AudioReviewModalProps {
 
 export function AudioReviewModal({ open, idea, assets, comments, onClose, onSaved }: AudioReviewModalProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const progressRef = useRef<HTMLDivElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -86,18 +87,13 @@ export function AudioReviewModal({ open, idea, assets, comments, onClose, onSave
     [versionComments],
   );
 
+
   if (!open || !idea) return null;
 
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const waveformMarkers: WaveformMarker[] = sortedComments
+    .filter((c) => c.timestamp_seconds != null)
+    .map((c) => ({ id: c.id!, time: c.timestamp_seconds! }));
 
-  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
-    const bar = progressRef.current;
-    const audio = audioRef.current;
-    if (!bar || !audio || !duration) return;
-    const rect = bar.getBoundingClientRect();
-    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    audio.currentTime = pct * duration;
-  };
 
   const togglePlay = () => {
     const a = audioRef.current;
@@ -216,36 +212,15 @@ export function AudioReviewModal({ open, idea, assets, comments, onClose, onSave
                 </a>
               </div>
 
-              {/* Full-width scrubber */}
-              <div
-                ref={progressRef}
-                onClick={seek}
-                className="relative h-10 cursor-pointer flex items-center"
-              >
-                {/* Track */}
-                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1.5 rounded-full bg-slate-100" />
-                {/* Fill */}
-                <div
-                  className="absolute left-0 top-1/2 -translate-y-1/2 h-1.5 rounded-full bg-slate-900 pointer-events-none"
-                  style={{ width: `${progress}%` }}
-                />
-                {/* Comment marker dots */}
-                {duration > 0 &&
-                  sortedComments
-                    .filter((c) => c.timestamp_seconds != null)
-                    .map((c) => (
-                      <div
-                        key={c.id}
-                        className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-violet-500 ring-2 ring-white pointer-events-none"
-                        style={{ left: `calc(${(c.timestamp_seconds! / duration) * 100}% - 4px)` }}
-                      />
-                    ))}
-                {/* Scrubber thumb */}
-                <div
-                  className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-slate-900 shadow-md pointer-events-none"
-                  style={{ left: `calc(${progress}% - 8px)` }}
-                />
-              </div>
+              {/* Full-width waveform / scrubber */}
+              <AudioWaveform
+                audioUrl={audioAsset.file_url}
+                currentTime={currentTime}
+                duration={duration}
+                onSeek={(t) => { if (audioRef.current) audioRef.current.currentTime = t; }}
+                markers={waveformMarkers}
+                height={64}
+              />
 
               {/* Controls */}
               <div className="flex items-center gap-4 mt-3">
@@ -263,7 +238,7 @@ export function AudioReviewModal({ open, idea, assets, comments, onClose, onSave
                 </span>
                 {sortedComments.filter((c) => c.timestamp_seconds != null).length > 0 && (
                   <span className="ml-auto flex items-center gap-1.5 text-xs text-slate-400">
-                    <span className="w-2 h-2 rounded-full bg-violet-500 inline-block" />
+                    <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
                     {sortedComments.filter((c) => c.timestamp_seconds != null).length} marker
                     {sortedComments.filter((c) => c.timestamp_seconds != null).length !== 1 ? 's' : ''}
                   </span>

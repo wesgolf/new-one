@@ -59,7 +59,7 @@ export function DailyGamePlan({ tasks = [], onAction, isAI }: { tasks?: DailyTas
                 <div className={cn(
                   "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
                   task.category === 'Content' && "bg-blue-100 text-blue-600",
-                  task.category === 'Release' && "bg-purple-100 text-purple-600",
+                  task.category === 'Release' && "bg-blue-100 text-blue-600",
                   task.category === 'Engagement' && "bg-emerald-100 text-emerald-600",
                   task.category === 'Admin' && "bg-slate-100 text-slate-600"
                 )}>

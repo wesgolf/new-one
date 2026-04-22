@@ -1,13 +1,19 @@
+/**
+ * PublicHub — Premium EDM Artist Landing Page
+ *
+ * Sections: Hero → Featured → Music → Shows → Contact
+ * Features: Scroll-driven sticky logo, floating glassmorphism nav,
+ *           stacked release cards, track list, email capture.
+ */
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Disc3, Lock, Instagram, Youtube, Radio, ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
+import { Disc3, Lock, Instagram, Youtube, Radio, ArrowRight, LogIn } from 'lucide-react';
 import { ARTIST_INFO } from '../constants';
 import { publicHubLinks, ARTIST_SOCIAL_LINKS } from '../content/publicHubLinks';
 import { fetchReleases } from '../lib/supabaseData';
 import { LinkCard } from '../components/LinkCard';
 import type { ReleaseRecord } from '../types/domain';
-
 // Social icon map — keys must match ARTIST_SOCIAL_LINKS[].icon values
 const SOCIAL_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Instagram,
@@ -38,13 +44,24 @@ export function PublicHub({ authPanel }: PublicHubProps) {
   return (
     <div
       className="min-h-screen"
-      style={{ background: 'linear-gradient(160deg, #14111f 0%, #0d0c14 55%, #100e1a 100%)' }}
+      style={{ background: 'linear-gradient(160deg, #0a0e1a 0%, #080c16 55%, #0a0e1a 100%)' }}
     >
-      {/* Ambient purple glow at top */}
+      {/* Ambient blue glow at top */}
       <div
-        className="pointer-events-none fixed inset-x-0 top-0 h-[420px] opacity-[0.18]"
-        style={{ background: 'radial-gradient(ellipse 70% 40% at 50% -10%, #7c3aed, transparent)' }}
+        className="pointer-events-none fixed inset-x-0 top-0 h-[420px] opacity-[0.15]"
+        style={{ background: 'radial-gradient(ellipse 70% 40% at 50% -10%, #2563eb, transparent)' }}
       />
+
+      {/* ── Login button top-right ── */}
+      <div className="fixed top-4 right-4 z-50">
+        <Link
+          to="/login"
+          className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-[13px] font-semibold text-white/70 backdrop-blur-sm transition-all hover:bg-white/[0.12] hover:text-white hover:border-white/20"
+        >
+          <LogIn className="h-3.5 w-3.5" />
+          Sign In
+        </Link>
+      </div>
 
       {/* ── Page column ─────────────────────────────────────── */}
       <div className="relative mx-auto max-w-[400px] px-4 py-12 pb-20">
@@ -59,7 +76,7 @@ export function PublicHub({ authPanel }: PublicHubProps) {
           {/* Avatar */}
           <div
             className="flex h-[76px] w-[76px] items-center justify-center rounded-full ring-[1.5px] ring-white/10"
-            style={{ background: 'linear-gradient(135deg, #6d28d9 0%, #a855f7 100%)' }}
+            style={{ background: 'linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%)' }}
           >
             <span className="text-[20px] font-bold tracking-tight text-white">WES</span>
           </div>
@@ -176,7 +193,7 @@ export function PublicHub({ authPanel }: PublicHubProps) {
           transition={{ duration: 0.5, delay: 0.24, ease: [0.22, 1, 0.36, 1] }}
         >
           {subscribed ? (
-            <div className="rounded-2xl border border-violet-500/25 bg-violet-500/10 px-5 py-4 text-center">
+              <div className="rounded-2xl border border-blue-500/25 bg-blue-500/10 px-5 py-4 text-center">
               <p className="text-[14px] font-semibold text-white">You're on the list ✓</p>
               <p className="mt-1 text-[12px] text-white/40">
                 New releases and updates on their way.
@@ -200,11 +217,11 @@ export function PublicHub({ authPanel }: PublicHubProps) {
                   placeholder="your@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="min-w-0 flex-1 rounded-xl border border-white/[0.08] bg-white/[0.05] px-4 py-2.5 text-[13px] text-white placeholder:text-white/20 focus:border-violet-500/40 focus:outline-none focus:ring-1 focus:ring-violet-500/25 transition-all"
+                  className="min-w-0 flex-1 rounded-xl border border-white/[0.08] bg-white/[0.05] px-4 py-2.5 text-[13px] text-white placeholder:text-white/20 focus:border-blue-500/40 focus:outline-none focus:ring-1 focus:ring-blue-500/25 transition-all"
                 />
                 <button
                   type="submit"
-                  className="shrink-0 rounded-xl bg-violet-600 px-4 py-2.5 text-[13px] font-semibold text-white transition-all hover:bg-violet-500 active:scale-[0.97]"
+                  className="shrink-0 rounded-xl bg-blue-600 px-4 py-2.5 text-[13px] font-semibold text-white transition-all hover:bg-blue-500 active:scale-[0.97]"
                 >
                   Join
                 </button>

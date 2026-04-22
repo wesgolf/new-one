@@ -1,15 +1,14 @@
-const CACHE_NAME = 'artist-os-v6';
-const ASSETS = [
-  '/',
+const CACHE_NAME = 'artist-os-v7';
+const SHELL_ASSETS = [
   '/index.html',
   '/manifest.json',
-  '/favicon.svg'
+  '/favicon.svg',
 ];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_ASSETS))
   );
 });
 
@@ -29,25 +28,45 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Pass through all cross-origin requests (Supabase, Spotify, SoundCloud, Zernio, Gemini, Sentry)
+  // 1. Pass through all cross-origin requests (Supabase, Spotify, SoundCloud, Gemini, Sentry, etc.)
   if (url.origin !== self.location.origin) {
     return;
   }
 
-  // Pass through API routes — never cache these
+  // 2. Pass through API routes — never cache, never intercept
   if (url.pathname.startsWith('/api/')) {
     return;
   }
 
-  // For same-origin navigation requests fall back to /index.html (SPA routing)
+  // 3. SPA navigation — always serve the app shell (index.html).
+  //    Fetch /index.html directly rather than the navigation URL (/coach, /releases, etc.)
+  //    so we never depend on the CDN rewrite being applied for SW-originated requests.
+  //    A full .catch() ensures the promise NEVER rejects, which is the root cause of the
+  //    "FetchEvent resulted in a network error: the promise was rejected" error on /coach.
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      caches.match('/index.html').then((cached) => cached || fetch(event.request))
+      caches.match('/index.html').then((cached) => {
+        if (cached) return cached;
+        // Fetch the app shell directly — more reliable than fetching the nav URL
+        return fetch('/index.html', { cache: 'no-cache' });
+      }).catch(() =>
+        // Offline / network error: return cached shell or a minimal offline page
+        caches.match('/index.html').then((cached) =>
+          cached ||
+          new Response(
+            '<!doctype html><html><head><meta charset="UTF-8"><title>Offline</title></head>' +
+            '<body style="font-family:sans-serif;text-align:center;padding:4rem">' +
+            '<h2>You\'re offline</h2><p>Reconnect and reload to continue.</p></body></html>',
+            { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+          )
+        )
+      )
     );
     return;
   }
 
-  // Cache-first for static assets, network fallback
+  // 4. Static assets — cache-first, network fallback.
+  //    The .catch() MUST return a real Response (not undefined) to avoid a network error.
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
@@ -58,12 +77,10 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
         return response;
-      }).catch(() => {
-        // Network unavailable — for HTML navigation return app shell
-        if (event.request.headers.get('Accept')?.includes('text/html')) {
-          return caches.match('/index.html');
-        }
-      });
+      }).catch(() =>
+        // Network unavailable — return a real Response so the promise never rejects
+        new Response('', { status: 408, statusText: 'Network Timeout' })
+      );
     })
   );
 });

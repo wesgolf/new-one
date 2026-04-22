@@ -36,7 +36,7 @@ const PLATFORM_COLORS: Record<string, string> = {
   soundcloud: 'bg-orange-50 text-orange-600',
   twitter:    'bg-sky-50 text-sky-600',
   x:          'bg-sky-50 text-sky-600',
-  podcast:    'bg-purple-50 text-purple-600',
+  podcast:    'bg-blue-50 text-blue-600',
   show:       'bg-indigo-50 text-indigo-600',
 };
 

@@ -170,14 +170,14 @@ export const ContentCreatorPanel: React.FC<ContentCreatorPanelProps> = ({
             {/* Caption Input */}
             <div className="space-y-3">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                <MessageSquare className="w-3.5 h-3.5 text-purple-500" />
+                <MessageSquare className="w-3.5 h-3.5 text-blue-500" />
                 Caption & Story
               </label>
               <textarea 
                 value={formData.caption}
                 onChange={e => setFormData({ ...formData, caption: e.target.value })}
                 placeholder="Tell the story behind the clip..."
-                className="w-full bg-slate-50 border-2 border-slate-100 rounded-[1.5rem] p-6 text-sm font-bold text-slate-700 placeholder:text-slate-300 focus:outline-none focus:border-purple-500/30 focus:ring-4 focus:ring-purple-500/5 transition-all resize-none min-h-[150px]"
+                className="w-full bg-slate-50 border-2 border-slate-100 rounded-[1.5rem] p-6 text-sm font-bold text-slate-700 placeholder:text-slate-300 focus:outline-none focus:border-blue-500/30 focus:ring-4 focus:ring-blue-500/5 transition-all resize-none min-h-[150px]"
               />
             </div>
 

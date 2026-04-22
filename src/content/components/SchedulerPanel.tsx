@@ -100,10 +100,10 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
         <div className="space-y-8">
           <div className="flex items-center justify-between px-2">
             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-              <Target className="w-3.5 h-3.5 text-purple-500" />
+              <Target className="w-3.5 h-3.5 text-blue-500" />
               Release Campaign: "{releases[0]?.title || 'Upcoming Release'}"
             </h4>
-            <span className="text-[10px] font-black text-purple-600 uppercase tracking-widest">Active Campaign</span>
+            <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Active Campaign</span>
           </div>
 
           <div className="relative space-y-6 pl-8 border-l-2 border-slate-100 ml-4">
@@ -115,11 +115,11 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
                 transition={{ delay: i * 0.1 }}
                 className="relative group"
               >
-                <div className="absolute -left-[41px] top-1/2 -translate-y-1/2 w-4 h-4 bg-white border-2 border-slate-200 rounded-full z-10 group-hover:border-purple-500 transition-colors" />
-                <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 hover:border-purple-200 hover:bg-white hover:shadow-lg transition-all">
+                <div className="absolute -left-[41px] top-1/2 -translate-y-1/2 w-4 h-4 bg-white border-2 border-slate-200 rounded-full z-10 group-hover:border-blue-500 transition-colors" />
+                <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 hover:border-blue-200 hover:bg-white hover:shadow-lg transition-all">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <div className="px-2 py-0.5 bg-purple-50 text-purple-600 rounded text-[8px] font-black uppercase tracking-widest border border-purple-100">
+                      <div className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-widest border border-blue-100">
                         {suggestion.suggested_post_type.replace('_', ' ')}
                       </div>
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -128,7 +128,7 @@ export const SchedulerPanel: React.FC<SchedulerPanelProps> = ({
                     </div>
                     <button 
                       onClick={() => onAddSuggestion(suggestion)}
-                      className="p-1.5 hover:bg-purple-50 rounded-lg text-slate-400 hover:text-purple-600 transition-colors"
+                      className="p-1.5 hover:bg-blue-50 rounded-lg text-slate-400 hover:text-blue-600 transition-colors"
                     >
                       <Plus className="w-4 h-4" />
                     </button>

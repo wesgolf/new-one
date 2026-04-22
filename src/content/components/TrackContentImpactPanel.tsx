@@ -40,8 +40,8 @@ export const TrackContentImpactPanel: React.FC<TrackContentImpactPanelProps> = (
     <section className="glass-card p-8 lg:p-10 space-y-10">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center">
-            <Music className="w-6 h-6 text-purple-600" />
+          <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center">
+            <Music className="w-6 h-6 text-blue-600" />
           </div>
           <div className="space-y-1">
             <h3 className="text-2xl font-black text-slate-900 tracking-tight">Content Impact by Track</h3>

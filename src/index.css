@@ -1,38 +1,54 @@
 @import "tailwindcss";
 
 @theme {
-  /* === WES · ARTIST OS — Design Tokens === */
+  /* ── WES · ARTIST OS — Design Tokens ────────────────────────────────────── */
 
-  /* Brand */
-  --color-brand: #7c3aed;
-  --color-brand-hover: #6d28d9;
-  --color-brand-light: #ede9fe;
-  --color-brand-dim: rgba(124 58 237 / 0.1);
+  /* Brand — muted blue, not harsh */
+  --color-brand:        #2563eb;
+  --color-brand-hover:  #1d4ed8;
+  --color-brand-light:  #dbeafe;
+  --color-brand-dim:    rgba(37 99 235 / 0.08);
+  --color-brand-ring:   rgba(37 99 235 / 0.18);
 
-  /* Content surfaces */
-  --color-background: #f5f4f0;
-  --color-surface: #ffffff;
-  --color-surface-raised: #f9f8f6;
+  /* Page background — cool blue-tinted near-white (premium vs warm beige) */
+  --color-background:       #eef0f8;
+  --color-background-subtle:#f5f6fb;
 
-  /* Borders */
-  --color-border: #e4e3df;
-  --color-card: #ffffff;
+  /* Surfaces */
+  --color-surface:        #ffffff;
+  --color-surface-raised: #f4f6ff;
+  --color-surface-glass:  rgba(255, 255, 255, 0.82);
+
+  /* Borders — cool-toned, not warm */
+  --color-border:       #dde1ee;
+  --color-border-light: rgba(221, 225, 238, 0.6);
+  --color-card:         #ffffff;
 
   /* Text hierarchy */
-  --color-text-primary: #0f0e17;
-  --color-text-secondary: #3d3c4a;
-  --color-text-tertiary: #9d9aaa;
-  --color-text-muted: #7a7988;
+  --color-text-primary:   #0d0e1a;
+  --color-text-secondary: #3a3b4e;
+  --color-text-tertiary:  #8a8ba0;
+  --color-text-muted:     #a0a1b5;
 
   /* Light surface variants */
-  --color-light-surface: #ffffff;
-  --color-light-surface-secondary: #f0eff0;
+  --color-light-surface:           #ffffff;
+  --color-light-surface-secondary: #f0f2fa;
 
   /* Legacy compat aliases */
-  --color-accent: #7c3aed;
-  --color-muted: #7a7988;
-  --color-neon-purple: #a855f7;
-  --color-accent-foreground: #ffffff;
+  --color-accent:             #2563eb;
+  --color-muted:              #a0a1b5;
+  --color-neon-purple:        #60a5fa;
+  --color-accent-foreground:  #ffffff;
+
+  /* Semantic status */
+  --color-success:  #059669;
+  --color-warning:  #d97706;
+  --color-error:    #dc2626;
+
+  /* Elevation / shadows (as CSS vars for use in arbitrary box-shadow values) */
+  --shadow-card:    0 1px 3px rgba(13, 14, 26, 0.04), 0 4px 12px rgba(13, 14, 26, 0.04);
+  --shadow-lifted:  0 2px 6px rgba(13, 14, 26, 0.05), 0 8px 24px rgba(13, 14, 26, 0.07);
+  --shadow-modal:   0 8px 32px rgba(13, 14, 26, 0.14), 0 2px 8px rgba(13, 14, 26, 0.08);
 }
 
 @layer base {
@@ -48,35 +64,99 @@
 }
 
 @layer components {
+
+  /* ── Cards ─────────────────────────────────────────────────────────────── */
+
+  /* Standard surface card — used everywhere in the authenticated app */
   .glass-card {
-    @apply bg-surface border border-border rounded-2xl shadow-sm;
+    background: var(--color-surface-glass);
+    border: 1px solid var(--color-border-light);
+    border-radius: 1rem; /* rounded-2xl */
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: box-shadow 0.18s ease, border-color 0.18s ease;
   }
 
+  .glass-card:hover {
+    box-shadow: var(--shadow-lifted);
+    border-color: var(--color-border);
+  }
+
+  /* Elevated modal / overlay card */
+  .glass-modal {
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid var(--color-border);
+    border-radius: 1.5rem; /* rounded-3xl */
+    box-shadow: var(--shadow-modal);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+  }
+
+  /* ── Buttons ────────────────────────────────────────────────────────────── */
+
   .btn-primary {
-    @apply bg-brand hover:bg-brand-hover text-white px-4 py-2 rounded-xl font-semibold text-sm transition-all active:scale-[0.97] flex items-center justify-center gap-2;
+    @apply inline-flex items-center justify-center gap-2;
+    @apply bg-brand hover:bg-brand-hover active:scale-[0.97];
+    @apply text-white font-semibold text-sm;
+    @apply px-4 py-2.5 rounded-xl;
+    @apply shadow-sm transition-all duration-150;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40;
   }
 
   .btn-secondary {
-    @apply bg-surface hover:bg-surface-raised text-text-secondary px-4 py-2 rounded-xl font-semibold text-sm transition-all active:scale-[0.97] flex items-center justify-center gap-2 border border-border shadow-sm;
+    @apply inline-flex items-center justify-center gap-2;
+    @apply bg-white hover:bg-surface-raised active:scale-[0.97];
+    @apply text-text-secondary hover:text-text-primary font-semibold text-sm;
+    @apply px-4 py-2.5 rounded-xl;
+    @apply border border-border shadow-sm transition-all duration-150;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/20;
   }
 
-  .badge {
-    @apply px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide;
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2;
+    @apply hover:bg-surface-raised active:scale-[0.97];
+    @apply text-text-muted hover:text-text-primary font-medium text-sm;
+    @apply px-3 py-2 rounded-xl transition-all duration-150;
   }
+
+  /* ── Inputs ─────────────────────────────────────────────────────────────── */
 
   .input-base {
-    @apply w-full rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-brand/20 transition-all;
+    @apply w-full rounded-xl border border-border bg-white px-4 py-3 text-sm;
+    @apply text-text-primary placeholder:text-text-muted;
+    @apply focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand/40;
+    @apply transition-all duration-150;
   }
 
+  /* ── Pills & badges ────────────────────────────────────────────────────── */
+
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide;
+  }
+
+  .pill {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border;
+  }
+
+  /* Section label — tiny all-caps above sections */
+  .section-label {
+    @apply text-[10px] font-bold uppercase tracking-[0.18em] text-text-muted;
+  }
+
+  /* ── Glow accent ────────────────────────────────────────────────────────── */
+
   .neon-glow {
-    box-shadow: 0 0 16px rgba(124, 58, 237, 0.12);
+    box-shadow: 0 0 20px rgba(37, 99, 235, 0.10), 0 0 48px rgba(37, 99, 235, 0.04);
   }
 }
 
+
 /* ── PDF / Print export ────────────────────────────────────────────────────────
  * When window.print() is called, only #wos-report-print is visible.
- * Everything else is hidden via visibility:hidden (preserves layout reflow).
- * The report is positioned absolute top-left so it fills the entire page.
+ * WeeklyReportModal renders the report into a React portal (document.body)
+ * with id="wos-report-print" OUTSIDE any modal overflow constraints.
+ * position:fixed removes it from any ancestor overflow/position stacking.
  * ─────────────────────────────────────────────────────────────────────────── */
 @media print {
   @page {
@@ -90,14 +170,16 @@
 
   #wos-report-print,
   #wos-report-print * {
-    visibility: visible;
+    visibility: visible !important;
   }
 
   #wos-report-print {
-    position: absolute;
-    left: 0;
-    top: 0;
+    position: fixed !important;
+    inset: 0;
     width: 100%;
     background: white !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }

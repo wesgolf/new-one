@@ -63,7 +63,7 @@ export function LinkCard({ link }: LinkCardProps) {
 
       {/* Highlight ring for featured links */}
       {link.highlight && (
-        <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-inset ring-violet-500/30" />
+        <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-inset ring-blue-500/30" />
       )}
     </div>
   );

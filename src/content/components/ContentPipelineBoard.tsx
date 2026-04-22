@@ -27,16 +27,16 @@ import { motion, Reorder } from 'motion/react';
 interface ContentPipelineBoardProps {
   items: ContentItem[];
   releases: Release[];
-  onEdit: (item: ContentItem) => void;
-  onDelete: (id: string) => void;
-  onPostNow: (item: ContentItem) => void;
-  onStatusChange: (id: string, newStatus: ContentStatus) => void;
+  onEdit?: (item: ContentItem) => void;
+  onDelete?: (id: string) => void;
+  onPostNow?: (item: ContentItem) => void;
+  onStatusChange?: (id: string, newStatus: ContentStatus) => void;
 }
 
 const statusColumns: { status: ContentStatus; label: string; icon: any; color: string }[] = [
   { status: 'idea', label: 'Ideas', icon: Lightbulb, color: 'text-amber-500' },
   { status: 'drafting', label: 'Drafting', icon: Video, color: 'text-blue-500' },
-  { status: 'ready', label: 'Ready', icon: Sparkles, color: 'text-purple-500' },
+  { status: 'ready', label: 'Ready', icon: Sparkles, color: 'text-blue-500' },
   { status: 'scheduled', label: 'Scheduled', icon: Clock, color: 'text-emerald-500' },
   { status: 'posted', label: 'Posted', icon: CheckCircle2, color: 'text-slate-900' },
 ];
@@ -83,9 +83,9 @@ export const ContentPipelineBoard: React.FC<ContentPipelineBoardProps> = ({
                   key={item.id} 
                   onClick={() => {
                     if (item.status === 'ready' || item.status === 'scheduled') {
-                      onPostNow(item);
+                      onPostNow?.(item);
                     } else {
-                      onEdit(item);
+                      onEdit?.(item);
                     }
                   }}
                   className="glass-card p-5 hover:border-blue-300 transition-all cursor-pointer group relative overflow-hidden bg-white shadow-sm hover:shadow-xl hover:-translate-y-1"
@@ -106,7 +106,7 @@ export const ContentPipelineBoard: React.FC<ContentPipelineBoardProps> = ({
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
-                          onEdit(item);
+                          onEdit?.(item);
                         }}
                         className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-blue-600 transition-colors"
                       >
@@ -115,7 +115,7 @@ export const ContentPipelineBoard: React.FC<ContentPipelineBoardProps> = ({
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
-                          onDelete(item.id);
+                          onDelete?.(item.id);
                         }}
                         className="p-1.5 hover:bg-rose-50 rounded-lg text-slate-400 hover:text-rose-600 transition-colors"
                       >

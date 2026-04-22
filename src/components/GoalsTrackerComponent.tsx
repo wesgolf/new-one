@@ -21,7 +21,6 @@ import {
 import { cn } from '../lib/utils';
 import { Goal, GoalEntry } from '../types';
 import { supabase } from '../lib/supabase';
-import { GoogleGenAI } from '@google/genai';
 import { GoalModal } from './GoalModal';
 import { calculateGoalPace } from '../engine/growth';
 
@@ -44,7 +43,7 @@ const TRACKING_BADGE: Record<string, { bg: string; label: string }> = {
 
 const TYPE_BADGE: Record<string, { bg: string; label: string }> = {
   count:     { bg: 'bg-slate-50 text-slate-500',   label: 'Count'     },
-  ratio:     { bg: 'bg-purple-50 text-purple-600', label: 'Ratio'     },
+  ratio:     { bg: 'bg-blue-50 text-blue-600', label: 'Ratio'     },
   milestone: { bg: 'bg-amber-50 text-amber-600',   label: 'Milestone' },
   custom:    { bg: 'bg-rose-50 text-rose-500',     label: 'Custom'    },
 };
@@ -178,42 +177,41 @@ export default function GoalsTrackerComponent({ onAction }: GoalsTrackerProps) {
     if (goals.length === 0) return;
     setAnalyzing(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
       const currentDate = new Date().toISOString().split('T')[0];
       const { data: shows } = await supabase.from('shows').select('*');
 
-      const statusResponse = await ai.models.generateContent({
-        model:   'gemini-2.0-flash',
-        config:  { responseMimeType: 'application/json' },
-        contents: `Today: ${currentDate}. Analyze these artist goals. For each return { status: 'on-track'|'at-risk'|'behind', reasoning: max 10 words }. Shows context: ${JSON.stringify(shows?.slice(0, 5))}. Goals: ${JSON.stringify(goals.map(g => ({
-          id:         g.id,
-          title:      g.title,
-          goal_type:  g.goal_type ?? 'count',
-          target:     g.target,
-          current:    g.current,
-          unit:       g.unit,
-          deadline:   g.deadline,
-          is_timeless: g.is_timeless,
-        })))}`,
+      const res = await fetch('/api/goals/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentDate,
+          shows: shows?.slice(0, 5) ?? [],
+          goals: goals.map((g) => ({
+            id:          g.id,
+            title:       g.title,
+            goal_type:   g.goal_type ?? 'count',
+            target:      g.target,
+            current:     g.current,
+            unit:        g.unit,
+            deadline:    g.deadline,
+            is_timeless: g.is_timeless,
+          })),
+        }),
       });
 
-      try {
-        const statuses = JSON.parse(statusResponse.text);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { statuses, analysis } = await res.json();
+
+      if (statuses) {
         setGoalStatuses(statuses);
-        // Update auto-tracked goals if AI found a new current value
         for (const goalId in statuses) {
-          const goal = goals.find(g => g.id === goalId);
-          if (goal && effectiveTrackingMode(goal) !== 'manual' && statuses[goalId].current !== undefined) {
+          const goal = goals.find((g) => g.id === goalId);
+          if (goal && effectiveTrackingMode(goal) !== 'manual' && statuses[goalId]?.current !== undefined) {
             await updateGoalProgress(goalId, statuses[goalId].current);
           }
         }
-      } catch { /* ignore parse error */ }
-
-      const summaryRes = await ai.models.generateContent({
-        model:   'gemini-2.0-flash',
-        contents: `Today: ${currentDate}. Artist goals: ${JSON.stringify(goals.map(g => ({ title: g.title, progress: g.target > 0 ? Math.round((g.current / g.target) * 100) + '%' : 'timeless' })))}. Give a short 2-sentence strategic insight.`,
-      });
-      setAnalysis(summaryRes.text || 'Keep pushing towards your targets!');
+      }
+      setAnalysis(analysis ?? 'Keep pushing towards your targets!');
     } catch (err) {
       console.error('AI Analysis failed:', err);
       setAnalysis('Focus on short-term social goals to build momentum for your streaming targets.');
@@ -252,7 +250,7 @@ export default function GoalsTrackerComponent({ onAction }: GoalsTrackerProps) {
           {goal.target > 0 && (
             <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
               <div
-                className={cn('h-full transition-all duration-700', goal.current >= goal.target ? 'bg-emerald-500' : 'bg-purple-500')}
+                className={cn('h-full transition-all duration-700', goal.current >= goal.target ? 'bg-emerald-500' : 'bg-blue-500')}
                 style={{ width: `${Math.min((goal.current / goal.target) * 100, 100)}%` }}
               />
             </div>
@@ -575,7 +573,7 @@ export default function GoalsTrackerComponent({ onAction }: GoalsTrackerProps) {
   const columns = [
     { key: 'short'  as const, icon: <Zap        className="w-4 h-4 text-amber-500"  />, label: 'Short Term'  },
     { key: 'medium' as const, icon: <Target      className="w-4 h-4 text-blue-500"   />, label: 'Medium Term' },
-    { key: 'long'   as const, icon: <ArrowUpRight className="w-4 h-4 text-purple-500" />, label: 'Long Term'   },
+    { key: 'long'   as const, icon: <ArrowUpRight className="w-4 h-4 text-blue-500" />, label: 'Long Term'   },
   ];
 
   return (
@@ -642,35 +640,35 @@ export default function GoalsTrackerComponent({ onAction }: GoalsTrackerProps) {
 
       {/* AI Analysis */}
       {goals.length > 0 && (
-        <div className="mt-8 p-4 bg-purple-50 border border-purple-100 rounded-2xl">
+        <div className="mt-8 p-4 bg-blue-50 border border-blue-100 rounded-2xl">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-purple-600" />
-              <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">AI Analysis</p>
+              <Sparkles className="w-4 h-4 text-blue-600" />
+              <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">AI Analysis</p>
             </div>
             {!analyzing && !analysis && (
-              <button onClick={runAIAnalysis} className="text-[10px] font-bold text-purple-600 hover:underline">
+              <button onClick={runAIAnalysis} className="text-[10px] font-bold text-blue-600 hover:underline">
                 Analyze Progress
               </button>
             )}
             {!analyzing && analysis && (
               <button
                 onClick={() => { setAnalysis(null); runAIAnalysis(); }}
-                className="flex items-center gap-1 text-[10px] text-purple-400 hover:text-purple-600"
+                className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-600"
               >
                 <RefreshCw className="w-3 h-3" /> Refresh
               </button>
             )}
           </div>
           {analyzing ? (
-            <div className="flex items-center gap-2 text-purple-600">
+            <div className="flex items-center gap-2 text-blue-600">
               <Loader2 className="w-3 h-3 animate-spin" />
               <p className="text-xs font-medium italic">Generating insights...</p>
             </div>
           ) : analysis ? (
-            <p className="text-xs font-medium text-purple-900 leading-relaxed">{analysis}</p>
+            <p className="text-xs font-medium text-blue-900 leading-relaxed">{analysis}</p>
           ) : (
-            <p className="text-xs text-purple-400 italic">
+            <p className="text-xs text-blue-400 italic">
               Click analyze to get strategic insights on your goals.
             </p>
           )}

@@ -38,7 +38,7 @@ export function AlertsPanel({ alerts = [], onAction }: { alerts?: Signal[], onAc
                 alert.type === 'insight' && "bg-blue-50/50 border-blue-100",
                 alert.type === 'warning' && "bg-rose-50/50 border-rose-100",
                 alert.type === 'momentum' && "bg-emerald-50/50 border-emerald-100",
-                alert.type === 'opportunity' && "bg-purple-50/50 border-purple-100"
+                alert.type === 'opportunity' && "bg-blue-50/50 border-blue-100"
               )}
             >
               <div className="flex items-start gap-4">
@@ -47,7 +47,7 @@ export function AlertsPanel({ alerts = [], onAction }: { alerts?: Signal[], onAc
                   alert.type === 'insight' && "bg-blue-100 text-blue-600",
                   alert.type === 'warning' && "bg-rose-100 text-rose-600",
                   alert.type === 'momentum' && "bg-emerald-100 text-emerald-600",
-                  alert.type === 'opportunity' && "bg-purple-100 text-purple-600"
+                  alert.type === 'opportunity' && "bg-blue-100 text-blue-600"
                 )}>
                   {alert.type === 'momentum' && <TrendingUp className="w-5 h-5" />}
                   {alert.type === 'warning' && <TrendingDown className="w-5 h-5" />}
@@ -61,7 +61,7 @@ export function AlertsPanel({ alerts = [], onAction }: { alerts?: Signal[], onAc
                       alert.type === 'insight' && "text-blue-900",
                       alert.type === 'warning' && "text-rose-900",
                       alert.type === 'momentum' && "text-emerald-900",
-                      alert.type === 'opportunity' && "text-purple-900"
+                      alert.type === 'opportunity' && "text-blue-900"
                     )}>{alert.title}</p>
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Now</span>
                   </div>

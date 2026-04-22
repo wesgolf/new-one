@@ -9,7 +9,6 @@
  *   - Returns a fully-typed WeeklyReport
  */
 
-import { GoogleGenAI } from '@google/genai';
 import {
   fetchTasks,
   fetchReleases,
@@ -27,16 +26,6 @@ import type {
 } from '../types/domain';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-let _ai: GoogleGenAI | null = null;
-function getAI(): GoogleGenAI {
-  if (!_ai) {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!apiKey) throw new Error('VITE_GEMINI_API_KEY not set');
-    _ai = new GoogleGenAI({ apiKey });
-  }
-  return _ai;
-}
 
 function inRange(dateStr: string | null | undefined, start: Date, end: Date): boolean {
   if (!dateStr) return false;
@@ -341,22 +330,24 @@ export async function buildWeeklyReport(
   // AI executive summary — non-blocking optional step
   let executiveSummary: string | undefined;
   try {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (apiKey) {
-      const digest = sections.map((s) => ({
-        section: s.title,
-        stats: s.stats,
-        items: s.items.slice(0, 3).map((i) => `${i.status === 'positive' ? '✓' : i.status === 'negative' ? '✗' : '·'} ${i.text}`),
-      }));
-
-      const response = await getAI().models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: `You are writing a 2-3 sentence executive summary for ${ARTIST_INFO.name}'s weekly artist report.
-Period: ${fmtDate(start)} – ${fmtDate(end)}
-Data: ${JSON.stringify(digest)}
-Be direct, specific, and action-oriented. Avoid fluff. Focus on the most impactful insight.`,
-      });
-      executiveSummary = response.text?.trim();
+    const digest = sections.map((s) => ({
+      section: s.title,
+      stats: s.stats,
+      items: s.items.slice(0, 3).map((i) => `${i.status === 'positive' ? '✓' : i.status === 'negative' ? '✗' : '·'} ${i.text}`),
+    }));
+    const res = await fetch('/api/report/summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sections: digest,
+        artistName: ARTIST_INFO.name,
+        start: fmtDate(start),
+        end: fmtDate(end),
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      executiveSummary = data.summary ?? undefined;
     }
   } catch {
     // AI summary is optional — never block report generation

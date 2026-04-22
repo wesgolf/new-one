@@ -3,6 +3,7 @@ import { format, isPast, isToday, parseISO } from 'date-fns';
 import { AlertCircle, CheckCircle2, Circle, Clock, Filter, Plus, Search, User2 } from 'lucide-react';
 import { fetchTasks, safeProfiles, saveTask } from '../lib/supabaseData';
 import { useCurrentUser } from '../hooks/useCurrentUser';
+import { usePermissions } from '../hooks/usePermissions';
 import { subscribeAssistantActions } from '../lib/commandBus';
 import type { ProfileSummary, TaskPriority, TaskRecord, TaskStatus } from '../types/domain';
 
@@ -161,6 +162,7 @@ function TaskModal({ open, profiles, initialTask, onClose, onSaved }: TaskModalP
 
 export function Tasks() {
   const { authUser } = useCurrentUser();
+  const { canCreateTasks, canEditTasks, canDeleteTasks } = usePermissions();
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -190,16 +192,18 @@ export function Tasks() {
   useEffect(() => {
     return subscribeAssistantActions((action) => {
       if (action.type === 'create_task') {
-        setSelectedTask({
-          title: action.payload?.title || '',
-          due_date: action.payload?.startsAt || null,
-          status: 'todo',
-          priority: 'medium',
-        });
-        setModalOpen(true);
+        if (canCreateTasks) {
+          setSelectedTask({
+            title: action.payload?.title || '',
+            due_date: action.payload?.startsAt || null,
+            status: 'todo',
+            priority: 'medium',
+          });
+          setModalOpen(true);
+        }
       }
     });
-  }, []);
+  }, [canCreateTasks]);
 
   const profileMap = useMemo(
     () =>
@@ -252,6 +256,7 @@ export function Tasks() {
             Track assignments for the artist and manager, keep dashboard views personal, and keep tasks calendar-ready.
           </p>
         </div>
+        {canCreateTasks && (
         <button
           type="button"
           onClick={() => {
@@ -267,6 +272,7 @@ export function Tasks() {
           <Plus className="h-4 w-4" />
           New Task
         </button>
+        )}
       </header>
 
       <section className="grid gap-4 rounded-[2rem] border border-border bg-white p-5 shadow-sm lg:grid-cols-[1.2fr_repeat(4,minmax(0,1fr))]">
@@ -346,6 +352,7 @@ export function Tasks() {
                   return (
                     <tr key={task.id} className="align-top">
                       <td className="px-6 py-5">
+                        {canEditTasks ? (
                         <button
                           type="button"
                           className="text-left"
@@ -357,6 +364,12 @@ export function Tasks() {
                           <div className="font-semibold text-text-primary">{task.title}</div>
                           {task.description && <p className="mt-1 text-sm text-text-secondary">{task.description}</p>}
                         </button>
+                        ) : (
+                          <div>
+                            <div className="font-semibold text-text-primary">{task.title}</div>
+                            {task.description && <p className="mt-1 text-sm text-text-secondary">{task.description}</p>}
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-5 text-sm text-text-secondary">
                         <div className="inline-flex items-center gap-2">

@@ -271,7 +271,7 @@ export function CollabPortal() {
               >
                 <div className="mb-4 flex flex-wrap gap-1.5">
                   {idea.is_collab && (
-                    <span className="flex items-center gap-1 rounded-full border border-purple-100 bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-600">
+                    <span className="flex items-center gap-1 rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-600">
                       <Users className="h-2.5 w-2.5" />
                       Collab
                     </span>

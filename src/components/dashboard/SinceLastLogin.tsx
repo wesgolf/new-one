@@ -17,7 +17,7 @@ const TYPE_CONFIG: Record<SinceLastLoginItem['type'], { label: string; Icon: Rea
   idea:    { label: 'Ideas',    Icon: Lightbulb,    color: 'text-yellow-500' },
   task:    { label: 'Tasks',    Icon: CheckSquare,  color: 'text-blue-500'   },
   event:   { label: 'Events',   Icon: Calendar,     color: 'text-emerald-500'},
-  release: { label: 'Releases', Icon: Music,        color: 'text-purple-500' },
+  release: { label: 'Releases', Icon: Music,        color: 'text-blue-500' },
   content: { label: 'Content',  Icon: FileText,     color: 'text-rose-500'   },
 };
 

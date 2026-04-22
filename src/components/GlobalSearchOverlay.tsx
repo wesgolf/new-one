@@ -104,7 +104,7 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
 
   const typeColors = {
     idea: 'bg-blue-50 text-blue-700 border-blue-200',
-    release: 'bg-purple-50 text-purple-700 border-purple-200',
+    release: 'bg-blue-50 text-blue-700 border-blue-200',
     content: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     task: 'bg-amber-50 text-amber-700 border-amber-200',
   };

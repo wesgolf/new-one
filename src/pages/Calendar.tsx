@@ -91,7 +91,7 @@ function eventPillClass(event: Event): string {
       if (event.publishStatus === 'published') return 'bg-emerald-50 text-emerald-700 border border-emerald-100';
       if (event.publishStatus === 'failed')    return 'bg-rose-50 text-rose-600 border border-rose-100';
       if (event.publishStatus === 'scheduled') return 'bg-blue-50 text-blue-600 border border-blue-100';
-      return 'bg-purple-50 text-purple-600 border border-purple-100';
+      return 'bg-blue-50 text-blue-600 border border-blue-100';
     case 'show':    return 'bg-rose-50 text-rose-600 border border-rose-100';
     case 'meeting': return 'bg-slate-100 text-slate-700 border border-slate-200';
     case 'todo':    return 'bg-emerald-50 text-emerald-700 border border-emerald-100';
@@ -812,7 +812,7 @@ export function Calendar() {
                   :                           <Clock className="h-4 w-4" />;
                   const iconBg =
                     event.type === 'release' ? 'bg-blue-100 text-blue-600'
-                  : event.type === 'post'    ? 'bg-purple-100 text-purple-600'
+                  : event.type === 'post'    ? 'bg-blue-100 text-blue-600'
                   : event.type === 'todo'    ? 'bg-emerald-100 text-emerald-600'
                   : event.type === 'goal'    ? 'bg-amber-100 text-amber-600'
                   :                           'bg-slate-100 text-slate-600';

@@ -3,15 +3,20 @@
  *
  *   Phase 1 (config)    – date range shortcuts + section toggles
  *   Phase 2 (loading)   – generation progress indicator
- *   Phase 3 (report)    – full report view + Export PDF button
+ *   Phase 3 (report)    – full executive report + Export PDF / Copy Text
  *
- * PDF export: renders WeeklyReportView into id="wos-report-print",
- * then calls window.print(). The @media print CSS in index.css
- * makes only that element visible during printing.
+ * PDF export: renders WeeklyReportView into a React portal (directly on
+ * document.body, outside modal overflow constraints), applies id="wos-report-print",
+ * then calls window.print(). The @media print CSS in index.css isolates that
+ * element as the only visible region during printing.
+ *
+ * Clipboard: tries navigator.clipboard first; falls back to execCommand('copy')
+ * for HTTP dev environments where the Clipboard API is restricted.
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Download, Loader2, ChevronLeft, AlertCircle, Check } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { X, Download, Loader2, ChevronLeft, AlertCircle, Check, Copy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { buildWeeklyReport } from '../services/reportService';
@@ -305,53 +310,155 @@ function ReportPhase({
   report: WeeklyReport;
   onBack: () => void;
 }) {
+  const [copied, setCopied] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+
+  // PDF export via React portal:
+  // 1. Render WeeklyReportView into document.body via portal with id="wos-report-print"
+  // 2. The @media print CSS in index.css isolates that element (visibility trick)
+  // 3. This bypasses modal overflow/position constraints entirely
   const handlePrint = useCallback(() => {
-    window.print();
+    setIsPrinting(true);
+    // Two rAFs ensure the portal has fully rendered before printing
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+        const cleanup = () => {
+          setIsPrinting(false);
+          window.removeEventListener('afterprint', cleanup);
+        };
+        window.addEventListener('afterprint', cleanup);
+        // Fallback cleanup if afterprint doesn't fire (some browsers)
+        setTimeout(() => setIsPrinting(false), 6000);
+      });
+    });
   }, []);
 
-  return (
-    <div className="flex flex-col h-full max-h-[85vh]">
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border shrink-0">
-        <button
-          type="button"
-          onClick={onBack}
-          className="btn-secondary text-xs gap-1.5 px-3 py-1.5"
-        >
-          <ChevronLeft className="w-3.5 h-3.5" />
-          Back
-        </button>
+  // Clipboard: modern API first, execCommand fallback for HTTP dev environments
+  const handleCopy = useCallback(async () => {
+    const lines: string[] = [
+      `PERFORMANCE REPORT — ${report.artistName}`,
+      `${new Date(report.config.startDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} — ${new Date(report.config.endDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`,
+      `Generated: ${new Date(report.generatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+      '',
+    ];
+    if (report.executiveSummary) {
+      lines.push('EXECUTIVE SUMMARY', '─'.repeat(40), report.executiveSummary, '');
+    }
+    for (const section of report.sections) {
+      lines.push(section.title.toUpperCase(), '─'.repeat(Math.min(section.title.length, 40)));
+      if (section.narrative) lines.push(section.narrative);
+      for (const item of section.items) {
+        const icon = item.status === 'positive' ? '✓' : item.status === 'negative' ? '✗' : item.status === 'warning' ? '▲' : '·';
+        const meta = item.meta ? ` (${item.meta})` : '';
+        const tag  = item.tag  ? ` [${item.tag}]`  : '';
+        lines.push(`  ${icon} ${item.text}${meta}${tag}`);
+      }
+      lines.push('');
+    }
+    const text = lines.join('\n');
 
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-text-primary truncate">
-            Weekly Report
-          </p>
-          <p className="text-xs text-text-muted">
-            {new Date(report.config.startDate).toLocaleDateString('en-US', {
-              month: 'short', day: 'numeric',
-            })}
-            {' — '}
-            {new Date(report.config.endDate).toLocaleDateString('en-US', {
-              month: 'short', day: 'numeric', year: 'numeric',
-            })}
-          </p>
+    let success = false;
+
+    // Try modern Clipboard API (requires HTTPS or localhost)
+    if (navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(text);
+        success = true;
+      } catch {
+        // Fall through to legacy execCommand
+      }
+    }
+
+    // Legacy execCommand fallback (works on HTTP)
+    if (!success) {
+      const el = document.createElement('textarea');
+      el.value = text;
+      el.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;pointer-events:none';
+      document.body.appendChild(el);
+      el.focus();
+      el.select();
+      try {
+        success = document.execCommand('copy');
+      } catch {
+        // execCommand not available
+      }
+      document.body.removeChild(el);
+    }
+
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    }
+  }, [report]);
+
+  return (
+    <>
+      <div className="flex flex-col h-full max-h-[90vh]">
+        {/* Toolbar */}
+        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border shrink-0">
+          <button
+            type="button"
+            onClick={onBack}
+            className="btn-secondary text-xs gap-1.5 px-3 py-1.5"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+            Back
+          </button>
+
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-text-primary truncate">
+              Performance Report — {report.artistName}
+            </p>
+            <p className="text-xs text-text-muted">
+              {new Date(report.config.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              {' — '}
+              {new Date(report.config.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="btn-secondary text-xs gap-1.5 px-3 py-1.5"
+          >
+            {copied
+              ? <Check className="w-3.5 h-3.5 text-emerald-500" />
+              : <Copy className="w-3.5 h-3.5" />}
+            {copied ? 'Copied!' : 'Copy Text'}
+          </button>
+
+          <button
+            type="button"
+            onClick={handlePrint}
+            disabled={isPrinting}
+            className="btn-primary text-xs gap-1.5 px-3 py-1.5"
+          >
+            {isPrinting
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <Download className="w-3.5 h-3.5" />}
+            {isPrinting ? 'Preparing…' : 'Export PDF'}
+          </button>
         </div>
 
-        <button
-          type="button"
-          onClick={handlePrint}
-          className="btn-primary text-xs gap-1.5 px-3 py-1.5"
-        >
-          <Download className="w-3.5 h-3.5" />
-          Export PDF
-        </button>
+        {/* Report content — scrollable inside modal */}
+        <div className="overflow-y-auto flex-1">
+          <WeeklyReportView report={report} />
+        </div>
       </div>
 
-      {/* Report content — scrollable */}
-      <div className="overflow-y-auto flex-1">
-        <WeeklyReportView report={report} />
-      </div>
-    </div>
+      {/* Print portal: renders report directly into document.body, outside all
+          modal overflow/position constraints, so window.print() captures it cleanly. */}
+      {isPrinting && createPortal(
+        <div
+          id="wos-report-print"
+          style={{ position: 'absolute', top: 0, left: 0, width: '100%', background: 'white', zIndex: -1 }}
+        >
+          <WeeklyReportView report={report} />
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 
@@ -402,7 +509,7 @@ export function WeeklyReportModal({ onClose }: WeeklyReportModalProps) {
         layout
         className={cn(
           'bg-white rounded-2xl shadow-2xl relative flex flex-col overflow-hidden',
-          isReport ? 'w-full max-w-2xl' : 'w-full max-w-md',
+          isReport ? 'w-full max-w-4xl' : 'w-full max-w-md',
         )}
         initial={{ opacity: 0, scale: 0.96, y: 12 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}

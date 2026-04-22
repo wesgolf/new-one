@@ -244,15 +244,15 @@ export function ReleasePreviewModal({ isOpen, onClose, onEdit, release }: Releas
                             const body = encodeURIComponent(`Hi,\n\nI'd like to submit my latest track "${release.title}" for your consideration.\n\nType: ${release.type}\nBPM: ${release.production?.bpm || 'TBD'}\nKey: ${release.production?.key || 'TBD'}\n\nYou can listen here: ${release.distribution?.soundcloud_url || '[Link]'}\n\nBest regards,\nArtist`);
                             window.location.href = `mailto:?subject=${subject}&body=${body}`;
                           }}
-                          className="w-full flex items-center justify-between p-3 bg-purple-50 hover:bg-purple-100 border border-purple-100 rounded-xl transition-all group"
+                          className="w-full flex items-center justify-between p-3 bg-blue-50 hover:bg-blue-100 border border-blue-100 rounded-xl transition-all group"
                         >
                           <div className="flex items-center gap-3">
                             <div className="p-2 bg-white rounded-lg shadow-sm">
-                              <Mail className="w-4 h-4 text-purple-600" />
+                              <Mail className="w-4 h-4 text-blue-600" />
                             </div>
-                            <span className="text-xs font-bold text-purple-900">Send to Labels</span>
+                            <span className="text-xs font-bold text-blue-900">Send to Labels</span>
                           </div>
-                          <ExternalLink className="w-3 h-3 text-purple-400 group-hover:text-purple-600" />
+                          <ExternalLink className="w-3 h-3 text-blue-400 group-hover:text-blue-600" />
                         </button>
                       )}
                     </div>

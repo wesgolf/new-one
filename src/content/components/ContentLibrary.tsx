@@ -6,8 +6,10 @@ import { ContentItemWithAssets } from '../types';
 import { contentService } from '../../services/contentService';
 
 interface ContentLibraryProps {
-  onEditItem: (item: ContentItemWithAssets) => void;
-  onUploadNew: () => void;
+  /** Omit to make the library read-only (no edit buttons) */
+  onEditItem?: (item: ContentItemWithAssets) => void;
+  /** Omit to hide all upload/add-media controls */
+  onUploadNew?: () => void;
   refreshTrigger?: number;
 }
 
@@ -26,7 +28,7 @@ const statusColors: Record<string, string> = {
   cancelled: 'bg-slate-100 text-slate-400',
 };
 
-function LibraryCard({ item, onEdit }: { item: ContentItemWithAssets; onEdit: (item: ContentItemWithAssets) => void }) {
+function LibraryCard({ item, onEdit }: { item: ContentItemWithAssets; onEdit?: (item: ContentItemWithAssets) => void }) {
   const [notes, setNotes] = useState(item.notes || '');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
@@ -58,8 +60,11 @@ function LibraryCard({ item, onEdit }: { item: ContentItemWithAssets; onEdit: (i
       className="flex flex-col"
     >
       <div
-        className="relative rounded-2xl overflow-hidden bg-black aspect-[9/16] shadow-lg hover:shadow-xl transition-all cursor-pointer group hover:scale-[1.02]"
-        onClick={() => onEdit(item)}
+        className={cn(
+          "relative rounded-2xl overflow-hidden bg-black aspect-[9/16] shadow-lg transition-all",
+          onEdit && "cursor-pointer group hover:shadow-xl hover:scale-[1.02]"
+        )}
+        onClick={() => onEdit?.(item)}
       >
         {item.media_url || item.assets?.[0]?.file_url ? (
           <video
@@ -131,6 +136,8 @@ function LibraryCard({ item, onEdit }: { item: ContentItemWithAssets; onEdit: (i
 }
 
 export function ContentLibrary({ onEditItem, onUploadNew, refreshTrigger }: ContentLibraryProps) {
+  // When onUploadNew is undefined, the user is read-only and all upload UI is hidden.
+  const canUpload = !!onUploadNew;
   const [items, setItems] = useState<ContentItemWithAssets[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
@@ -170,6 +177,7 @@ export function ContentLibrary({ onEditItem, onUploadNew, refreshTrigger }: Cont
   });
 
   const handleDragOver = (e: React.DragEvent) => {
+    if (!canUpload) return;
     e.preventDefault();
     setIsDragging(true);
   };
@@ -180,6 +188,7 @@ export function ContentLibrary({ onEditItem, onUploadNew, refreshTrigger }: Cont
   };
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
+    if (!canUpload) return;
     e.preventDefault();
     setIsDragging(false);
 
@@ -265,13 +274,13 @@ export function ContentLibrary({ onEditItem, onUploadNew, refreshTrigger }: Cont
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center">
-            <Film className="w-5 h-5 text-purple-600" />
+          <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
+            <Film className="w-5 h-5 text-blue-600" />
           </div>
           <div>
             <h3 className="text-lg font-black text-slate-900 tracking-tight">Content Library</h3>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              {items.length} item{items.length !== 1 ? 's' : ''} · Drag videos here to add
+              {items.length} item{items.length !== 1 ? 's' : ''}{canUpload ? ' · Drag videos here to add' : ''}
             </p>
           </div>
         </div>
@@ -294,21 +303,25 @@ export function ContentLibrary({ onEditItem, onUploadNew, refreshTrigger }: Cont
             ))}
           </div>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="video/mp4,.mp4"
-            multiple
-            onChange={handleFileSelect}
-            className="hidden"
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 text-white rounded-xl text-xs font-black hover:bg-purple-700 transition-all shadow-lg shadow-purple-200 hover:scale-[1.02] active:scale-[0.98]"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add Media
-          </button>
+          {canUpload && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/mp4,.mp4"
+                multiple
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Media
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -318,7 +331,7 @@ export function ContentLibrary({ onEditItem, onUploadNew, refreshTrigger }: Cont
         onDrop={handleDrop}
         className={cn(
           "relative rounded-2xl transition-all min-h-[200px]",
-          isDragging && "ring-2 ring-purple-400 ring-offset-4"
+          isDragging && "ring-2 ring-blue-400 ring-offset-4"
         )}
       >
         <AnimatePresence>
@@ -327,11 +340,11 @@ export function ContentLibrary({ onEditItem, onUploadNew, refreshTrigger }: Cont
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 z-10 bg-purple-50/90 backdrop-blur-sm rounded-2xl border-2 border-dashed border-purple-300 flex flex-col items-center justify-center"
+              className="absolute inset-0 z-10 bg-blue-50/90 backdrop-blur-sm rounded-2xl border-2 border-dashed border-blue-300 flex flex-col items-center justify-center"
             >
-              <Upload className="w-10 h-10 text-purple-400 mb-3" />
-              <p className="text-sm font-black text-purple-600">Drop .mp4 files here</p>
-              <p className="text-xs text-purple-400 mt-1">They'll be added to your library</p>
+              <Upload className="w-10 h-10 text-blue-400 mb-3" />
+              <p className="text-sm font-black text-blue-600">Drop .mp4 files here</p>
+              <p className="text-xs text-blue-400 mt-1">They'll be added to your library</p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -342,14 +355,17 @@ export function ContentLibrary({ onEditItem, onUploadNew, refreshTrigger }: Cont
           </div>
         ) : filteredItems.length === 0 ? (
           <div
-            onClick={() => fileInputRef.current?.click()}
-            className="flex flex-col items-center justify-center py-16 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:border-purple-300 hover:bg-purple-50/20 transition-all"
+            onClick={canUpload ? () => fileInputRef.current?.click() : undefined}
+            className={cn(
+              "flex flex-col items-center justify-center py-16 border-2 border-dashed border-slate-200 rounded-2xl transition-all",
+              canUpload && "cursor-pointer hover:border-blue-300 hover:bg-blue-50/20"
+            )}
           >
             <Upload className="w-10 h-10 text-slate-300 mb-3" />
             <p className="text-sm font-black text-slate-400">
               {filter !== 'all' ? `No ${filter} content` : 'No content yet'}
             </p>
-            <p className="text-xs text-slate-300 mt-1">Drag .mp4 files here or click to upload</p>
+            {canUpload && <p className="text-xs text-slate-300 mt-1">Drag .mp4 files here or click to upload</p>}
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -361,15 +377,17 @@ export function ContentLibrary({ onEditItem, onUploadNew, refreshTrigger }: Cont
               />
             ))}
 
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 aspect-[9/16] hover:border-purple-300 hover:bg-purple-50/20 transition-all group"
-            >
-              <Plus className="w-8 h-8 text-slate-300 group-hover:text-purple-400 transition-colors" />
-              <span className="text-[10px] font-black text-slate-300 group-hover:text-purple-400 mt-2 uppercase tracking-wider transition-colors">
-                Add Media
-              </span>
-            </button>
+            {canUpload && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 aspect-[9/16] hover:border-blue-300 hover:bg-blue-50/20 transition-all group"
+              >
+                <Plus className="w-8 h-8 text-slate-300 group-hover:text-blue-400 transition-colors" />
+                <span className="text-[10px] font-black text-slate-300 group-hover:text-blue-400 mt-2 uppercase tracking-wider transition-colors">
+                  Add Media
+                </span>
+              </button>
+            )}
           </div>
         )}
       </div>

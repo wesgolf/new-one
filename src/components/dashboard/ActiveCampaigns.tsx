@@ -14,7 +14,7 @@ const STATUS_BADGE: Record<string, string> = {
   scheduled:  'bg-blue-50   text-blue-600   border-blue-100',
   ready:      'bg-emerald-50 text-emerald-600 border-emerald-100',
   production: 'bg-orange-50  text-orange-600  border-orange-100',
-  mastered:   'bg-purple-50  text-purple-600  border-purple-100',
+  mastered:   'bg-blue-50  text-blue-600  border-blue-100',
 };
 
 function progressColor(pct: number): string {
@@ -44,8 +44,8 @@ function CampaignRow({ campaign }: { campaign: CampaignItem }) {
             className="w-10 h-10 rounded-lg object-cover shrink-0"
           />
         ) : (
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-100 to-blue-100 flex items-center justify-center shrink-0">
-            <Music className="w-5 h-5 text-purple-500" />
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-100 to-blue-100 flex items-center justify-center shrink-0">
+            <Music className="w-5 h-5 text-blue-500" />
           </div>
         )}
         <div className="flex-1 min-w-0">

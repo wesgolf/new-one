@@ -55,7 +55,7 @@ export const PostNextCard: React.FC<PostNextCardProps> = ({
       animate={{ opacity: 1, y: 0 }}
       className="relative group"
     >
-      <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-[2.5rem] blur opacity-20 group-hover:opacity-30 transition duration-1000 group-hover:duration-200" />
+      <div className="absolute -inset-1 bg-gradient-to-r from-blue-700 to-blue-500 rounded-[2.5rem] blur opacity-20 group-hover:opacity-30 transition duration-1000 group-hover:duration-200" />
       <div className="relative glass-card p-8 md:p-10 bg-white/80 backdrop-blur-xl border-blue-100 overflow-hidden">
         {/* Background Accent */}
         <div className="absolute top-0 right-0 -mr-20 -mt-20 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl" />
@@ -96,8 +96,8 @@ export const PostNextCard: React.FC<PostNextCardProps> = ({
                     <span className="text-sm font-bold text-slate-700">{focusTrack.title}</span>
                   </div>
                   <div className="flex items-center gap-2 text-slate-500">
-                    <div className="w-8 h-8 bg-purple-50 rounded-lg flex items-center justify-center">
-                      <Clock className="w-4 h-4 text-purple-500" />
+                    <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center">
+                      <Clock className="w-4 h-4 text-blue-500" />
                     </div>
                     <span className="text-sm font-bold text-slate-700">Best Time: {new Date(suggestion.suggested_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>

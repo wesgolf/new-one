@@ -23,14 +23,15 @@ interface DashCardProps {
 export function DashCard({ title, action, children, className, compact }: DashCardProps) {
   return (
     <div className={cn(
-      'bg-white border border-border rounded-xl shadow-sm flex flex-col',
+      'bg-white border border-border/60 rounded-2xl shadow-[var(--shadow-card)] flex flex-col',
+      'transition-shadow duration-200 hover:shadow-[var(--shadow-lifted)]',
       compact ? 'p-4' : 'p-5',
       className
     )}>
       {(title || action) && (
         <div className="flex items-center justify-between mb-4">
           {title && (
-            <h3 className="text-sm font-bold text-text-primary uppercase tracking-widest">
+            <h3 className="text-[10px] font-bold text-text-muted uppercase tracking-[0.16em]">
               {title}
             </h3>
           )}
@@ -54,10 +55,10 @@ export function DashSkeleton({ rows = 3, className }: DashSkeletonProps) {
     <div className={cn('space-y-3 animate-pulse', className)}>
       {Array.from({ length: rows }).map((_, i) => (
         <div key={i} className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-slate-100 shrink-0" />
+          <div className="w-8 h-8 rounded-xl bg-border/50 shrink-0" />
           <div className="flex-1 space-y-1.5">
-            <div className="h-3 bg-slate-100 rounded w-3/4" />
-            <div className="h-2.5 bg-slate-100 rounded w-1/2" />
+            <div className="h-3 bg-border/50 rounded-lg w-3/4" />
+            <div className="h-2.5 bg-border/40 rounded-lg w-1/2" />
           </div>
         </div>
       ))}

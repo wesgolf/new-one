@@ -4,29 +4,43 @@ import {
   Brain,
   CheckCircle2,
   Database,
+  Edit2,
   ExternalLink,
   FileText,
   Globe,
   Image as ImageIcon,
   Link as LinkIcon,
   Loader2,
+  Menu,
   MessageSquare,
   Plus,
   Send,
+  Sparkles,
   Trash2,
   Upload,
   X,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabase } from '../lib/supabase';
-import { GoogleGenAI } from "@google/genai";
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   sources?: string[];
+}
+
+interface ChatSession {
+  id: string;
+  title: string;
+  messages: Message[];
+  /** AI-generated condensed summary of the conversation. Updated periodically. */
+  summary: string | null;
+  createdAt: number;
+  updatedAt: number;
 }
 
 interface Resource {
@@ -38,61 +52,197 @@ interface Resource {
   category: string;
 }
 
-export function ArtistCoach() {
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const saved = localStorage.getItem('artist_coach_messages');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error('Failed to parse saved messages', e);
-      }
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const STORAGE_KEY = 'coach_sessions_v3';
+
+interface PromptStarter { icon: string; label: string; prompt: string; }
+
+const PROMPT_STARTERS: PromptStarter[] = [
+  { icon: '📊', label: 'Break down top content', prompt: 'Break down why my best content is outperforming the rest and what I should double down on.' },
+  { icon: '📅', label: 'Plan next 3 posts',       prompt: "Help me plan my next 3 social media posts based on what's been working." },
+  { icon: '🎧', label: 'Analyze my latest track', prompt: 'Give me honest feedback on my latest release — what worked, what to improve, and what to do next.' },
+  { icon: '🎯', label: 'Set monthly goals',        prompt: 'Help me set 3 clear, measurable goals for this month as an independent artist.' },
+  { icon: '📈', label: 'Grow my fanbase',          prompt: "What's the single most effective move I can make right now to grow my fanbase?" },
+  { icon: '🚀', label: 'Write a release plan',     prompt: 'Help me write a detailed release plan for my next drop.' },
+];
+
+// Summarize every N user messages (after the threshold)
+const SUMMARY_EVERY_N_USER_MESSAGES = 4;
+// Always include this many recent messages regardless of summary
+const RECENT_MESSAGES_WINDOW = 6;
+
+// ─── Storage helpers ──────────────────────────────────────────────────────────
+
+function loadSessions(): ChatSession[] {
+  try {
+    // Try new key first
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+
+    // Migrate from v2 — add missing fields
+    const oldRaw = localStorage.getItem('coach_sessions_v2');
+    if (oldRaw) {
+      const old = JSON.parse(oldRaw) as Omit<ChatSession, 'summary' | 'updatedAt'>[];
+      const migrated: ChatSession[] = old.map((s) => ({
+        ...s,
+        summary: null,
+        updatedAt: s.createdAt,
+      }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+      return migrated;
     }
-    return [
-      { 
-        role: 'assistant', 
-        content: "Hello! I'm your Artist Coach. I've analyzed your current projects, releases, and goals. How can I help you grow your career today?" 
-      }
-    ];
+  } catch { /* */ }
+  return [];
+}
+
+function saveSessions(sessions: ChatSession[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+}
+
+function newSession(): ChatSession {
+  const now = Date.now();
+  return {
+    id: crypto.randomUUID(),
+    title: 'New chat',
+    messages: [
+      {
+        role: 'assistant',
+        content: "I reviewed your recent activity. Ask me anything or pick a suggestion to get started.",
+      },
+    ],
+    summary: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+// ─── Date grouping utils ──────────────────────────────────────────────────────
+
+function formatRelativeTime(ts: number): string {
+  const now = Date.now();
+  const diff = now - ts;
+  const mins = Math.floor(diff / 60_000);
+  const hours = Math.floor(diff / 3_600_000);
+  const days = Math.floor(diff / 86_400_000);
+
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days}d ago`;
+
+  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+type DateGroup = 'Today' | 'Yesterday' | 'This week' | 'Older';
+
+function getDateGroup(ts: number): DateGroup {
+  const now = new Date();
+  const d = new Date(ts);
+  const isToday = d.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = d.toDateString() === yesterday.toDateString();
+  const daysAgo = (now.getTime() - ts) / 86_400_000;
+
+  if (isToday) return 'Today';
+  if (isYesterday) return 'Yesterday';
+  if (daysAgo < 7) return 'This week';
+  return 'Older';
+}
+
+function groupSessions(sessions: ChatSession[]): Array<{ group: DateGroup; items: ChatSession[] }> {
+  const groups: Record<DateGroup, ChatSession[]> = {
+    Today: [], Yesterday: [], 'This week': [], Older: [],
+  };
+  for (const s of sessions) {
+    groups[getDateGroup(s.updatedAt)].push(s);
+  }
+  return (['Today', 'Yesterday', 'This week', 'Older'] as DateGroup[])
+    .filter((g) => groups[g].length > 0)
+    .map((g) => ({ group: g, items: groups[g] }));
+}
+
+export function ArtistCoach() {
+  const [sessions, setSessions] = useState<ChatSession[]>(() => {
+    const s = loadSessions();
+    return s.length ? s : [newSession()];
   });
+  const [activeSessionId, setActiveSessionId] = useState<string>(() => {
+    const loaded = loadSessions();
+    return loaded.length ? loaded[0].id : '';
+  });
+
+  const activeSession = sessions.find((s) => s.id === activeSessionId) ?? sessions[0];
+  const messages = activeSession?.messages ?? [];
+
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [summarizing, setSummarizing] = useState(false);
   const [resources, setResources] = useState<Resource[]>([]);
   const [isAddingResource, setIsAddingResource] = useState(false);
-  const [newResource, setNewResource] = useState({ 
-    title: '', 
-    content: '', 
+  const [editingResourceId, setEditingResourceId] = useState<string | null>(null);
+  const [editingResource, setEditingResource] = useState<Partial<Resource>>({});
+  const [deletingResourceId, setDeletingResourceId] = useState<string | null>(null);
+  const [newResource, setNewResource] = useState({
+    title: '',
+    content: '',
     category: 'General',
     type: 'text' as 'text' | 'image' | 'webpage' | 'pdf',
-    url: ''
+    url: '',
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'knowledge'>('chat');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    fetchResources();
-  }, []);
+  useEffect(() => { fetchResources(); }, []);
 
   useEffect(() => {
-    localStorage.setItem('artist_coach_messages', JSON.stringify(messages));
+    saveSessions(sessions);
+  }, [sessions]);
+
+  // Auto-scroll on new messages
+  useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages.length, loading]);
 
-  const clearChatHistory = () => {
-    if (window.confirm('Are you sure you want to clear your chat history?')) {
-      setMessages([
-        { 
-          role: 'assistant', 
-          content: "Hello! I'm your Artist Coach. I've analyzed your current projects, releases, and goals. How can I help you grow your career today?" 
-        }
-      ]);
-      localStorage.removeItem('artist_coach_messages');
-    }
+  const updateSession = (id: string, update: Partial<ChatSession>) => {
+    setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, ...update } : s)));
+  };
+
+  const createNewSession = () => {
+    const s = newSession();
+    setSessions((prev) => [s, ...prev]);
+    setActiveSessionId(s.id);
+    setActiveTab('chat');
+    setSidebarOpen(false);
+  };
+
+  const switchToSession = (id: string) => {
+    setActiveSessionId(id);
+    setInput('');
+    setSidebarOpen(false);
+  };
+
+  const deleteSession = (id: string) => {
+    setDeletingId(null);
+    setSessions((prev) => {
+      const filtered = prev.filter((s) => s.id !== id);
+      if (filtered.length === 0) {
+        const s = newSession();
+        setActiveSessionId(s.id);
+        return [s];
+      }
+      if (id === activeSessionId) setActiveSessionId(filtered[0].id);
+      return filtered;
+    });
   };
 
   const fetchResources = async () => {
@@ -100,79 +250,181 @@ export function ArtistCoach() {
     if (data) setResources(data);
   };
 
+  // ── Summary generation ────────────────────────────────────────────────────
+
+  /**
+   * Asynchronously generates a condensed summary of the conversation and saves
+   * it to the session. Runs in background — does not block the chat.
+   */
+  const generateSessionSummary = async (sessionId: string, allMessages: Message[]) => {
+    const userMessages = allMessages.filter((m) => m.role === 'user');
+    // Only summarize after enough conversation exists
+    if (userMessages.length < 3) return;
+    // Re-summarize every SUMMARY_EVERY_N_USER_MESSAGES user turns
+    if (userMessages.length % SUMMARY_EVERY_N_USER_MESSAGES !== 0) return;
+
+    setSummarizing(true);
+    try {
+      const transcript = allMessages
+        .map((m) => `${m.role === 'user' ? 'Artist' : 'Coach'}: ${m.content}`)
+        .join('\n');
+
+      const res = await fetch('/api/coach/summarize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { summary } = await res.json();
+      if (summary) updateSession(sessionId, { summary });
+    } catch (err) {
+      console.debug('[coach] Summary generation skipped:', err);
+    } finally {
+      setSummarizing(false);
+    }
+  };
+
+  // ── Context fetching ───────────────────────────────────────────────────────
+
+  // Fetch user context from Supabase — kept client-side because it needs user auth.
+  // Results are passed to the server endpoint; the server never touches Supabase directly.
+  const getContext = async (): Promise<string> => {
+    const [releases, content, goals, kb] = await Promise.all([
+      supabase.from('releases').select('title,status,release_date').limit(10),
+      supabase.from('content_items').select('title,platform,status,type').limit(10),
+      supabase.from('goals').select('title,current,target,unit,deadline').limit(6),
+      supabase.from('bot_resources').select('id,title,type,content,url').limit(8),
+    ]);
+
+    let ctx = '';
+    if (releases.data?.length)
+      ctx += `RELEASES:\n${releases.data.map((r) => `- ${r.title} (${r.status}, ${r.release_date})`).join('\n')}\n\n`;
+    if (content.data?.length)
+      ctx += `CONTENT:\n${content.data.map((c) => `- ${c.title} on ${c.platform} (${c.status})`).join('\n')}\n\n`;
+    if (goals.data?.length)
+      ctx += `GOALS:\n${goals.data.map((g) => `- ${g.title}: ${g.current}/${g.target} ${g.unit}`).join('\n')}\n\n`;
+    if (kb.data?.length)
+      ctx += `KNOWLEDGE BASE:\n${kb.data
+        .map((r) => `[${r.title}] ${r.type === 'text' ? (r.content ?? '').slice(0, 300) : r.url}`)
+        .join('\n')}\n\n`;
+    return ctx;
+  };
+
+  // ── Message sending ───────────────────────────────────────────────────────
+
+  const handleSendMessage = async (e: React.FormEvent | null, prefill?: string) => {
+    e?.preventDefault();
+    const text = (prefill ?? input).trim();
+    if (!text || loading) return;
+
+    const sessionId = activeSession.id;
+    const userMsg: Message = { role: 'user', content: text };
+    const isFirstUserMessage = messages.filter((m) => m.role === 'user').length === 0;
+    setInput('');
+
+    const updatedMessages = [...messages, userMsg];
+    updateSession(sessionId, {
+      messages: updatedMessages,
+      updatedAt: Date.now(),
+      ...(isFirstUserMessage && {
+        title: text.slice(0, 48) + (text.length > 48 ? '…' : ''),
+      }),
+    });
+    setLoading(true);
+
+    try {
+      const contextText = await getContext();
+      const session = sessions.find((s) => s.id === sessionId);
+      const recentMessages = updatedMessages.slice(-RECENT_MESSAGES_WINDOW);
+
+      const res = await fetch('/api/coach/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: recentMessages,
+          contextText,
+          summary: session?.summary ?? null,
+        }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: 'Server error' }));
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+
+      const { text: aiContent } = await res.json();
+      const finalMessages = [...updatedMessages, {
+        role: 'assistant' as const,
+        content: aiContent ?? "I couldn't process that — please try again.",
+      }];
+      updateSession(sessionId, { messages: finalMessages, updatedAt: Date.now() });
+
+      // Trigger background summary generation (non-blocking)
+      generateSessionSummary(sessionId, finalMessages);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error('[coach] AI error:', message);
+      updateSession(sessionId, {
+        messages: [...updatedMessages, {
+          role: 'assistant',
+          content: `Sorry, I hit an error: ${message}. Please try again.`,
+        }],
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Resource handlers (unchanged) ─────────────────────────────────────────
+
   const handleAddResource = async (e: React.FormEvent) => {
     e.preventDefault();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-
     setIsUploading(true);
     let finalUrl = newResource.url;
-
     try {
       if (selectedFile && (newResource.type === 'image' || newResource.type === 'pdf')) {
         const fileExt = selectedFile.name.split('.').pop();
         const fileName = `${Math.random()}.${fileExt}`;
         const filePath = `${user.id}/${fileName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('bot_resources')
-          .upload(filePath, selectedFile);
-
+        const { error: uploadError } = await supabase.storage.from('bot_resources').upload(filePath, selectedFile);
         if (uploadError) throw uploadError;
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('bot_resources')
-          .getPublicUrl(filePath);
-        
+        const { data: { publicUrl } } = supabase.storage.from('bot_resources').getPublicUrl(filePath);
         finalUrl = publicUrl;
       }
-
-      const { error } = await supabase.from('bot_resources').insert([{
-        ...newResource,
-        url: finalUrl,
-        user_id: user.id
-      }]);
-
+      const { error } = await supabase.from('bot_resources').insert([{ ...newResource, url: finalUrl, user_id: user.id }]);
       if (!error) {
-        setNewResource({ 
-          title: '', 
-          content: '', 
-          category: 'General',
-          type: 'text',
-          url: ''
-        });
+        setNewResource({ title: '', content: '', category: 'General', type: 'text', url: '' });
         setSelectedFile(null);
         setIsAddingResource(false);
         fetchResources();
       }
     } catch (err) {
       console.error('Upload error:', err);
-      alert('Failed to upload resource. Make sure you have a "bot_resources" storage bucket created in Supabase.');
     } finally {
       setIsUploading(false);
     }
   };
 
+  const handleSaveEditResource = async (id: string) => {
+    const { error } = await supabase.from('bot_resources').update(editingResource).eq('id', id);
+    if (!error) { setEditingResourceId(null); fetchResources(); }
+  };
+
   const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
+    e.preventDefault(); e.stopPropagation();
+    setDragActive(e.type === 'dragenter' || e.type === 'dragover');
   };
 
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+    if (e.dataTransfer.files?.[0]) {
       const file = e.dataTransfer.files[0];
       setSelectedFile(file);
-      // Auto-detect type
-      if (file.type.startsWith('image/')) setNewResource(prev => ({ ...prev, type: 'image' }));
-      else if (file.type === 'application/pdf') setNewResource(prev => ({ ...prev, type: 'pdf' }));
+      if (file.type.startsWith('image/')) setNewResource((p) => ({ ...p, type: 'image' }));
+      else if (file.type === 'application/pdf') setNewResource((p) => ({ ...p, type: 'pdf' }));
     }
   };
 
@@ -181,325 +433,497 @@ export function ArtistCoach() {
     if (!error) fetchResources();
   };
 
-  const getContext = async () => {
-    // Fetch all relevant context for the bot
-    const [
-      releases,
-      content,
-      shows,
-      goals,
-      opportunities,
-      todos,
-      kb
-    ] = await Promise.all([
-      supabase.from('releases').select('*'),
-      supabase.from('content_items').select('*'),
-      supabase.from('shows').select('*'),
-      supabase.from('goals').select('*'),
-      supabase.from('opportunities').select('*'),
-      supabase.from('todos').select('*'),
-      supabase.from('bot_resources').select('*')
-    ]);
+  // ── Sidebar component ─────────────────────────────────────────────────────
 
-    let context = "USER DATA CONTEXT:\n\n";
+  const grouped = groupSessions([...sessions].sort((a, b) => b.updatedAt - a.updatedAt));
 
-    if (releases.data?.length) {
-      context += "RELEASES:\n" + releases.data.map(r => `- ${r.title} (Status: ${r.status}, Date: ${r.release_date})`).join('\n') + "\n\n";
-    }
-    if (content.data?.length) {
-      context += "CONTENT STRATEGY:\n" + content.data.map(c => `- ${c.title} on ${c.platform} (Status: ${c.status}, Type: ${c.type})`).join('\n') + "\n\n";
-    }
-    if (goals.data?.length) {
-      context += "GOALS:\n" + goals.data.map(g => `- ${g.title}: ${g.current}/${g.target} ${g.unit} (Deadline: ${g.deadline})`).join('\n') + "\n\n";
-    }
-    if (opportunities.data?.length) {
-      context += "OPPORTUNITIES:\n" + opportunities.data.map(o => `- ${o.name} (${o.category}, Status: ${o.status})`).join('\n') + "\n\n";
-    }
-    if (kb.data?.length) {
-      context += "ARTIST KNOWLEDGE BASE (RESOURCES):\n" + kb.data.map(r => {
-        let text = `[Source: ${r.title}] Type: ${r.type}. `;
-        if (r.type === 'text') text += r.content;
-        else if (r.url) text += `URL: ${r.url}. Description: ${r.content}`;
-        return text;
-      }).join('\n') + "\n\n";
-    }
+  const SidebarContent = () => (
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 shrink-0 border-b border-slate-100">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">History</p>
+        <button
+          onClick={createNewSession}
+          className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-colors"
+          title="New chat"
+        >
+          <Plus className="h-3 w-3" /> New
+        </button>
+      </div>
 
-    return context;
-  };
+      {/* Session list */}
+      <div className="flex-1 overflow-y-auto py-2 space-y-0.5">
+        {grouped.length === 0 ? (
+          <p className="px-4 py-6 text-center text-xs text-slate-400">No chats yet.</p>
+        ) : (
+          grouped.map(({ group, items }) => (
+            <div key={group} className="mb-1">
+              <p className="px-4 pt-3 pb-1.5 text-[9px] font-bold uppercase tracking-[0.15em] text-slate-400">{group}</p>
+              {items.map((s) => {
+                const lastMsg = s.messages[s.messages.length - 1];
+                const isActive = s.id === activeSessionId;
+                const isDeleting = deletingId === s.id;
+                return (
+                  <div
+                    key={s.id}
+                    onClick={() => !isDeleting && switchToSession(s.id)}
+                    className={cn(
+                      'group relative mx-2 flex cursor-pointer items-start gap-2.5 rounded-xl px-3 py-2.5 transition-all',
+                      isActive
+                        ? 'bg-white shadow-sm ring-1 ring-slate-100'
+                        : 'hover:bg-white/70',
+                    )}
+                  >
+                    <MessageSquare
+                      className={cn('mt-0.5 h-3 w-3 shrink-0 transition-colors', isActive ? 'text-blue-500' : 'text-slate-300')}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-1">
+                        <p className="truncate text-[11px] font-semibold leading-tight text-slate-800">{s.title}</p>
+                        <span className="shrink-0 text-[9px] text-slate-400 mt-0.5">{formatRelativeTime(s.updatedAt)}</span>
+                      </div>
+                      {lastMsg && (
+                        <p className="mt-0.5 line-clamp-1 text-[10px] text-slate-400">
+                          {lastMsg.role === 'assistant' ? '↩ ' : ''}{lastMsg.content.slice(0, 60)}
+                        </p>
+                      )}
+                      {s.summary && (
+                        <div className="mt-1 flex items-center gap-1">
+                          <Sparkles className="h-2.5 w-2.5 text-blue-400 shrink-0" />
+                          <p className="line-clamp-1 text-[9px] text-blue-400">Summarized</p>
+                        </div>
+                      )}
+                    </div>
+                    {/* Delete button — confirm step */}
+                    {isDeleting ? (
+                      <div
+                        className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          onClick={() => deleteSession(s.id)}
+                          className="rounded-md bg-rose-500 px-2 py-0.5 text-[9px] font-bold text-white hover:bg-rose-600"
+                        >
+                          Delete
+                        </button>
+                        <button
+                          onClick={() => setDeletingId(null)}
+                          className="rounded-md bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-600 hover:bg-slate-200"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setDeletingId(s.id); }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 hidden rounded-md p-1 text-slate-300 hover:text-rose-500 group-hover:flex transition-colors"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || loading) return;
-
-    const userMessage = input.trim();
-    setInput('');
-    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
-    setLoading(true);
-
-    try {
-      const context = await getContext();
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
-      
-      const systemInstruction = `
-        You are the "Artist OS Coach", a highly strategic and supportive AI mentor for independent music artists.
-        Your goal is to help the artist grow their career, manage their releases, and optimize their content strategy.
-        
-        CRITICAL RULES:
-        1. ALWAYS use the provided USER DATA CONTEXT to personalize your advice.
-        2. ALWAYS cite your sources from the context (e.g., "Based on your goal for 10k streams..." or "According to your resource 'Marketing Strategy'...").
-        3. Be concise, professional, and encouraging.
-        4. If the artist asks for a plan, create a structured step-by-step guide.
-        5. If you see a release coming up, offer specific promotional advice.
-        6. Use Markdown for formatting.
-        
-        ${context}
-      `;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: [
-          ...messages.map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.content }] })),
-          { role: 'user', parts: [{ text: userMessage }] }
-        ],
-        config: {
-          systemInstruction,
-          temperature: 0.7,
-        }
-      });
-
-      const aiContent = response.text || "I'm sorry, I couldn't process that request.";
-      setMessages(prev => [...prev, { role: 'assistant', content: aiContent }]);
-    } catch (err) {
-      console.error('AI Error:', err);
-      setMessages(prev => [...prev, { role: 'assistant', content: "Sorry, I encountered an error connecting to my brain. Please try again." }]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex h-[calc(100vh-120px)] flex-col gap-6">
+    <div className="flex h-[calc(100vh-88px)] flex-col gap-0 overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm">
 
-      {/* ── Header ─────────────────────────────────────────────────── */}
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">Coach</h2>
-          <p className="mt-1 text-slate-500">AI mentorship trained on your career data.</p>
+      {/* ── Top bar ──────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5 shrink-0">
+        <div className="flex items-center gap-3">
+          {/* Mobile sidebar toggle */}
+          {activeTab === 'chat' && (
+            <button
+              onClick={() => setSidebarOpen((v) => !v)}
+              className="md:hidden rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+            >
+              <Menu className="h-4 w-4" />
+            </button>
+          )}
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-900">
+            <Brain className="h-4 w-4 text-white" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-bold text-slate-900 leading-none">Artist Coach</p>
+              {summarizing && (
+                <span className="flex items-center gap-1 rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-[9px] font-semibold text-blue-500">
+                  <Sparkles className="h-2.5 w-2.5 animate-pulse" /> Summarizing
+                </span>
+              )}
+            </div>
+            {activeTab === 'chat' && activeSession && (
+              <p className="mt-0.5 text-[10px] text-slate-400 truncate max-w-[220px]">{activeSession.title}</p>
+            )}
+            {activeTab !== 'chat' && (
+              <p className="text-[10px] text-slate-400 mt-0.5">AI mentorship trained on your data</p>
+            )}
+          </div>
         </div>
-
-        <div className="flex items-center gap-3 self-start sm:self-auto">
-          {/* Tab switcher */}
-          <div className="flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
+        <div className="flex items-center gap-2">
+          {activeTab === 'chat' && (
+            <button
+              onClick={createNewSession}
+              className="hidden md:flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+            >
+              <Plus className="h-3 w-3" /> New chat
+            </button>
+          )}
+          <div className="flex rounded-xl border border-slate-100 bg-slate-50 p-0.5">
             <button
               onClick={() => setActiveTab('chat')}
-              className={cn(
-                'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all',
-                activeTab === 'chat'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700',
-              )}
+              className={cn('flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest transition-all', activeTab === 'chat' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600')}
             >
-              <MessageSquare className="h-3.5 w-3.5" />
-              Chat
+              <MessageSquare className="h-3 w-3" /> Chat
             </button>
             <button
               onClick={() => setActiveTab('knowledge')}
-              className={cn(
-                'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all',
-                activeTab === 'knowledge'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700',
-              )}
+              className={cn('flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest transition-all', activeTab === 'knowledge' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600')}
             >
-              <Database className="h-3.5 w-3.5" />
-              Knowledge
+              <Database className="h-3 w-3" /> Knowledge
             </button>
           </div>
-
-          {/* Clear history — chat tab only */}
-          {activeTab === 'chat' && (
-            <button
-              onClick={clearChatHistory}
-              className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-500 shadow-sm transition-colors hover:border-rose-200 hover:text-rose-600"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Clear
-            </button>
-          )}
         </div>
-      </header>
+      </div>
 
-      {/* ── Main panel ─────────────────────────────────────────────── */}
-      <div className="flex min-h-0 flex-1 overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm">
+      <div className="flex min-h-0 flex-1 relative">
 
-        {/* ── Chat tab ──────────────────────────────────────────────── */}
+        {/* ── Chat tab ─────────────────────────────────────────────────── */}
         {activeTab === 'chat' && (
-          <div className="flex min-h-0 flex-1 flex-col">
+          <>
+            {/* Desktop sidebar */}
+            <div className="hidden md:flex w-60 shrink-0 flex-col border-r border-slate-100 bg-slate-50/60">
+              <SidebarContent />
+            </div>
+
+            {/* Mobile sidebar drawer */}
+            <AnimatePresence>
+              {sidebarOpen && (
+                <>
+                  {/* Backdrop */}
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 z-20 bg-slate-900/30 md:hidden"
+                    onClick={() => setSidebarOpen(false)}
+                  />
+                  {/* Drawer */}
+                  <motion.div
+                    initial={{ x: '-100%' }}
+                    animate={{ x: 0 }}
+                    exit={{ x: '-100%' }}
+                    transition={{ type: 'spring', damping: 28, stiffness: 260 }}
+                    className="absolute left-0 top-0 bottom-0 z-30 w-72 bg-white shadow-xl md:hidden"
+                    style={{ borderRadius: '0 1.25rem 1.25rem 0' }}
+                  >
+                    <SidebarContent />
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+
+            {/* Chat area */}
             <div
-              ref={scrollRef}
-              className="min-h-0 flex-1 overflow-y-auto space-y-6 p-6"
+              className="flex min-h-0 flex-1 flex-col relative overflow-hidden"
+              style={{ background: 'linear-gradient(160deg,#f6f8ff 0%,#ffffff 55%,#fafafa 100%)' }}
             >
-              {messages.map((msg, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    'flex max-w-[88%] gap-3 md:gap-4',
-                    msg.role === 'user' ? 'ml-auto flex-row-reverse' : '',
-                  )}
-                >
-                  {/* Avatar */}
-                  <div className={cn(
-                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl shadow-sm',
-                    msg.role === 'assistant' ? 'bg-slate-100' : 'bg-slate-900',
-                  )}>
-                    {msg.role === 'assistant'
-                      ? <Brain className="h-4 w-4 text-slate-600" />
-                      : <MessageSquare className="h-4 w-4 text-white" />
-                    }
-                  </div>
+              {/* Ambient glows */}
+              <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                <div className="absolute -top-20 right-4 h-64 w-64 rounded-full bg-blue-500/[0.045] blur-3xl" />
+                <div className="absolute bottom-12 left-1/3 h-40 w-40 rounded-full bg-blue-400/[0.03] blur-3xl" />
+              </div>
 
-                  {/* Bubble */}
-                  <div className={cn(
-                    'rounded-2xl p-4 text-sm leading-relaxed',
-                    msg.role === 'assistant'
-                      ? 'rounded-tl-none border border-slate-100 bg-slate-50 text-slate-800'
-                      : 'rounded-tr-none bg-slate-900 text-white shadow-md',
-                  )}>
-                    <div className="prose prose-sm max-w-none prose-slate">
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {loading && (
-                <div className="flex gap-4">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100">
-                    <Brain className="h-4 w-4 text-slate-400" />
-                  </div>
-                  <div className="flex h-12 w-28 items-center justify-center rounded-2xl rounded-tl-none border border-slate-100 bg-slate-50">
-                    <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+              {/* Context summary pill */}
+              {activeSession?.summary && (
+                <div className="relative shrink-0 border-b border-blue-100/60 px-5 py-2.5 bg-gradient-to-r from-blue-50/80 to-transparent">
+                  <div className="flex items-start gap-2">
+                    <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-blue-400" />
+                    <p className="line-clamp-2 text-[11px] leading-relaxed text-blue-600/80">{activeSession.summary}</p>
                   </div>
                 </div>
               )}
-            </div>
 
-            {/* Input */}
-            <form
-              onSubmit={handleSendMessage}
-              className="border-t border-slate-100 bg-white p-4"
-            >
-              <div className="relative">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask your coach anything…"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3.5 pl-5 pr-14 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
-                />
-                <button
-                  type="submit"
-                  disabled={loading || !input.trim()}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-xl bg-slate-900 p-2.5 text-white shadow transition-colors hover:bg-blue-600 disabled:opacity-40 disabled:hover:bg-slate-900"
+              {/* ── Welcome screen (fresh chat) ── */}
+              {messages.length === 1 && !loading && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.28, ease: 'easeOut' }}
+                  className="relative shrink-0 px-5 pt-7 pb-5"
                 >
-                  <Send className="h-4 w-4" />
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* ── Knowledge tab ─────────────────────────────────────────── */}
-        {activeTab === 'knowledge' && (
-          <div className="min-h-0 flex-1 overflow-y-auto p-6 space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <BookOpen className="h-4.5 w-4.5 text-slate-400" />
-                <h3 className="text-base font-bold text-slate-900">Knowledge Base</h3>
-                {resources.length > 0 && (
-                  <span className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-500">
-                    {resources.length}
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={() => setIsAddingResource(true)}
-                className="btn-primary py-2 px-4 text-xs"
-              >
-                <Plus className="h-4 w-4" />
-                Add resource
-              </button>
-            </div>
-
-            {resources.length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-[2rem] border border-dashed border-slate-200 bg-slate-50 py-20 text-center">
-                <Database className="mb-4 h-10 w-10 text-slate-200" />
-                <p className="font-medium text-slate-500">No resources yet.</p>
-                <p className="mt-1 text-xs text-slate-400">Add notes or links to train the coach on your strategy.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {resources.map((resource) => (
-                  <div
-                    key={resource.id}
-                    className="group relative flex flex-col rounded-[1.75rem] border border-slate-100 bg-white p-5 shadow-sm transition-shadow hover:shadow-md"
-                  >
-                    <div className="mb-3 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                          {resource.category}
-                        </span>
-                        <div className="flex h-5 w-5 items-center justify-center rounded-md border border-slate-100 bg-white">
-                          {resource.type === 'image'   && <ImageIcon  className="h-3 w-3 text-slate-400" />}
-                          {resource.type === 'webpage' && <Globe      className="h-3 w-3 text-slate-400" />}
-                          {(resource.type === 'text' || resource.type === 'pdf') && <FileText className="h-3 w-3 text-slate-400" />}
+                  {/* Briefing card */}
+                  <div className="flex items-start gap-3 mb-5">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-900 shadow-md mt-0.5">
+                      <Brain className="h-3.5 w-3.5 text-white" />
+                    </div>
+                    <div className="max-w-sm rounded-2xl rounded-tl-sm border border-slate-100 bg-white/95 px-5 py-4 shadow-sm backdrop-blur-sm">
+                      <p className="text-[13px] text-slate-500 mb-3.5 leading-relaxed">I reviewed your recent activity.</p>
+                      <div className="mb-3.5 rounded-xl bg-slate-50 border border-slate-100 px-3.5 py-3">
+                        <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400 mb-1.5">Biggest opportunity</p>
+                        <div className="flex items-start gap-2">
+                          <span className="text-blue-500 font-bold shrink-0 text-sm leading-snug">→</span>
+                          <p className="text-[13px] font-semibold text-slate-800 leading-snug">Your DJ clips are outperforming everything else</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                        {resource.url && (
-                          <a
-                            href={resource.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:text-blue-600"
-                          >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                          </a>
-                        )}
-                        <button
-                          onClick={() => handleDeleteResource(resource.id)}
-                          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:text-rose-600"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                      <p className="text-[13px] text-slate-600 leading-relaxed">What would you like to work on?</p>
+                    </div>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="flex-1 h-px bg-slate-100" />
+                    <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-300">Suggestions</span>
+                    <div className="flex-1 h-px bg-slate-100" />
+                  </div>
+
+                  {/* Action chips */}
+                  <div className="flex flex-wrap gap-2">
+                    {PROMPT_STARTERS.map((p) => (
+                      <button
+                        key={p.label}
+                        onClick={() => handleSendMessage(null, p.prompt)}
+                        className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 active:scale-[0.97] transition-all"
+                      >
+                        <span className="text-sm leading-none">{p.icon}</span>
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Spacer in welcome state so input sits naturally */}
+              {messages.length === 1 && !loading && <div className="flex-1" />}
+
+              {/* ── Active chat thread ── */}
+              {(messages.length > 1 || loading) && (
+                <div ref={scrollRef} className="relative flex-1 overflow-y-auto px-5 py-5 space-y-4">
+                  {messages.map((msg, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.18 }}
+                      className={cn('flex gap-3', msg.role === 'user' ? 'justify-end' : '')}
+                    >
+                      {msg.role === 'assistant' && (
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-slate-900 shadow-sm mt-0.5">
+                          <Brain className="h-3.5 w-3.5 text-white" />
+                        </div>
+                      )}
+                      <div className={cn(
+                        'max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
+                        msg.role === 'assistant'
+                          ? 'rounded-tl-sm bg-white/95 border border-slate-100 text-slate-800 shadow-sm backdrop-blur-sm'
+                          : 'rounded-tr-sm bg-slate-900 text-white shadow-md',
+                      )}>
+                        <div className={cn('prose prose-sm max-w-none', msg.role === 'user' ? 'prose-invert' : 'prose-slate')}>
+                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                  {loading && (
+                    <div className="flex gap-3">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-slate-900 mt-0.5">
+                        <Brain className="h-3.5 w-3.5 text-white" />
+                      </div>
+                      <div className="flex items-center gap-1.5 rounded-2xl rounded-tl-sm border border-slate-100 bg-white/95 px-4 py-3 shadow-sm backdrop-blur-sm">
+                        {[0, 1, 2].map((d) => (
+                          <div key={d} className="h-1.5 w-1.5 rounded-full bg-slate-300 animate-bounce" style={{ animationDelay: `${d * 150}ms` }} />
+                        ))}
                       </div>
                     </div>
+                  )}
+                </div>
+              )}
 
-                    <h4 className="font-bold text-slate-900">{resource.title}</h4>
-
-                    {resource.type === 'image' && resource.url && (
-                      <div className="my-3 aspect-video overflow-hidden rounded-xl border border-slate-100 bg-slate-50">
-                        <img
-                          src={resource.url}
-                          alt={resource.title}
-                          className="h-full w-full object-cover"
-                          referrerPolicy="no-referrer"
-                        />
-                      </div>
-                    )}
-
-                    <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-slate-500">
-                      {resource.content}
-                    </p>
+              {/* Input */}
+              <div className="relative shrink-0 border-t border-slate-100/80 bg-white/80 backdrop-blur-sm">
+                <form onSubmit={handleSendMessage} className="px-4 py-3">
+                  <div className="relative flex items-center">
+                    <input
+                      type="text"
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder="Ask your coach anything…"
+                      className="flex-1 rounded-2xl border border-slate-200 bg-slate-50/80 py-3 pl-5 pr-14 text-sm outline-none focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100/70 transition-all placeholder:text-slate-400"
+                    />
+                    <button
+                      type="submit"
+                      disabled={loading || !input.trim()}
+                      className="absolute right-2 rounded-xl bg-slate-900 p-2.5 text-white shadow transition-colors hover:bg-blue-600 disabled:opacity-40"
+                    >
+                      <Send className="h-4 w-4" />
+                    </button>
                   </div>
-                ))}
+                </form>
               </div>
-            )}
+            </div>
+          </>
+        )}
+
+        {/* ── Knowledge tab ──────────────────────────────────────────────── */}
+        {activeTab === 'knowledge' && (
+          <div
+            className="flex-1 overflow-y-auto"
+            style={{ background: 'linear-gradient(160deg,#f6f8ff 0%,#ffffff 55%,#fafafa 100%)' }}
+          >
+            <div className="p-5 space-y-4">
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-900">Knowledge Base</h3>
+                  {resources.length > 0 && (
+                    <span className="rounded-md border border-slate-200 bg-white/80 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">{resources.length}</span>
+                  )}
+                </div>
+                <button
+                  onClick={() => setIsAddingResource(true)}
+                  className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-[11px] font-bold text-white shadow-sm hover:bg-blue-600 active:scale-[0.97] transition-all"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add
+                </button>
+              </div>
+
+              {resources.length === 0 ? (
+                <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 py-16 text-center">
+                  <Database className="mb-3 h-8 w-8 text-slate-200" />
+                  <p className="text-sm font-semibold text-slate-400">No resources yet</p>
+                  <p className="mt-1 text-xs text-slate-400">Add notes, links, or files to train the coach.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {resources.map((resource) => {
+                    const isEditing = editingResourceId === resource.id;
+                    const isDeleting = deletingResourceId === resource.id;
+                    return (
+                      <div
+                        key={resource.id}
+                        className={cn(
+                          'relative flex flex-col rounded-2xl border bg-white/80 p-4 backdrop-blur-sm transition-all',
+                          isEditing
+                            ? 'border-blue-200 shadow-[0_0_0_3px_rgba(59,130,246,0.07)] ring-1 ring-blue-100'
+                            : 'border-slate-100/80 shadow-sm hover:border-slate-200 hover:shadow-md',
+                        )}
+                      >
+                        {isEditing ? (
+                          /* ── Edit state ── */
+                          <div className="flex flex-col gap-3">
+                            <input
+                              autoFocus
+                              className="w-full rounded-xl border border-blue-200 bg-blue-50/50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100/70 transition-all"
+                              value={editingResource.title ?? ''}
+                              onChange={(e) => setEditingResource((p) => ({ ...p, title: e.target.value }))}
+                              placeholder="Title"
+                            />
+                            <textarea
+                              rows={5}
+                              className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs leading-relaxed text-slate-700 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100/60 transition-all"
+                              value={editingResource.content ?? ''}
+                              onChange={(e) => setEditingResource((p) => ({ ...p, content: e.target.value }))}
+                              placeholder="Content…"
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleSaveEditResource(resource.id)}
+                                className="flex-1 rounded-xl bg-slate-900 py-2 text-[11px] font-bold text-white hover:bg-blue-600 active:scale-[0.98] transition-all"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => { setEditingResourceId(null); setEditingResource({}); }}
+                                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-[11px] font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          /* ── View state ── */
+                          <>
+                            {/* Meta + actions row */}
+                            <div className="mb-2.5 flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
+                                <span className="shrink-0 rounded-md border border-slate-100 bg-slate-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">{resource.category}</span>
+                                {resource.type !== 'text' && (
+                                  <span className="shrink-0 rounded-md border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-blue-500">{resource.type}</span>
+                                )}
+                              </div>
+                              {/* Action buttons — always visible */}
+                              {isDeleting ? (
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    onClick={() => { handleDeleteResource(resource.id); setDeletingResourceId(null); }}
+                                    className="rounded-lg bg-rose-500 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-rose-600 transition-colors"
+                                  >
+                                    Delete
+                                  </button>
+                                  <button
+                                    onClick={() => setDeletingResourceId(null)}
+                                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                  <button
+                                    onClick={() => { setEditingResourceId(resource.id); setEditingResource({ title: resource.title, content: resource.content }); }}
+                                    className="rounded-lg p-1.5 text-slate-300 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                                    title="Edit"
+                                  >
+                                    <Edit2 className="h-3.5 w-3.5" />
+                                  </button>
+                                  {resource.url && (
+                                    <a
+                                      href={resource.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="rounded-lg p-1.5 text-slate-300 hover:bg-slate-100 hover:text-blue-500 transition-colors"
+                                    >
+                                      <ExternalLink className="h-3.5 w-3.5" />
+                                    </a>
+                                  )}
+                                  <button
+                                    onClick={() => setDeletingResourceId(resource.id)}
+                                    className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition-colors"
+                                    title="Delete"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                            <h4 className="mb-1.5 text-sm font-semibold text-slate-900 leading-snug">{resource.title}</h4>
+                            {resource.type === 'image' && resource.url && (
+                              <div className="mb-2 aspect-video overflow-hidden rounded-xl border border-slate-100">
+                                <img src={resource.url} alt={resource.title} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                              </div>
+                            )}
+                            <p className="line-clamp-3 text-xs leading-relaxed text-slate-500">{resource.content}</p>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
 
-      {/* ── Add Resource Modal ─────────────────────────────────────── */}
+      {/* ── Add Resource Modal ──────────────────────────────────────────── */}
       <AnimatePresence>
         {isAddingResource && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
@@ -511,158 +935,67 @@ export function ArtistCoach() {
             >
               <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
                 <h3 className="text-lg font-bold text-slate-900">Add knowledge resource</h3>
-                <button
-                  onClick={() => setIsAddingResource(false)}
-                  className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700"
-                >
+                <button onClick={() => setIsAddingResource(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition-colors">
                   <X className="h-5 w-5" />
                 </button>
               </div>
-
               <form onSubmit={handleAddResource} className="space-y-4 p-6">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Title</label>
-                    <input
-                      required
-                      type="text"
-                      value={newResource.title}
-                      onChange={(e) => setNewResource({ ...newResource, title: e.target.value })}
-                      placeholder="e.g. 2025 Marketing Strategy"
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
-                    />
+                    <input required type="text" value={newResource.title} onChange={(e) => setNewResource({ ...newResource, title: e.target.value })} placeholder="e.g. 2025 Marketing Strategy" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-100 transition-all" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Category</label>
-                    <select
-                      value={newResource.category}
-                      onChange={(e) => setNewResource({ ...newResource, category: e.target.value })}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
-                    >
-                      <option>Strategy</option>
-                      <option>Technical</option>
-                      <option>Inspiration</option>
-                      <option>Marketing</option>
-                      <option>General</option>
+                    <select value={newResource.category} onChange={(e) => setNewResource({ ...newResource, category: e.target.value })} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-100 transition-all">
+                      <option>Strategy</option><option>Technical</option><option>Inspiration</option><option>Marketing</option><option>General</option>
                     </select>
                   </div>
                 </div>
-
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Type</label>
                   <div className="grid grid-cols-4 gap-2">
                     {([
-                      { id: 'text',    icon: FileText,   label: 'Text'  },
-                      { id: 'image',   icon: ImageIcon,  label: 'Image' },
-                      { id: 'webpage', icon: Globe,      label: 'Web'   },
-                      { id: 'pdf',     icon: FileText,   label: 'PDF'   },
+                      { id: 'text', icon: FileText, label: 'Text' },
+                      { id: 'image', icon: ImageIcon, label: 'Image' },
+                      { id: 'webpage', icon: Globe, label: 'Web' },
+                      { id: 'pdf', icon: FileText, label: 'PDF' },
                     ] as const).map((t) => (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => setNewResource({ ...newResource, type: t.id })}
-                        className={cn(
-                          'flex flex-col items-center gap-1.5 rounded-xl border p-3 transition-all',
-                          newResource.type === t.id
-                            ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
-                            : 'border-slate-100 bg-white text-slate-400 hover:border-slate-200',
-                        )}
-                      >
+                      <button key={t.id} type="button" onClick={() => setNewResource({ ...newResource, type: t.id })} className={cn('flex flex-col items-center gap-1.5 rounded-xl border p-3 transition-all', newResource.type === t.id ? 'border-slate-900 bg-slate-900 text-white shadow-sm' : 'border-slate-100 bg-white text-slate-400 hover:border-slate-200')}>
                         <t.icon className="h-4 w-4" />
                         <span className="text-[10px] font-bold uppercase tracking-tighter">{t.label}</span>
                       </button>
                     ))}
                   </div>
                 </div>
-
                 {(newResource.type === 'image' || newResource.type === 'pdf') && (
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Upload file</label>
-                    <div
-                      onDragEnter={handleDrag}
-                      onDragLeave={handleDrag}
-                      onDragOver={handleDrag}
-                      onDrop={handleDrop}
-                      className={cn(
-                        'relative flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed p-8 transition-all',
-                        dragActive    ? 'border-blue-400 bg-blue-50'    : 'border-slate-200 bg-slate-50',
-                        selectedFile  ? 'border-emerald-400 bg-emerald-50' : '',
-                      )}
-                    >
-                      <input
-                        type="file"
-                        onChange={(e) => e.target.files && setSelectedFile(e.target.files[0])}
-                        className="absolute inset-0 cursor-pointer opacity-0"
-                        accept={newResource.type === 'image' ? 'image/*' : 'application/pdf'}
-                      />
+                    <div onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop} className={cn('relative flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed p-8 transition-all', dragActive ? 'border-blue-400 bg-blue-50' : 'border-slate-200 bg-slate-50', selectedFile ? 'border-emerald-400 bg-emerald-50' : '')}>
+                      <input type="file" onChange={(e) => e.target.files && setSelectedFile(e.target.files[0])} className="absolute inset-0 cursor-pointer opacity-0" accept={newResource.type === 'image' ? 'image/*' : 'application/pdf'} />
                       {selectedFile ? (
-                        <>
-                          <div className="rounded-xl bg-emerald-500 p-3">
-                            <CheckCircle2 className="h-6 w-6 text-white" />
-                          </div>
-                          <div className="text-center">
-                            <p className="text-sm font-bold text-slate-900">{selectedFile.name}</p>
-                            <p className="text-[10px] uppercase tracking-widest text-slate-400">File selected</p>
-                          </div>
-                        </>
+                        <><div className="rounded-xl bg-emerald-500 p-3"><CheckCircle2 className="h-6 w-6 text-white" /></div><div className="text-center"><p className="text-sm font-bold text-slate-900">{selectedFile.name}</p><p className="text-[10px] uppercase tracking-widest text-slate-400">File selected</p></div></>
                       ) : (
-                        <>
-                          <div className="rounded-xl bg-white p-3 shadow-sm">
-                            <Upload className="h-6 w-6 text-slate-400" />
-                          </div>
-                          <div className="text-center">
-                            <p className="text-sm font-bold text-slate-900">Click or drag to upload</p>
-                            <p className="text-[10px] uppercase tracking-widest text-slate-400">
-                              {newResource.type === 'image' ? 'PNG, JPG, GIF' : 'PDF only'}
-                            </p>
-                          </div>
-                        </>
+                        <><div className="rounded-xl bg-white p-3 shadow-sm"><Upload className="h-6 w-6 text-slate-400" /></div><div className="text-center"><p className="text-sm font-bold text-slate-900">Click or drag to upload</p><p className="text-[10px] uppercase tracking-widest text-slate-400">{newResource.type === 'image' ? 'PNG, JPG, GIF' : 'PDF only'}</p></div></>
                       )}
                     </div>
                   </div>
                 )}
-
                 {newResource.type === 'webpage' && (
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">URL</label>
                     <div className="relative">
                       <LinkIcon className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                      <input
-                        required
-                        type="url"
-                        value={newResource.url}
-                        onChange={(e) => setNewResource({ ...newResource, url: e.target.value })}
-                        placeholder="https://…"
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
-                      />
+                      <input required type="url" value={newResource.url} onChange={(e) => setNewResource({ ...newResource, url: e.target.value })} placeholder="https://…" className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm outline-none focus:ring-2 focus:ring-blue-100 transition-all" />
                     </div>
                   </div>
                 )}
-
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                    {newResource.type === 'text' ? 'Content' : 'Notes / description'}
-                  </label>
-                  <textarea
-                    required={newResource.type === 'text'}
-                    rows={4}
-                    value={newResource.content}
-                    onChange={(e) => setNewResource({ ...newResource, content: e.target.value })}
-                    placeholder={newResource.type === 'text' ? 'Paste your notes here…' : 'Add context for the coach…'}
-                    className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
-                  />
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{newResource.type === 'text' ? 'Content' : 'Notes / description'}</label>
+                  <textarea required={newResource.type === 'text'} rows={4} value={newResource.content} onChange={(e) => setNewResource({ ...newResource, content: e.target.value })} placeholder={newResource.type === 'text' ? 'Paste your notes here…' : 'Add context for the coach…'} className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-100 transition-all" />
                 </div>
-
-                <button
-                  type="submit"
-                  disabled={isUploading}
-                  className="btn-primary w-full py-3"
-                >
-                  {isUploading ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" /> Uploading…</>
-                  ) : (
-                    'Save to knowledge base'
-                  )}
+                <button type="submit" disabled={isUploading} className="btn-primary w-full py-3">
+                  {isUploading ? <><Loader2 className="h-4 w-4 animate-spin" /> Uploading…</> : 'Save to knowledge base'}
                 </button>
               </form>
             </motion.div>
@@ -672,4 +1005,3 @@ export function ArtistCoach() {
     </div>
   );
 }
-

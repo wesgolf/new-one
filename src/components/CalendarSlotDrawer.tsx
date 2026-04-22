@@ -30,8 +30,8 @@ const TYPE_OPTIONS = [
     label: 'Task',
     description: 'Action item with a due date',
     icon: CheckSquare,
-    border: 'border-purple-100 bg-purple-50 hover:border-purple-300',
-    iconClass: 'text-purple-600',
+    border: 'border-blue-100 bg-blue-50 hover:border-blue-300',
+    iconClass: 'text-blue-600',
   },
   {
     type: 'post' as const,

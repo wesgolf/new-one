@@ -54,7 +54,7 @@ export function LinkedContentModal({ isOpen, onClose, release }: LinkedContentMo
         {/* Header */}
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-purple-600 rounded-2xl shadow-lg shadow-purple-200">
+            <div className="p-3 bg-blue-600 rounded-2xl shadow-lg shadow-blue-200">
               <Layout className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -78,13 +78,13 @@ export function LinkedContentModal({ isOpen, onClose, release }: LinkedContentMo
         <div className="flex-1 overflow-y-auto p-8 bg-white">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-20 gap-4">
-              <Loader2 className="w-10 h-10 text-purple-600 animate-spin" />
+              <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
               <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Fetching Content Rollout...</p>
             </div>
           ) : linkedContent.length > 0 ? (
             <div className="grid grid-cols-1 gap-4">
               {linkedContent.map(item => (
-                <div key={item.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 group hover:border-purple-200 transition-all">
+                <div key={item.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 group hover:border-blue-200 transition-all">
                   <div className="flex items-center gap-4">
                     <div className={cn(
                       "w-10 h-10 rounded-xl flex items-center justify-center text-white text-xs font-bold shadow-sm",
@@ -112,7 +112,7 @@ export function LinkedContentModal({ isOpen, onClose, release }: LinkedContentMo
                     </div>
                   </div>
                   <button className="p-2 hover:bg-white rounded-lg transition-colors border border-transparent hover:border-slate-200">
-                    <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-purple-600 transition-colors" />
+                    <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
                   </button>
                 </div>
               ))}

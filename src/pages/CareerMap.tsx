@@ -45,7 +45,7 @@ export function CareerMap() {
 
   const milestones = useMemo(() => [
     ...releases.map(r => ({ date: r.release_date || r.distribution?.release_date, title: r.title, type: 'release' as const, icon: Music, color: 'bg-blue-500' })),
-    ...shows.map(s => ({ date: s.date, title: s.venue || s.title || 'Show', type: 'show' as const, icon: Calendar, color: 'bg-purple-500' })),
+    ...shows.map(s => ({ date: s.date, title: s.venue || s.title || 'Show', type: 'show' as const, icon: Calendar, color: 'bg-indigo-500' })),
     ...goals.map(g => ({ date: g.deadline, title: g.title, type: 'goal' as const, icon: Target, color: 'bg-emerald-500' })),
   ].filter(m => m.date).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()), [goals, releases, shows]);
 
@@ -129,7 +129,7 @@ export function CareerMap() {
                 {milestones.map((m, i) => (
                   <div key={i} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group">
                     <div className="flex items-center justify-center w-10 h-10 rounded-full border border-white bg-slate-50 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
-                      <m.icon className={cn('w-5 h-5', m.type === 'release' ? 'text-blue-600' : m.type === 'show' ? 'text-purple-600' : 'text-emerald-600')} />
+                      <m.icon className={cn('w-5 h-5', m.type === 'release' ? 'text-blue-600' : m.type === 'show' ? 'text-indigo-600' : 'text-emerald-600')} />
                     </div>
                     <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-2xl border border-slate-100 bg-white shadow-sm group-hover:shadow-md transition-all">
                       <div className="flex items-center justify-between mb-1">
@@ -292,7 +292,7 @@ export function CareerMap() {
           {/* Stale Milestones — computed from real goals / releases */}
           <div className="glass-card p-6">
             <h3 className="text-sm font-bold mb-4 text-text-primary flex items-center gap-2">
-              <Clock className="w-4 h-4 text-purple-500" />
+              <Clock className="w-4 h-4 text-blue-500" />
               Needs Attention
             </h3>
             {staleMilestones.length === 0 ? (

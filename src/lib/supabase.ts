@@ -7,10 +7,17 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('Supabase environment variables are missing. Please configure VITE_SUPABASE_URL and VITE_SUPABASE_PK in the AI Studio Secrets panel.');
 }
 
-// We still export the client, but it will fail on calls if URL is missing.
-// To prevent the "supabaseUrl is required" crash on initialization, we can provide a dummy URL if missing,
-// but it's better to let the user know they need to set it.
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder-project.supabase.co',
-  supabaseAnonKey || 'placeholder-key'
+  supabaseAnonKey || 'placeholder-key',
+  {
+    auth: {
+      // Sessions are stored in localStorage — isolated per origin & browser profile.
+      // Incognito tabs start with a clean localStorage so sessions don't carry over.
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storageKey: 'artist-os-auth',
+    },
+  }
 );
