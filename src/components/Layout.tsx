@@ -10,6 +10,8 @@ import {
   MessageSquareMore,
   Sparkles,
   Layers,
+  Target,
+  CheckSquare,
   ChevronDown,
   Menu,
   X,
@@ -43,6 +45,8 @@ const TOP_NAV: NavGroup[] = [
     children: [
       { label: 'Content Engine', path: '/content', icon: Layers, description: 'Posts & scheduling' },
       { label: 'Calendar', path: '/calendar', icon: CalendarIcon, description: 'Events & deadlines' },
+      { label: 'Goals', path: '/goals', icon: Target, description: 'Track milestones & targets' },
+      { label: 'Tasks', path: '/tasks', icon: CheckSquare, description: 'To-do list & action items' },
     ],
   },
   { label: 'Analytics', path: '/analytics' },

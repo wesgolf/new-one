@@ -17,7 +17,9 @@ import {
   Rocket,
   Share2,
   TrendingUp,
+  RefreshCw,
 } from 'lucide-react';
+import { useSongstatsTrackStats } from '../hooks/useSongstatsTrackStats';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { fetchReleaseById } from '../lib/supabaseData';
@@ -31,8 +33,15 @@ function spotifyUrl(id: string | null | undefined) {
   return id ? `https://open.spotify.com/track/${id}` : null;
 }
 
-function soundcloudUrl(id: string | null | undefined) {
-  return id ? `https://soundcloud.com/wes-music/${id}` : null;
+function soundcloudUrl(idOrUrl: string | null | undefined) {
+  if (!idOrUrl) return null;
+  // Already a full URL — use as-is
+  if (idOrUrl.startsWith('http')) return idOrUrl;
+  // Numeric ID: construct API/resolve URL via SoundCloud permalink format isn't possible
+  // without the username. Fall back to profile page with the track slug if it looks like a slug.
+  const SOUNDCLOUD_PROFILE = import.meta.env.VITE_SOUNDCLOUD_URL ?? 'https://soundcloud.com/wesmusic1';
+  const base = SOUNDCLOUD_PROFILE.replace(/\/$/, '');
+  return `${base}/${idOrUrl}`;
 }
 
 function fmtDate(d: string | null | undefined) {
@@ -120,6 +129,177 @@ function statusLabel(s: string | null | undefined) {
   if (s === 'released') return 'Released';
   if (s === 'scheduled') return 'Scheduled';
   return 'Unreleased';
+}
+
+// ── Track Stats Panel (Songstats) ────────────────────────────────────────────
+
+const PLATFORM_CONFIG: Record<string, {
+  label: string;
+  color: string;
+  bg: string;
+  icon: string;
+  fields: { key: string; label: string; }[];
+}> = {
+  spotify: {
+    label: 'Spotify', color: 'text-[#1DB954]', bg: 'bg-[#1DB954]/8', icon: '🎵',
+    fields: [
+      { key: 'streams_total',          label: 'Streams' },
+      { key: 'saves_total',            label: 'Saves' },
+      { key: 'playlist_count_current', label: 'Playlists' },
+      { key: 'playlist_reach_current', label: 'Playlist Reach' },
+    ],
+  },
+  soundcloud: {
+    label: 'SoundCloud', color: 'text-[#FF5500]', bg: 'bg-[#FF5500]/8', icon: '🔊',
+    fields: [
+      { key: 'plays_total',  label: 'Plays' },
+      { key: 'likes_total',  label: 'Likes' },
+      { key: 'reposts_total', label: 'Reposts' },
+    ],
+  },
+  apple_music: {
+    label: 'Apple Music', color: 'text-[#FA243C]', bg: 'bg-[#FA243C]/8', icon: '🎶',
+    fields: [
+      { key: 'playlists_current', label: 'Playlists' },
+      { key: 'playlists_editorial_current', label: 'Editorial' },
+    ],
+  },
+  shazam: {
+    label: 'Shazam', color: 'text-[#0066FF]', bg: 'bg-[#0066FF]/8', icon: '⚡',
+    fields: [
+      { key: 'shazams_total',  label: 'Shazams' },
+      { key: 'charts_current', label: 'Charts' },
+    ],
+  },
+  youtube: {
+    label: 'YouTube', color: 'text-[#FF0000]', bg: 'bg-[#FF0000]/8', icon: '▶️',
+    fields: [
+      { key: 'video_views_total', label: 'Views' },
+      { key: 'likes_total',       label: 'Likes' },
+    ],
+  },
+  tiktok: {
+    label: 'TikTok', color: 'text-slate-900', bg: 'bg-slate-100', icon: '🎵',
+    fields: [
+      { key: 'sounds_total', label: 'Sounds' },
+      { key: 'views_total',  label: 'Views' },
+    ],
+  },
+  beatport: {
+    label: 'Beatport', color: 'text-[#00FF95]', bg: 'bg-[#00FF95]/10', icon: '🎧',
+    fields: [
+      { key: 'overall_top_100_charted_tracks_total', label: 'Top 100 Tracks' },
+      { key: 'dj_charts_total', label: 'DJ Charts' },
+    ],
+  },
+};
+
+function fmt(n: number | undefined): string {
+  if (n == null || isNaN(n)) return '—';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+function TrackStatsPanel({ title, isrc }: { title: string; isrc?: string | null }) {
+  const { stats, songstatsTrackId, loading, error } = useSongstatsTrackStats(title, isrc);
+
+  if (loading) {
+    return (
+      <div className="flex h-32 items-center justify-center gap-2 text-slate-400">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span className="text-xs">Loading stats from Songstats…</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <p className="mt-4 text-xs text-rose-400">
+        Could not load stats: {error}
+      </p>
+    );
+  }
+
+  if (!songstatsTrackId || !stats?.stats?.length) {
+    return (
+      <div className="mt-4">
+        <div className="grid grid-cols-2 gap-3">
+          {[{ label: 'Total streams', icon: '🎧' }, { label: 'Saves', icon: '❤️' },
+            { label: 'Spotify listeners', icon: '📊' }, { label: 'Apple streams', icon: '🎶' }]
+            .map(({ label, icon }) => (
+              <div key={label} className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-sm">{icon}</p>
+                <p className="mt-2 text-xl font-bold text-slate-300">—</p>
+                <p className="mt-0.5 text-[11px] font-medium text-slate-400">{label}</p>
+              </div>
+            ))}
+        </div>
+        <p className="mt-4 text-xs text-slate-400">
+          {!songstatsTrackId
+            ? 'Track not yet matched in Songstats — add its ISRC or title to the mapping table in songstatsTrackMap.ts.'
+            : 'No data returned for this track yet.'}
+        </p>
+      </div>
+    );
+  }
+
+  // Build a map of source → data
+  const bySource: Record<string, Record<string, number>> = {};
+  for (const entry of stats.stats) {
+    bySource[entry.source.toLowerCase()] = entry.data;
+  }
+
+  // Only show platforms that have at least one non-zero value
+  const activePlatforms = Object.entries(PLATFORM_CONFIG).filter(([src, cfg]) => {
+    const d = bySource[src];
+    if (!d) return false;
+    return cfg.fields.some(f => (d[f.key] ?? 0) > 0);
+  });
+
+  if (activePlatforms.length === 0) {
+    return (
+      <p className="mt-4 text-xs text-slate-400">
+        Songstats returned data but all values are zero. Check back once the track has been streamed.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-4 space-y-4">
+      {activePlatforms.map(([src, cfg]) => {
+        const d = bySource[src];
+        const nonEmpty = cfg.fields.filter(f => (d[f.key] ?? 0) > 0);
+        return (
+          <div key={src} className={`rounded-2xl p-4 ${cfg.bg}`}>
+            <p className={`text-[10px] font-black uppercase tracking-widest mb-3 ${cfg.color}`}>
+              {cfg.icon} {cfg.label}
+            </p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {nonEmpty.map(f => (
+                <div key={f.key}>
+                  <p className="text-lg font-bold text-slate-900 tabular-nums">{fmt(d[f.key])}</p>
+                  <p className="text-[10px] font-medium text-slate-500 mt-0.5">{f.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+
+      {songstatsTrackId && (
+        <a
+          href={stats.track_info?.site_url ?? `https://songstats.com/track/${songstatsTrackId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-blue-500 transition-colors"
+        >
+          <ExternalLink className="h-3 w-3" />
+          View full report on Songstats
+        </a>
+      )}
+    </div>
+  );
 }
 
 // ── Future-ready placeholder card ─────────────────────────────────────────────
@@ -451,29 +631,12 @@ export function ReleaseDetail({ publicMode = false }: ReleaseDetailProps) {
           <div className="flex items-center gap-2.5">
             <TrendingUp className="h-4.5 w-4.5 text-slate-400" />
             <h2 className="text-base font-bold text-slate-900">Streaming metrics</h2>
-            <span className="ml-auto rounded-lg border border-slate-100 bg-slate-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-slate-400">
-              Coming soon
+            <span className="ml-auto rounded-lg border border-blue-100 bg-blue-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-blue-600">
+              via Songstats
             </span>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            {[
-              { label: 'Total streams',    icon: '🎧' },
-              { label: 'Saves',            icon: '❤️' },
-              { label: 'Spotify listeners', icon: '📊' },
-              { label: 'Apple streams',    icon: '🎶' },
-            ].map(({ label, icon }) => (
-              <div key={label} className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-sm">{icon}</p>
-                <p className="mt-2 text-xl font-bold text-slate-300">—</p>
-                <p className="mt-0.5 text-[11px] font-medium text-slate-400">{label}</p>
-              </div>
-            ))}
-          </div>
-
-          <p className="mt-4 text-xs text-slate-400">
-            Real-time metrics connect when Songstats integration is configured.
-          </p>
+          <TrackStatsPanel title={release.title} isrc={release.isrc} />
         </section>
       </div>
 

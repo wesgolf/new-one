@@ -247,10 +247,10 @@ export function ReleaseFormModal({ open, release, onClose, onSaved }: Props) {
           </div>
 
           <div>
-            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">SoundCloud track ID</label>
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">SoundCloud URL or track slug</label>
             <input
               className="input-base mt-1"
-              placeholder="12345678"
+              placeholder="https://soundcloud.com/wesmusic1/dream  or  dream"
               value={soundcloudId}
               onChange={(e) => setSoundcloudId(e.target.value)}
             />

@@ -635,6 +635,29 @@ function DailyMetricsChart({ data }: { data: ZernioDailyMetricsDay[] }) {
 // ── Platform Breakdown Table ──────────────────────────────────────────────────
 
 function PlatformBreakdownTable({ rows }: { rows: ZernioPlatformBreakdown[] }) {
+  // Deduplicate by normalized platform name, merging numeric fields to avoid duplicate React keys
+  const deduped = useMemo(() => {
+    const map = new Map<string, ZernioPlatformBreakdown>();
+    for (const row of rows) {
+      const pid = (row.platform ?? '').toLowerCase().trim() || 'unknown';
+      const existing = map.get(pid);
+      if (existing) {
+        existing.postCount   += row.postCount   ?? 0;
+        existing.impressions += row.impressions ?? 0;
+        existing.reach       += row.reach       ?? 0;
+        existing.likes       += row.likes       ?? 0;
+        existing.comments    += row.comments    ?? 0;
+        existing.shares      += row.shares      ?? 0;
+        existing.saves       += row.saves       ?? 0;
+        existing.clicks      += row.clicks      ?? 0;
+        existing.views       += row.views       ?? 0;
+      } else {
+        map.set(pid, { ...row, platform: pid });
+      }
+    }
+    return Array.from(map.values());
+  }, [rows]);
+
   return (
     <section className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm">
       <p className="px-5 pt-5 pb-3 text-sm font-black text-slate-900">Platform Breakdown</p>
@@ -653,7 +676,7 @@ function PlatformBreakdownTable({ rows }: { rows: ZernioPlatformBreakdown[] }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map(row => {
+            {deduped.map(row => {
               const color = colorOf(row.platform);
               return (
                 <tr key={row.platform} className="border-t border-slate-100 hover:bg-slate-50 transition-colors">
