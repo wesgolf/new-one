@@ -18,7 +18,6 @@ import { TodaysPriorities } from '../components/dashboard/TodaysPriorities';
 import { UpcomingContent } from '../components/dashboard/UpcomingContent';
 import { ActiveCampaigns } from '../components/dashboard/ActiveCampaigns';
 import { DashCard } from '../components/dashboard/DashCard';
-import { IntegrationStatusCard } from '../components/dashboard/IntegrationStatusCard';
 import { MyTasksWidget } from '../components/dashboard/MyTasksWidget';
 import { useAssistantContext } from '../context/AssistantContext';
 import { syncService } from '../services/syncService';
@@ -28,7 +27,8 @@ import type { SinceLastLoginDelta } from '../hooks/useDashboard';
 
 const EMPTY_DELTA: SinceLastLoginDelta = {
   newIdeas: 0, newTasks: 0, newEvents: 0, releaseChanges: 0,
-  newContent: 0, lastLoginAt: null, items: [],
+  newContent: 0, completedGoals: 0, ideaStatusChanges: 0, newReleases: 0,
+  insights: [], lastLoginAt: null, items: [],
 };
 
 const MANAGER_LINKS = [
@@ -97,20 +97,32 @@ export function CommandCenter() {
   const { isManager } = useCurrentUserRole();
   const { setOpen: setAssistantOpen } = useAssistantContext();
 
-  const [syncing,       setSyncing]       = useState(false);
-  const [syncSuccess,   setSyncSuccess]   = useState(false);
+  const [syncing,     setSyncing]     = useState(false);
+  const [syncSuccess, setSyncSuccess] = useState(false);
+  const [syncError,   setSyncError]   = useState<string | null>(null);
 
   const handleSyncNow = useCallback(async () => {
     setSyncing(true);
     setSyncSuccess(false);
+    setSyncError(null);
     try {
       // Run provider syncs + dashboard refresh in parallel
-      await Promise.allSettled([
+      const [syncSettled] = await Promise.allSettled([
         syncService.syncNow('all'),
         refetch(),
       ]);
-      setSyncSuccess(true);
-      setTimeout(() => setSyncSuccess(false), 2500);
+
+      if (syncSettled.status === 'fulfilled') {
+        const failed = syncSettled.value.filter(r => !r.ok && r.error);
+        if (failed.length > 0) {
+          setSyncError(failed.map(r => `${r.provider}: ${r.error}`).join(' · '));
+        } else {
+          setSyncSuccess(true);
+          setTimeout(() => setSyncSuccess(false), 2500);
+        }
+      } else {
+        setSyncError(syncSettled.reason?.message ?? 'Sync failed');
+      }
     } finally {
       setSyncing(false);
     }
@@ -141,19 +153,33 @@ export function CommandCenter() {
         </div>
       )}
 
+      {/* Sync error — shown when one or more providers failed */}
+      {syncError && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 flex items-start gap-2">
+          <span className="font-semibold shrink-0">Sync issue:</span>
+          <span>{syncError}</span>
+          <button
+            onClick={() => setSyncError(null)}
+            className="ml-auto text-amber-600 hover:text-amber-800 transition-colors shrink-0"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Manager layout — priorities first */}
       {isManager ? (
         <>
           <TodaysPriorities items={todayItems} loading={loading} />
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 flex flex-col gap-6">
-              <SinceLastLogin delta={delta} loading={loading} />
+              <SinceLastLogin delta={delta} todayItems={todayItems} upcomingItems={upcomingItems} loading={loading} />
               <ActiveCampaigns campaigns={campaigns} loading={loading} />
             </div>
             <div className="flex flex-col gap-6">
               <UpcomingContent items={upcomingItems} loading={loading} />
               <MyTasksWidget />
-              <IntegrationStatusCard showLog />
               <ManagerLinks />
             </div>
           </div>
@@ -162,14 +188,13 @@ export function CommandCenter() {
         /* Artist layout — releases/content/ideas emphasis */
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 flex flex-col gap-6">
-            <SinceLastLogin delta={delta} loading={loading} />
+            <SinceLastLogin delta={delta} todayItems={todayItems} upcomingItems={upcomingItems} loading={loading} />
             <TodaysPriorities items={todayItems} loading={loading} />
             <ActiveCampaigns campaigns={campaigns} loading={loading} />
           </div>
           <div className="flex flex-col gap-6">
             <UpcomingContent items={upcomingItems} loading={loading} />
             <MyTasksWidget />
-            <IntegrationStatusCard />
             <ArtistLinks />
           </div>
         </div>

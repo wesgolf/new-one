@@ -41,6 +41,11 @@ export interface SinceLastLoginDelta {
   newEvents: number;
   releaseChanges: number;
   newContent: number;
+  /** Richer insight tracking */
+  completedGoals: number;
+  ideaStatusChanges: number;
+  newReleases: number;
+  insights: InsightItem[];
   lastLoginAt: Date | null;
   items: SinceLastLoginItem[];
 }
@@ -50,6 +55,16 @@ export interface SinceLastLoginItem {
   title: string;
   detail?: string;
   at: string;
+}
+
+export interface InsightItem {
+  id: string;
+  type: 'achievement' | 'milestone' | 'trend' | 'alert';
+  headline: string;
+  detail?: string;
+  /** ISO timestamp of the underlying event */
+  at?: string;
+  priority: 'high' | 'normal';
 }
 
 export interface TodayItem {
@@ -99,6 +114,77 @@ export function stampLoginTime() {
 
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
+// ─── Insights Engine ─────────────────────────────────────────────────────────
+
+function buildInsights(
+  completedGoals: any[],
+  ideaStatusChanges: any[],
+  newReleaseItems: any[],
+  newContent: any[],
+  todos: any[],
+  shows: any[],
+  now: Date,
+): InsightItem[] {
+  const insights: InsightItem[] = [];
+  const todayStr = now.toISOString().split('T')[0];
+
+  // Completed goals → achievement
+  if (completedGoals.length === 1) {
+    insights.push({ id: `cg-${completedGoals[0].id}`, type: 'achievement', headline: `Goal completed: "${completedGoals[0].title}"`, at: completedGoals[0].updated_at, priority: 'high' });
+  } else if (completedGoals.length > 1) {
+    insights.push({ id: 'cg-multi', type: 'achievement', headline: `You completed ${completedGoals.length} goals`, detail: completedGoals.slice(0, 3).map((g: any) => g.title).join(' · '), priority: 'high' });
+  }
+
+  // New releases → milestone
+  newReleaseItems.slice(0, 1).forEach(r => {
+    insights.push({ id: `nr-${r.id}`, type: 'milestone', headline: `New release added: "${r.title}"`, detail: r.status ?? undefined, at: r.created_at, priority: 'high' });
+  });
+
+  // Idea status changes → milestone
+  ideaStatusChanges.slice(0, 2).forEach(i => {
+    const lbl: Record<string, string> = { in_progress: 'In Progress', review: 'Review', done: 'Done' };
+    insights.push({
+      id: `is-${i.id}`, type: 'milestone',
+      headline: `"${i.title}" moved to ${lbl[i.status] ?? i.status}`,
+      detail: i.status === 'done' ? 'Track complete!' : i.status === 'review' ? 'Ready to finalize?' : undefined,
+      at: i.updated_at, priority: i.status === 'done' ? 'high' : 'normal',
+    });
+  });
+
+  // Published content → trend
+  if (newContent.length >= 2) {
+    insights.push({ id: 'nc-multi', type: 'trend', headline: `${newContent.length} posts added since your last visit`, priority: 'normal' });
+  } else if (newContent.length === 1) {
+    insights.push({ id: `nc-${newContent[0].id}`, type: 'trend', headline: `New content added: "${newContent[0].title}"`, detail: newContent[0].platform, at: newContent[0].created_at, priority: 'normal' });
+  }
+
+  // Upcoming shows within 7 days → alert/milestone
+  const soonShows = shows.filter(s => {
+    const days = Math.ceil((new Date(s.date).getTime() - now.getTime()) / 86_400_000);
+    return days >= 0 && days <= 7;
+  });
+  if (soonShows.length > 0) {
+    const show = soonShows[0];
+    const days = Math.ceil((new Date(show.date).getTime() - now.getTime()) / 86_400_000);
+    insights.push({
+      id: `show-${show.id}`, type: days === 0 ? 'alert' : 'milestone',
+      headline: days === 0 ? `Show tonight at ${show.venue}` : days === 1 ? `Show tomorrow at ${show.venue}` : `Show at ${show.venue} in ${days} days`,
+      at: show.date, priority: days <= 1 ? 'high' : 'normal',
+    });
+  }
+
+  // Overdue tasks → alert
+  const overdueTasks = todos.filter((t: any) => !t.completed && t.due_date && t.due_date < todayStr);
+  if (overdueTasks.length > 0) {
+    insights.push({ id: 'overdue', type: 'alert', headline: `${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''} need${overdueTasks.length > 1 ? '' : 's'} attention`, priority: 'high' });
+  }
+
+  insights.sort((a, b) => (a.priority === 'high' ? -1 : 1) - (b.priority === 'high' ? -1 : 1));
+  return insights.slice(0, 4);
+}
+
+// ─── Hook ────────────────────────────────────────────────────────────────────
+
 export function useDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -121,6 +207,7 @@ export function useDashboard() {
         showsRes,
         meetingsRes,
         opportunitiesRes,
+        ideasRes,
       ] = await Promise.allSettled([
         supabase.from('releases').select('*').order('created_at', { ascending: false }),
         supabase.from('content_items').select('*').order('scheduled_date', { ascending: true }),
@@ -129,6 +216,7 @@ export function useDashboard() {
         supabase.from('shows').select('*').order('date', { ascending: true }),
         supabase.from('meetings').select('*').order('date', { ascending: true }),
         supabase.from('opportunities').select('*'),
+        supabase.from('ideas').select('id, title, status, updated_at, created_at').order('updated_at', { ascending: false }),
       ]);
 
       const releases: any[] = releasesRes.status === 'fulfilled' ? releasesRes.value.data ?? [] : [];
@@ -138,6 +226,7 @@ export function useDashboard() {
       const shows: any[] = showsRes.status === 'fulfilled' ? showsRes.value.data ?? [] : [];
       const meetings: any[] = meetingsRes.status === 'fulfilled' ? meetingsRes.value.data ?? [] : [];
       const opportunities: any[] = opportunitiesRes.status === 'fulfilled' ? opportunitiesRes.value.data ?? [] : [];
+      const ideas: any[] = ideasRes.status === 'fulfilled' ? ideasRes.value.data ?? [] : [];
 
       // ── Since Last Login ──────────────────────────────────────────────────
       const sinceItems: SinceLastLoginItem[] = [];
@@ -152,11 +241,22 @@ export function useDashboard() {
       const changedReleases = (releases as any[]).filter(r => new Date(r.updated_at ?? '0') > since);
       const newContent = (content as any[]).filter(c => c.status !== 'idea' && new Date(c.created_at) > since);
 
+      // ── Richer insight tracking ───────────────────────────────────────────
+      const completedGoalsItems = goals.filter(g =>
+        g.status === 'completed' && new Date(g.updated_at ?? '0') > since
+      );
+      const ideaStatusChangeItems = ideas.filter(i =>
+        ['in_progress', 'review', 'done'].includes(i.status) && new Date(i.updated_at ?? '0') > since
+      );
+      const newReleaseItems = releases.filter(r => new Date(r.created_at ?? '0') > since);
+      const insights = buildInsights(completedGoalsItems, ideaStatusChangeItems, newReleaseItems, newContent, todos, shows, now);
+
       newIdeas.slice(0, 5).forEach(i => sinceItems.push({ type: 'idea', title: i.title, at: i.created_at }));
       newTasks.slice(0, 5).forEach(t => sinceItems.push({ type: 'task', title: t.task, at: t.created_at ?? '' }));
       newEvents.slice(0, 3).forEach(e => sinceItems.push({ type: 'event', title: e.venue ?? e.title, at: e.created_at ?? '' }));
       changedReleases.slice(0, 3).forEach(r => sinceItems.push({ type: 'release', title: r.title, detail: r.status, at: r.updated_at ?? '' }));
       newContent.slice(0, 3).forEach(c => sinceItems.push({ type: 'content', title: c.title, detail: c.platform, at: c.created_at ?? '' }));
+      ideaStatusChangeItems.slice(0, 3).forEach(i => sinceItems.push({ type: 'idea', title: i.title, detail: i.status, at: i.updated_at ?? '' }));
 
       sinceItems.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 
@@ -166,6 +266,10 @@ export function useDashboard() {
         newEvents: newEvents.length,
         releaseChanges: changedReleases.length,
         newContent: newContent.length,
+        completedGoals: completedGoalsItems.length,
+        ideaStatusChanges: ideaStatusChangeItems.length,
+        newReleases: newReleaseItems.length,
+        insights,
         lastLoginAt,
         items: sinceItems.slice(0, 12),
       };

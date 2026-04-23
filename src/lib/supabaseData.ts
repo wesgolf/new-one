@@ -14,12 +14,20 @@ import type {
 } from '../types/domain';
 
 export function isMissingTableError(error: any) {
+  const message = String(error?.message || '');
+  const details = String(error?.details || '');
+  const hint = String(error?.hint || '');
+
   return Boolean(
     error &&
       (
+        // PostgREST schema-cache missing relation
+        error.code === 'PGRST205' ||
         error.code === '42P01' ||
-        String(error.message || '').includes('Could not find the table') ||
-        String(error.message || '').includes('relation') && String(error.message || '').includes('does not exist')
+        message.includes('Could not find the table') ||
+        (message.includes('relation') && message.includes('does not exist')) ||
+        details.includes('Could not find the table') ||
+        hint.includes('Could not find the table')
       )
   );
 }
@@ -166,14 +174,20 @@ export async function fetchIdeaComments(ideaId: string): Promise<IdeaComment[]> 
   try {
     const { data, error } = await supabase
       .from('idea_comments')
-      .select('*')
+      .select('*, profiles:author_id ( full_name, avatar_url )')
       .eq('idea_id', ideaId)
       .order('created_at', { ascending: false });
     if (error) {
       if (isMissingTableError(error)) return [];
       throw error;
     }
-    return (data || []) as IdeaComment[];
+    // Flatten the joined profile data onto each comment row
+    return ((data || []) as any[]).map((row) => ({
+      ...row,
+      author_name: row.author_name || row.profiles?.full_name || null,
+      avatar_url:  row.avatar_url  || row.profiles?.avatar_url  || null,
+      profiles: undefined,
+    })) as IdeaComment[];
   } catch {
     return [];
   }
@@ -223,13 +237,35 @@ export async function saveIdea(idea: Partial<IdeaRecord>) {
 
 export async function saveIdeaComment(comment: Partial<IdeaComment>) {
   const user = await getCurrentAuthUser();
+  const authorId = comment.author_id || user?.id || null;
+
+  // Stamp author_name at write time so it survives profile renames gracefully
+  let authorName = comment.author_name || null;
+  if (!authorName && authorId) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('full_name, avatar_url')
+      .eq('id', authorId)
+      .maybeSingle();
+    if (profile?.full_name) authorName = profile.full_name;
+  }
+
   const payload = {
     ...comment,
-    author_id: comment.author_id || user?.id || null,
+    author_id:   authorId,
+    author_name: authorName,
   };
   const { data, error } = await supabase.from('idea_comments').insert([payload]).select().single();
   if (error) throw error;
   return data as IdeaComment;
+}
+
+export async function updateIdeaCommentTimestamp(id: string, timestampSeconds: number | null): Promise<void> {
+  const { error } = await supabase
+    .from('idea_comments')
+    .update({ timestamp_seconds: timestampSeconds })
+    .eq('id', id);
+  if (error) throw error;
 }
 
 export async function uploadIdeaAudio(file: File, ideaId: string, extraMeta: Record<string, unknown> = {}) {

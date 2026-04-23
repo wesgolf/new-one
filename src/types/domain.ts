@@ -98,6 +98,7 @@ export interface IdeaComment {
   timestamp_seconds?: number | null;
   created_at?: string;
   author_name?: string | null;
+  avatar_url?: string | null;
 }
 
 export type GoalType = 'count' | 'ratio' | 'milestone' | 'custom';
@@ -306,5 +307,89 @@ export interface AnalyticsProviderState {
   status: 'ready' | 'not_configured' | 'error';
   lastSyncedAt?: string | null;
   errorMessage?: string | null;
+}
+
+// ─── User Settings ────────────────────────────────────────────────────────────
+
+/** Raw DB row from user_settings */
+export interface UserSettingRow {
+  id: string;
+  user_id: string;
+  category: string;
+  key: string;
+  value_json: unknown;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** Setting categories — extend this union as new categories are added */
+export type SettingCategory =
+  | 'general'
+  | 'unauthorized_page'
+  | 'integrations'
+  | (string & {}); // allows arbitrary strings while keeping autocomplete for known values
+
+// ── general ──────────────────────────────────────────────────────────────────
+
+export type AppTheme = 'light' | 'dark' | 'system';
+
+export interface NotificationPrefs {
+  email: boolean;
+  push: boolean;
+  inApp: boolean;
+}
+
+export interface GeneralSettings {
+  theme: AppTheme;
+  language: string;           // BCP-47 tag, e.g. "en", "es"
+  timezone: string;           // IANA zone or "auto"
+  notifications: NotificationPrefs;
+  dashboard_layout: 'default' | 'compact' | 'expanded';
+}
+
+export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
+  theme:            'system',
+  language:         'en',
+  timezone:         'auto',
+  notifications:    { email: true, push: false, inApp: true },
+  dashboard_layout: 'default',
+};
+
+// ── unauthorized_page ─────────────────────────────────────────────────────────
+
+export interface UnauthorizedPageSettings {
+  heading:           string;
+  subtext:           string;
+  show_contact_link: boolean;
+}
+
+export const DEFAULT_UNAUTHORIZED_PAGE_SETTINGS: UnauthorizedPageSettings = {
+  heading:           'Access Restricted',
+  subtext:           'You do not have permission to view this page.',
+  show_contact_link: true,
+};
+
+// ── integrations ──────────────────────────────────────────────────────────────
+
+export type IntegrationPlatformKey = 'spotify' | 'soundcloud' | 'youtube' | 'tiktok' | 'instagram';
+
+export interface IntegrationsSettings {
+  auto_sync:          boolean;
+  sync_interval:      number;   // seconds
+  enabled_platforms:  IntegrationPlatformKey[];
+}
+
+export const DEFAULT_INTEGRATIONS_SETTINGS: IntegrationsSettings = {
+  auto_sync:         true,
+  sync_interval:     3600,
+  enabled_platforms: ['spotify', 'soundcloud'],
+};
+
+/** Convenience map from category → typed value */
+export interface SettingsMap {
+  general:            GeneralSettings;
+  unauthorized_page:  UnauthorizedPageSettings;
+  integrations:       IntegrationsSettings;
+  [category: string]: unknown;
 }
 

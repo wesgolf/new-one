@@ -20,6 +20,7 @@ import { CollabLab } from './pages/CollabLab';
 import { Opportunities } from './pages/Opportunities';
 import { CareerMap } from './pages/CareerMap';
 import { Tasks } from './pages/Tasks';
+import { Settings } from './pages/Settings';
 import { Unauthorized } from './pages/Unauthorized';
 import { NotFound } from './pages/NotFound';
 import { PublicHub } from './pages/PublicHub';
@@ -65,6 +66,7 @@ export default function App() {
         <Route path="/resources" element={<ErrorBoundary><BrandVault /></ErrorBoundary>} />
         <Route path="/coach" element={<ErrorBoundary><ArtistCoach /></ErrorBoundary>} />
         <Route path="/tasks" element={<ErrorBoundary><Tasks /></ErrorBoundary>} />
+        <Route path="/settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

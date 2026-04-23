@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { syncService, type IntegrationAccount, type SyncJob, type ConnectionStatus } from '../services/syncService';
+import { syncService, type IntegrationAccount, type SyncJob, type ConnectionStatus, type SyncResult } from '../services/syncService';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,7 +25,13 @@ export interface UseSyncStatusReturn {
   statuses: ProviderStatus[];
   recentJobs: SyncJob[];
   loading: boolean;
+  /** Non-null when the last DB load encountered an error */
+  loadError: string | null;
+  /** Per-provider errors from the most recent syncNow() call */
+  syncErrors: Record<string, string>;
   refresh: () => Promise<void>;
+  /** Trigger a sync and update syncErrors from the results */
+  triggerSync: (provider?: string) => Promise<SyncResult[]>;
 }
 
 // ─── Provider display config ──────────────────────────────────────────────────
@@ -46,15 +52,25 @@ function localTokenPresent(provider: string): boolean {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useSyncStatus(): UseSyncStatusReturn {
-  const [statuses, setStatuses]     = useState<ProviderStatus[]>([]);
-  const [recentJobs, setRecentJobs] = useState<SyncJob[]>([]);
-  const [loading, setLoading]       = useState(true);
+  const [statuses,    setStatuses]    = useState<ProviderStatus[]>([]);
+  const [recentJobs,  setRecentJobs]  = useState<SyncJob[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [loadError,   setLoadError]   = useState<string | null>(null);
+  const [syncErrors,  setSyncErrors]  = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
+    setLoadError(null);
     const [accountsResult, jobsResult] = await Promise.allSettled([
       syncService.getIntegrationAccounts(),
       syncService.getRecentJobs(20),
     ]);
+
+    if (accountsResult.status === 'rejected') {
+      setLoadError(accountsResult.reason?.message ?? 'Failed to load integration accounts');
+    }
+    if (jobsResult.status === 'rejected') {
+      setLoadError(prev => [prev, jobsResult.reason?.message ?? 'Failed to load sync jobs'].filter(Boolean).join('; '));
+    }
 
     const accounts = accountsResult.status === 'fulfilled' ? accountsResult.value : [];
     const jobs     = jobsResult.status     === 'fulfilled' ? jobsResult.value     : [];
@@ -81,7 +97,19 @@ export function useSyncStatus(): UseSyncStatusReturn {
     setLoading(false);
   }, []);
 
+  const triggerSync = useCallback(async (provider = 'all'): Promise<SyncResult[]> => {
+    const results = await syncService.syncNow(provider as any);
+    const errors: Record<string, string> = {};
+    for (const r of results) {
+      if (!r.ok && r.error) errors[r.provider] = r.error;
+    }
+    setSyncErrors(errors);
+    // Refresh DB state after sync
+    await load();
+    return results;
+  }, [load]);
+
   useEffect(() => { load(); }, [load]);
 
-  return { statuses, recentJobs, loading, refresh: load };
+  return { statuses, recentJobs, loading, loadError, syncErrors, refresh: load, triggerSync };
 }

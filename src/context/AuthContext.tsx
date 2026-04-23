@@ -65,26 +65,52 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [authUser, loadProfile]);
 
   useEffect(() => {
-    // Subscribe to Supabase auth state changes.
-    // INITIAL_SESSION fires immediately (synchronous) with the current session,
-    // so isLoading transitions to false before any route renders.
+    let cancelled = false;
+
+    // ── Step 1: Resolve initial auth state via getSession() ──────────────────
+    // We do NOT rely on INITIAL_SESSION from onAuthStateChange for the initial
+    // state because React 18 StrictMode double-invokes effects: the first
+    // subscription fires INITIAL_SESSION and is immediately unsubscribed during
+    // cleanup, then the second subscription never receives INITIAL_SESSION again,
+    // leaving isLoading stuck at true forever.
+    //
+    // getSession() is a plain Promise — cancellable, StrictMode-safe, and
+    // guaranteed to resolve even in incognito (returns null, no network needed).
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (cancelled) return;
+      if (session?.user) {
+        setAuthUser(session.user);
+        await loadProfile(session.user);
+      } else {
+        setAuthUser(null);
+        setProfile(null);
+      }
+      if (!cancelled) setIsLoading(false);
+    }).catch(() => {
+      if (!cancelled) setIsLoading(false);
+    });
+
+    // ── Step 2: Subscribe to subsequent auth changes ──────────────────────────
+    // Skip INITIAL_SESSION — initial state is already handled above.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (event, session) => {
+        if (cancelled || event === 'INITIAL_SESSION') return;
         if (session?.user) {
-          // Session is server-validated — safe to treat as authenticated
           setAuthUser(session.user);
           await loadProfile(session.user);
         } else {
-          // No session (incognito, signed out, expired + non-refreshable)
+          // SIGNED_OUT / TOKEN_REFRESH_FAILURE etc.
           setAuthUser(null);
           setProfile(null);
         }
-        // Auth state is now known — stop showing the loading spinner
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, [loadProfile]);
 
   const value: AuthContextType = {

@@ -1,25 +1,19 @@
 /**
- * SinceLastLogin — What changed since the user was last here.
- * Shows stat chips + a filterable activity list.
+ * Intelligence — What actually matters since you were last here.
+ *
+ * Layout:
+ *   1. Synthesized insight cards (achievement / milestone / trend / alert)
+ *   2. Calendar mini-strip (today's priorities + upcoming)
+ *   3. 5 most recent activity items
  */
 
-import React, { useState } from 'react';
-import { Lightbulb, CheckSquare, Calendar, Music, FileText, Clock } from 'lucide-react';
+import React from 'react';
+import { Trophy, Music2, TrendingUp, AlertTriangle, Zap, CalendarDays } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { DashCard, DashSkeleton } from './DashCard';
-import type { SinceLastLoginDelta, SinceLastLoginItem } from '../../hooks/useDashboard';
+import type { SinceLastLoginDelta, SinceLastLoginItem, InsightItem, TodayItem, UpcomingItem } from '../../hooks/useDashboard';
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-type FilterType = 'all' | SinceLastLoginItem['type'];
-
-const TYPE_CONFIG: Record<SinceLastLoginItem['type'], { label: string; Icon: React.ElementType; color: string }> = {
-  idea:    { label: 'Ideas',    Icon: Lightbulb,    color: 'text-yellow-500' },
-  task:    { label: 'Tasks',    Icon: CheckSquare,  color: 'text-blue-500'   },
-  event:   { label: 'Events',   Icon: Calendar,     color: 'text-emerald-500'},
-  release: { label: 'Releases', Icon: Music,        color: 'text-blue-500' },
-  content: { label: 'Content',  Icon: FileText,     color: 'text-rose-500'   },
-};
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function relativeTime(isoStr: string): string {
   if (!isoStr) return '';
@@ -33,73 +27,162 @@ function relativeTime(isoStr: string): string {
   return `${days}d ago`;
 }
 
-// ─── Chip ────────────────────────────────────────────────────────────────────
-
-interface ChipProps {
-  type: SinceLastLoginItem['type'];
-  count: number;
-  active: boolean;
-  onClick: () => void;
+function shortDate(isoStr: string): string {
+  return new Date(isoStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function StatChip({ type, count, active, onClick }: ChipProps) {
-  const { label, Icon, color } = TYPE_CONFIG[type];
+function shortTime(isoStr: string): string {
+  if (isoStr.length <= 10) return '';
+  return new Date(isoStr).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+// ─── Insight Card ─────────────────────────────────────────────────────────────
+
+const INSIGHT_CONFIG: Record<InsightItem['type'], {
+  Icon: React.ElementType;
+  borderColor: string;
+  bgColor: string;
+  iconColor: string;
+}> = {
+  achievement: {
+    Icon: Trophy,
+    borderColor: 'border-l-emerald-400',
+    bgColor: 'bg-emerald-50/70',
+    iconColor: 'text-emerald-500',
+  },
+  milestone: {
+    Icon: Music2,
+    borderColor: 'border-l-[var(--color-primary)]',
+    bgColor: 'bg-violet-50/50',
+    iconColor: 'text-[var(--color-primary)]',
+  },
+  trend: {
+    Icon: TrendingUp,
+    borderColor: 'border-l-blue-400',
+    bgColor: 'bg-blue-50/60',
+    iconColor: 'text-blue-500',
+  },
+  alert: {
+    Icon: AlertTriangle,
+    borderColor: 'border-l-amber-400',
+    bgColor: 'bg-amber-50/70',
+    iconColor: 'text-amber-500',
+  },
+};
+
+function InsightCard({ item }: { item: InsightItem }) {
+  const { Icon, borderColor, bgColor, iconColor } = INSIGHT_CONFIG[item.type];
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all',
-        active
-          ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
-          : 'bg-white text-text-secondary border-border hover:border-[var(--color-primary)] hover:text-text-primary'
+    <div className={cn('flex items-start gap-3 px-3 py-2.5 rounded-xl border-l-4', borderColor, bgColor)}>
+      <div className={cn('mt-0.5 shrink-0', iconColor)}>
+        <Icon className="w-3.5 h-3.5" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-text-primary leading-snug">{item.headline}</p>
+        {item.detail && <p className="text-xs text-text-tertiary mt-0.5">{item.detail}</p>}
+      </div>
+      {item.at && (
+        <span className="text-[10px] text-text-tertiary shrink-0 pt-0.5">{relativeTime(item.at)}</span>
       )}
-    >
-      <Icon className={cn('w-3.5 h-3.5', active ? 'text-white' : color)} />
-      <span>{count} {label}</span>
-    </button>
+    </div>
+  );
+}
+
+// ─── Calendar Strip ───────────────────────────────────────────────────────────
+
+interface CalendarStripProps {
+  todayItems: TodayItem[];
+  upcomingItems: UpcomingItem[];
+}
+
+function CalendarStrip({ todayItems, upcomingItems }: CalendarStripProps) {
+  const now = new Date();
+  const todayLabel = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const todayHighlights = todayItems.slice(0, 2);
+  const nextUp = upcomingItems
+    .filter(u => u.scheduledAt > now.toISOString())
+    .slice(0, 3);
+
+  return (
+    <div className="rounded-xl border border-border/60 overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 bg-slate-50/80 border-b border-border/40">
+        <CalendarDays className="w-3.5 h-3.5 text-text-tertiary" />
+        <span className="text-[10px] font-bold text-text-muted uppercase tracking-[0.14em]">Today</span>
+        <span className="text-xs text-text-tertiary ml-auto">{todayLabel}</span>
+      </div>
+      {todayHighlights.length === 0 && nextUp.length === 0 ? (
+        <p className="text-xs text-text-tertiary px-3 py-2.5">Clear schedule today.</p>
+      ) : (
+        <div className="divide-y divide-border/30">
+          {todayHighlights.map(item => (
+            <div key={item.id} className="flex items-center gap-2.5 px-3 py-2">
+              <div className={cn(
+                'w-1.5 h-1.5 rounded-full shrink-0',
+                item.priority === 'high' ? 'bg-red-400' :
+                item.priority === 'medium' ? 'bg-amber-400' : 'bg-slate-300'
+              )} />
+              <span className="text-xs text-text-primary truncate flex-1">{item.title}</span>
+              {item.at && (
+                <span className="text-[10px] text-text-tertiary shrink-0">
+                  {shortTime(item.at) || item.at}
+                </span>
+              )}
+            </div>
+          ))}
+          {nextUp.map(item => (
+            <div key={item.id} className="flex items-center gap-2.5 px-3 py-2 opacity-65">
+              <div className="w-1.5 h-1.5 rounded-full shrink-0 bg-slate-300" />
+              <span className="text-xs text-text-secondary truncate flex-1">{item.title}</span>
+              <span className="text-[10px] text-text-tertiary shrink-0">{shortDate(item.scheduledAt)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
 // ─── Activity Row ─────────────────────────────────────────────────────────────
 
+const ITEM_DOT: Record<SinceLastLoginItem['type'], string> = {
+  idea:    'bg-yellow-400',
+  task:    'bg-blue-400',
+  event:   'bg-emerald-400',
+  release: 'bg-violet-400',
+  content: 'bg-rose-400',
+};
+
 function ActivityRow({ item }: { item: SinceLastLoginItem }) {
-  const { Icon, color } = TYPE_CONFIG[item.type];
   return (
-    <li className="flex items-start gap-3 py-2.5 border-b border-border last:border-0">
-      <div className={cn('mt-0.5 w-7 h-7 rounded-lg flex items-center justify-center bg-slate-50 shrink-0', color)}>
-        <Icon className="w-3.5 h-3.5" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm text-text-primary truncate font-medium">{item.title}</p>
-        {item.detail && <p className="text-xs text-text-tertiary capitalize">{item.detail}</p>}
-      </div>
-      <span className="text-xs text-text-tertiary whitespace-nowrap shrink-0">{relativeTime(item.at)}</span>
+    <li className="flex items-center gap-2.5 py-2 border-b border-border/30 last:border-0">
+      <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', ITEM_DOT[item.type])} />
+      <p className="text-xs text-text-primary truncate flex-1">{item.title}</p>
+      {item.detail && (
+        <span className="text-[10px] text-text-tertiary capitalize shrink-0">{item.detail}</span>
+      )}
+      <span className="text-[10px] text-text-tertiary whitespace-nowrap shrink-0 ml-1">
+        {relativeTime(item.at)}
+      </span>
     </li>
   );
 }
 
-// ─── Main Component ──────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
 
-interface SinceLastLoginProps {
+export interface SinceLastLoginProps {
   delta: SinceLastLoginDelta;
+  todayItems?: TodayItem[];
+  upcomingItems?: UpcomingItem[];
   loading?: boolean;
 }
 
-export function SinceLastLogin({ delta, loading }: SinceLastLoginProps) {
-  const [filter, setFilter] = useState<FilterType>('all');
+export function SinceLastLogin({ delta, todayItems = [], upcomingItems = [], loading }: SinceLastLoginProps) {
+  const recentActivity = delta.items.slice(0, 5);
 
-  const hasAnything =
-    delta.newIdeas + delta.newTasks + delta.newEvents + delta.releaseChanges + delta.newContent > 0;
-
-  const filtered = filter === 'all' ? delta.items : delta.items.filter(i => i.type === filter);
-
-  const toggleFilter = (t: SinceLastLoginItem['type']) =>
-    setFilter(prev => (prev === t ? 'all' : t));
-
-  const title = (
+  const cardTitle = (
     <span className="flex items-center gap-2">
-      <Clock className="w-4 h-4 text-text-tertiary" />
-      Since you were last here
+      <Zap className="w-3.5 h-3.5 text-[var(--color-primary)]" />
+      Intelligence
       {delta.lastLoginAt && (
         <span className="font-normal text-text-tertiary normal-case tracking-normal">
           · {relativeTime(delta.lastLoginAt.toISOString())}
@@ -108,35 +191,43 @@ export function SinceLastLogin({ delta, loading }: SinceLastLoginProps) {
     </span>
   );
 
-  return (
-    <DashCard title={title}>
-      {loading ? (
-        <DashSkeleton rows={4} />
-      ) : !hasAnything ? (
-        <p className="text-sm text-text-tertiary py-3">Nothing new since your last visit.</p>
-      ) : (
-        <>
-          {/* Stat chips */}
-          <div className="flex flex-wrap gap-2 mb-4">
-            {delta.newIdeas    > 0 && <StatChip type="idea"    count={delta.newIdeas}      active={filter === 'idea'}    onClick={() => toggleFilter('idea')}    />}
-            {delta.newTasks    > 0 && <StatChip type="task"    count={delta.newTasks}      active={filter === 'task'}    onClick={() => toggleFilter('task')}    />}
-            {delta.newEvents   > 0 && <StatChip type="event"   count={delta.newEvents}     active={filter === 'event'}   onClick={() => toggleFilter('event')}   />}
-            {delta.releaseChanges > 0 && <StatChip type="release" count={delta.releaseChanges} active={filter === 'release'} onClick={() => toggleFilter('release')} />}
-            {delta.newContent  > 0 && <StatChip type="content" count={delta.newContent}    active={filter === 'content'} onClick={() => toggleFilter('content')} />}
-          </div>
+  if (loading) {
+    return <DashCard title={cardTitle}><DashSkeleton rows={4} /></DashCard>;
+  }
 
-          {/* Activity list */}
-          {filtered.length === 0 ? (
-            <p className="text-xs text-text-tertiary py-2">No items match this filter.</p>
-          ) : (
+  return (
+    <DashCard title={cardTitle}>
+      <div className="space-y-4">
+
+        {/* ── Insights ─────────────────────────────────────────────────── */}
+        {delta.insights.length > 0 ? (
+          <div className="space-y-2">
+            {delta.insights.map(insight => (
+              <InsightCard key={insight.id} item={insight} />
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-text-tertiary py-1">All quiet since your last visit.</p>
+        )}
+
+        {/* ── Calendar ─────────────────────────────────────────────────── */}
+        <CalendarStrip todayItems={todayItems} upcomingItems={upcomingItems} />
+
+        {/* ── Recent Activity ───────────────────────────────────────────── */}
+        {recentActivity.length > 0 && (
+          <div>
+            <p className="text-[10px] font-bold text-text-muted uppercase tracking-[0.14em] mb-2">
+              Recent Activity
+            </p>
             <ul>
-              {filtered.map((item, idx) => (
+              {recentActivity.map((item, idx) => (
                 <ActivityRow key={`${item.type}-${idx}`} item={item} />
               ))}
             </ul>
-          )}
-        </>
-      )}
+          </div>
+        )}
+
+      </div>
     </DashCard>
   );
 }

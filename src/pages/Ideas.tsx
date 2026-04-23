@@ -22,6 +22,7 @@ import {
 } from '../lib/supabaseData';
 import { useCurrentUserRole } from '../hooks/useCurrentUserRole';
 import { AudioReviewModal } from '../components/AudioReviewModal';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { IdeaFormModal } from '../components/IdeaFormModal';
 import type { IdeaRecord, IdeaAsset, IdeaComment } from '../types/domain';
 
@@ -59,6 +60,9 @@ export function Ideas() {
   const [reviewAssets,   setReviewAssets]   = useState<IdeaAsset[]>([]);
   const [reviewComments, setReviewComments] = useState<IdeaComment[]>([]);
 
+  const [deleteTarget,  setDeleteTarget]  = useState<IdeaRecord | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   const lastLoginAt = useMemo(() => {
     const stored = localStorage.getItem(LAST_LOGIN_KEY);
     return stored ? new Date(stored) : null;
@@ -94,10 +98,21 @@ export function Ideas() {
   }, [reviewIdea]);
 
   const handleDelete = useCallback(async (id: string) => {
-    if (!confirm('Delete this idea? This cannot be undone.')) return;
-    await deleteIdea(id);
-    load();
-  }, [load]);
+    const idea = ideas.find(i => i.id === id) ?? null;
+    setDeleteTarget(idea);
+  }, [ideas]);
+
+  const confirmDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
+    try {
+      await deleteIdea(deleteTarget.id);
+      setDeleteTarget(null);
+      load();
+    } finally {
+      setDeleteLoading(false);
+    }
+  }, [deleteTarget, load]);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const handleShareLink = useCallback((idea: IdeaRecord) => {
@@ -363,6 +378,17 @@ export function Ideas() {
         comments={reviewComments}
         onClose={() => setReviewOpen(false)}
         onSaved={refreshReview}
+      />
+      <ConfirmModal
+        open={!!deleteTarget}
+        title="Delete this idea?"
+        description={deleteTarget ? `"${deleteTarget.title}" will be permanently removed. This cannot be undone.` : undefined}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        loading={deleteLoading}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
       />
     </div>
   );

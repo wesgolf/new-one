@@ -29,9 +29,110 @@ async function startServer() {
   // Middleware
   app.use(express.json());
 
+  // ── API usage logger ───────────────────────────────────────────────────────
+  // Logs every /api/* request with endpoint + response time. Helps track which
+  // endpoints fire most often so you can spot cost hot-spots quickly.
+  const apiStats: Record<string, { count: number; totalMs: number; lastAt: string }> = {};
+  app.use('/api', (req, _res, next) => {
+    const key = `${req.method} ${req.path}`;
+    const start = Date.now();
+    _res.on('finish', () => {
+      const ms = Date.now() - start;
+      if (!apiStats[key]) apiStats[key] = { count: 0, totalMs: 0, lastAt: '' };
+      apiStats[key].count++;
+      apiStats[key].totalMs += ms;
+      apiStats[key].lastAt = new Date().toISOString();
+      // Only log AI endpoints to keep noise low
+      if (req.path.startsWith('/coach') || req.path.startsWith('/assistant') || req.path.startsWith('/ai') || req.path.startsWith('/goals/analyze') || req.path.startsWith('/email') || req.path.startsWith('/report')) {
+        console.log(`[api] ${key} — ${ms}ms (total calls: ${apiStats[key].count})`);
+      }
+    });
+    next();
+  });
+
+  // Expose stats at /api/usage (dev only — remove or auth-gate in production)
+  app.get('/api/usage', (_req, res) => {
+    const rows = Object.entries(apiStats)
+      .map(([key, s]) => ({ endpoint: key, calls: s.count, avgMs: Math.round(s.totalMs / s.count), lastAt: s.lastAt }))
+      .sort((a, b) => b.calls - a.calls);
+    res.json(rows);
+  });
+
+  // ── Server-side response cache (in-memory, TTL-based) ─────────────────────
+  // Caches AI responses keyed on a hash of the input payload. Identical
+  // payloads within the TTL window return instantly without a Gemini call.
+  interface CacheEntry { value: unknown; expiresAt: number; }
+  const serverCache = new Map<string, CacheEntry>();
+
+  function cacheGet(key: string): unknown | undefined {
+    const e = serverCache.get(key);
+    if (!e) return undefined;
+    if (Date.now() > e.expiresAt) { serverCache.delete(key); return undefined; }
+    return e.value;
+  }
+
+  function cacheSet(key: string, value: unknown, ttlMs: number): void {
+    serverCache.set(key, { value, expiresAt: Date.now() + ttlMs });
+    // Evict expired entries lazily (avoid memory leak on long-running process)
+    if (serverCache.size > 200) {
+      const now = Date.now();
+      for (const [k, v] of serverCache.entries()) { if (now > v.expiresAt) serverCache.delete(k); }
+    }
+  }
+
+  function hashPayload(obj: unknown): string {
+    const str = JSON.stringify(obj);
+    let h = 0;
+    for (let i = 0; i < str.length; i++) { h = (Math.imul(31, h) + str.charCodeAt(i)) | 0; }
+    return h.toString(36);
+  }
+
   // Health check endpoint for Cloud Run
-  app.get("/api/health", (req, res) => {
+  app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  // ── Audio Proxy ──────────────────────────────────────────────────────────────
+  // Fetches audio bytes server-side to work around ERR_CERT_AUTHORITY_INVALID
+  // and CORS restrictions on Supabase storage / external URLs.
+  // SSRF protection: only http/https protocols; private/loopback IPs blocked.
+  const SSRF_BLOCK_RE = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/i;
+  const { default: httpsModule } = await import('https');
+
+  app.get('/api/audio-proxy', async (req: any, res: any) => {
+    const rawUrl = req.query.url as string;
+    if (!rawUrl) return res.status(400).json({ error: 'Missing url param' });
+
+    let parsed: URL;
+    try { parsed = new URL(rawUrl); } catch {
+      return res.status(400).json({ error: 'Invalid URL' });
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return res.status(400).json({ error: 'Only http/https URLs are allowed' });
+    }
+    if (SSRF_BLOCK_RE.test(parsed.hostname) || parsed.hostname === '::1') {
+      return res.status(403).json({ error: 'Access to local addresses is not allowed' });
+    }
+
+    try {
+      // Allow self-signed certs (dev/staging Supabase instances)
+      const agent = new httpsModule.Agent({ rejectUnauthorized: false });
+      const response = await axios.get(rawUrl, {
+        responseType: 'arraybuffer',
+        httpsAgent: agent,
+        timeout: 30_000,
+        maxContentLength: 100 * 1024 * 1024, // 100 MB
+        headers: { 'User-Agent': 'ArtistOS-AudioProxy/1.0' },
+      });
+      const ct = (response.headers['content-type'] as string) ?? 'audio/mpeg';
+      res.set('Content-Type', ct);
+      res.set('Cache-Control', 'public, max-age=3600');
+      res.set('Access-Control-Allow-Origin', '*');
+      res.send(Buffer.from(response.data as ArrayBuffer));
+    } catch (err: any) {
+      console.error('[audio-proxy] failed:', rawUrl, err.message);
+      res.status(502).json({ error: 'Audio proxy error', message: err.message });
+    }
   });
 
   // SoundCloud API Config
@@ -552,14 +653,29 @@ If nothing actionable, set actions to []. Always respond with valid JSON only �
       return res.status(503).json({ error: 'AI service not configured on server.' });
     }
     const { releases, content, goals, todos } = req.body;
+
+    // Server-side payload caps (defence-in-depth; client already trims before sending)
+    const safeReleases = Array.isArray(releases) ? releases.slice(0, 10) : [];
+    const safeContent  = Array.isArray(content)  ? content.slice(0, 12)  : [];
+    const safeGoals    = Array.isArray(goals)     ? goals.slice(0, 8)     : [];
+    const safeTodos    = Array.isArray(todos)     ? todos.slice(0, 10)    : [];
+
+    // Cache identical payloads for 5 minutes (same data = same analysis)
+    const cacheKey = `ai:analyze:${hashPayload({ safeReleases, safeContent, safeGoals, safeTodos })}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) {
+      console.log('[ai/analyze] cache hit');
+      return res.json(cached);
+    }
+
     try {
       const { GoogleGenAI, Type } = await import('@google/genai');
       const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
       const prompt = `Analyze the current state of an independent artist and generate a strategic game plan.
-Releases: ${JSON.stringify(releases ?? [])}
-Content: ${JSON.stringify(content ?? [])}
-Goals: ${JSON.stringify(goals ?? [])}
-Todos: ${JSON.stringify(todos ?? [])}
+Releases: ${JSON.stringify(safeReleases)}
+Content: ${JSON.stringify(safeContent)}
+Goals: ${JSON.stringify(safeGoals)}
+Todos: ${JSON.stringify(safeTodos)}
 Current Date: ${new Date().toISOString()}
 Tasks: 1) Select the Focus Track needing most attention. 2) Rationale. 3) Generate momentum/warning/opportunity/insight Signals. 4) Generate 3-5 Daily Tasks. Be specific and data-driven.`;
       const response = await ai.models.generateContent({
@@ -585,7 +701,9 @@ Tasks: 1) Select the Focus Track needing most attention. 2) Rationale. 3) Genera
           },
         },
       });
-      res.json(JSON.parse(response.text ?? '{}'));
+      const result = JSON.parse(response.text ?? '{}');
+      cacheSet(cacheKey, result, 5 * 60_000); // cache 5 min
+      res.json(result);
     } catch (err: any) {
       console.error('[ai/analyze] Gemini error:', err.message);
       res.status(500).json({ error: 'AI analysis failed.' });
@@ -659,6 +777,8 @@ Return valid JSON exactly like this: {"subject":"...","body":"..."}`.trim();
   });
 
   // ── Goals AI analysis ──────────────────────────────────────────────────────
+  // Single Gemini call returns both per-goal statuses and a strategic insight.
+  // (Previously two sequential calls — halves token round-trips and latency.)
   app.post('/api/goals/analyze', async (req: Request, res: Response) => {
     if (!GEMINI_API_KEY) {
       return res.status(503).json({ error: 'AI service not configured on server.' });
@@ -667,26 +787,55 @@ Return valid JSON exactly like this: {"subject":"...","body":"..."}`.trim();
       goals?: unknown[]; shows?: unknown[]; currentDate?: string;
     };
     if (!goals?.length) return res.status(400).json({ error: 'goals is required' });
+
+    const safeGoals = (goals as any[]).slice(0, 20);
+    const safeShows = ((shows ?? []) as any[]).slice(0, 5);
+
+    // Cache per payload — goal state changes infrequently
+    const cacheKey = `goals:analyze:${hashPayload({ safeGoals, safeShows, currentDate })}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) {
+      console.log('[goals/analyze] cache hit');
+      return res.json(cached);
+    }
+
     try {
       const { GoogleGenAI } = await import('@google/genai');
       const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
       const today = String(currentDate ?? new Date().toISOString().split('T')[0]);
 
-      const statusRes = await ai.models.generateContent({
+      const goalSummary = safeGoals.map((g: any) => ({
+        id:       g.id,
+        title:    g.title,
+        progress: g.target > 0 ? `${Math.round((g.current / g.target) * 100)}%` : 'timeless',
+        deadline: g.deadline ?? null,
+      }));
+
+      const prompt = `Today: ${today}.
+Upcoming shows: ${JSON.stringify(safeShows)}.
+Artist goals: ${JSON.stringify(goalSummary)}.
+
+Return a JSON object with exactly two keys:
+1. "statuses": an object keyed by goal id, each value being { "status": "on-track"|"at-risk"|"behind", "reasoning": "<10 words>" }
+2. "analysis": a 2-sentence strategic insight string (no bullet points)
+
+Respond with valid JSON only.`;
+
+      const response = await ai.models.generateContent({
         model: 'gemini-2.0-flash',
-        config: { responseMimeType: 'application/json' },
-        contents: `Today: ${today}. Analyze these artist goals. For each return { status: 'on-track'|'at-risk'|'behind', reasoning: max 10 words }. Shows context: ${JSON.stringify((shows ?? []).slice(0, 5))}. Goals: ${JSON.stringify(goals)}`,
+        config: { responseMimeType: 'application/json', temperature: 0.3 },
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
       });
 
-      let statuses: Record<string, unknown> = {};
-      try { statuses = JSON.parse(statusRes.text ?? '{}'); } catch { /* ignore */ }
+      let result: { statuses?: Record<string, unknown>; analysis?: string } = {};
+      try { result = JSON.parse(response.text ?? '{}'); } catch { /* ignore */ }
 
-      const summaryRes = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: `Today: ${today}. Artist goals: ${JSON.stringify((goals as any[]).map((g: any) => ({ title: g.title, progress: g.target > 0 ? Math.round((g.current / g.target) * 100) + '%' : 'timeless' })))}. Give a short 2-sentence strategic insight.`,
-      });
-
-      res.json({ statuses, analysis: summaryRes.text?.trim() ?? 'Keep pushing towards your targets!' });
+      const payload = {
+        statuses: result.statuses ?? {},
+        analysis: result.analysis ?? 'Keep pushing towards your targets!',
+      };
+      cacheSet(cacheKey, payload, 10 * 60_000); // cache 10 min
+      res.json(payload);
     } catch (err: any) {
       console.error('[goals/analyze] Gemini error:', err.message);
       res.status(500).json({ error: 'Goals analysis failed.' });

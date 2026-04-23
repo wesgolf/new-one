@@ -10,7 +10,7 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Eye, EyeOff, Lock, Mail, ShieldOff } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { signInWithEmail } from '../lib/auth';
+import { signInWithEmail, LoginError } from '../lib/auth';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 
 // ─── Background decoration ────────────────────────────────────────────────────
@@ -109,6 +109,8 @@ interface LoginFormProps {
   onLoginSuccess: () => void;
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function LoginForm({ onLoginSuccess }: LoginFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -118,17 +120,33 @@ function LoginForm({ onLoginSuccess }: LoginFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
+
+    // ── Client-side pre-validation ──
+    if (!EMAIL_RE.test(email.trim())) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+
+    setLoading(true);
     try {
-      await signInWithEmail(email, password);
-      // Do NOT call navigate() here — the Unauthorized parent's useEffect
-      // will redirect once the auth context updates, avoiding the
-      // "setState during render" warning caused by concurrent state changes.
+      await signInWithEmail(email.trim(), password);
+      // Navigation is handled by the parent useEffect once the auth context updates.
       onLoginSuccess();
     } catch (err: any) {
-      setError(err.message ?? 'Invalid email or password. Please try again.');
-      setPassword('');
+      if (err instanceof LoginError) {
+        setError(err.message);
+      } else {
+        setError('Sign-in failed. Please try again.');
+      }
+      // Only clear password for credential errors so the user doesn't retype email
+      if (!err?.code || err.code === 'wrong_credentials') {
+        setPassword('');
+      }
     } finally {
       setLoading(false);
     }
@@ -278,13 +296,13 @@ export function Unauthorized() {
   const from = (location.state as any)?.from?.pathname ?? '/dashboard';
 
   // Redirect when auth context confirms login is complete.
-  // This is the single source of truth for post-login navigation;
-  // LoginForm does NOT call navigate() to avoid setState-during-render warnings.
+  // Uses isAuthenticated only (not role) so we don't wait for a second
+  // render cycle after the profile fetch completes — eliminates perceived slowness.
   useEffect(() => {
-    if (!isLoading && isAuthenticated && role) {
+    if (!isLoading && isAuthenticated) {
       navigate(from, { replace: true });
     }
-  }, [isLoading, isAuthenticated, role, navigate, from]);
+  }, [isLoading, isAuthenticated, navigate, from]);
 
   // Determine display mode
   // - isAuthenticated + no role → show "access restricted" (account exists but no profile/role yet)

@@ -16,7 +16,6 @@ import {
 import { cn } from '../../lib/utils';
 import { DashCard, DashSkeleton } from './DashCard';
 import { useSyncStatus, type ProviderStatus } from '../../hooks/useSyncStatus';
-import { syncService, type SyncProvider } from '../../services/syncService';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -127,15 +126,22 @@ interface IntegrationStatusCardProps {
 }
 
 export function IntegrationStatusCard({ showLog = false }: IntegrationStatusCardProps) {
-  const { statuses, recentJobs, loading, refresh } = useSyncStatus();
+  const { statuses, recentJobs, loading, loadError, syncErrors, triggerSync } = useSyncStatus();
   const [syncingProvider, setSyncingProvider] = useState<string | null>(null);
-  const [logExpanded, setLogExpanded] = useState(false);
+  const [lastSyncError,   setLastSyncError]   = useState<string | null>(null);
+  const [logExpanded,     setLogExpanded]      = useState(false);
 
   async function handleSync(provider: string) {
     setSyncingProvider(provider);
+    setLastSyncError(null);
     try {
-      await syncService.syncNow(provider as SyncProvider);
-      await refresh();
+      const results = await triggerSync(provider);
+      const failed = results.filter(r => !r.ok && r.error);
+      if (failed.length > 0) {
+        setLastSyncError(failed.map(r => r.error).join(' · '));
+      }
+    } catch (err: any) {
+      setLastSyncError(err.message ?? 'Sync failed');
     } finally {
       setSyncingProvider(null);
     }
@@ -143,9 +149,15 @@ export function IntegrationStatusCard({ showLog = false }: IntegrationStatusCard
 
   async function handleSyncAll() {
     setSyncingProvider('all');
+    setLastSyncError(null);
     try {
-      await syncService.syncNow('all');
-      await refresh();
+      const results = await triggerSync('all');
+      const failed = results.filter(r => !r.ok && r.error);
+      if (failed.length > 0) {
+        setLastSyncError(failed.map(r => `${r.provider}: ${r.error}`).join(' · '));
+      }
+    } catch (err: any) {
+      setLastSyncError(err.message ?? 'Sync failed');
     } finally {
       setSyncingProvider(null);
     }
@@ -170,6 +182,21 @@ export function IntegrationStatusCard({ showLog = false }: IntegrationStatusCard
 
   return (
     <DashCard title="Integrations" action={headerAction}>
+      {/* Error banner — DB load failed */}
+      {loadError && (
+        <p className="mb-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+          {loadError}
+        </p>
+      )}
+
+      {/* Error banner — last sync had failures */}
+      {lastSyncError && (
+        <div className="mb-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800 flex items-start gap-2">
+          <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600" />
+          <span>{lastSyncError}</span>
+        </div>
+      )}
+
       {loading ? (
         <DashSkeleton rows={3} />
       ) : (
@@ -178,7 +205,12 @@ export function IntegrationStatusCard({ showLog = false }: IntegrationStatusCard
             {statuses.map(s => (
               <ProviderRow
                 key={s.provider}
-                status={s}
+                status={{
+                  ...s,
+                  // Surface live sync error over stale DB error
+                  lastError: syncErrors[s.provider] ?? s.lastError,
+                  lastSyncStatus: syncErrors[s.provider] ? 'failed' : s.lastSyncStatus,
+                }}
                 onSync={handleSync}
                 syncing={syncingProvider === s.provider || syncingProvider === 'all'}
               />

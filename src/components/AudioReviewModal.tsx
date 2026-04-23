@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Download, MessageSquare, Pause, Play, Send, X } from 'lucide-react';
-import { saveIdeaComment } from '../lib/supabaseData';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, Download, Layers, MapPin, MessageSquare, Pause, Play, Send, X } from 'lucide-react';
+import { saveIdeaComment, updateIdeaCommentTimestamp } from '../lib/supabaseData';
 import type { IdeaAsset, IdeaComment, IdeaRecord } from '../types/domain';
 import { AudioWaveform } from './AudioWaveform';
 import type { WaveformMarker } from './AudioWaveform';
@@ -52,13 +52,16 @@ interface AudioReviewModalProps {
 
 export function AudioReviewModal({ open, idea, assets, comments, onClose, onSaved }: AudioReviewModalProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [body, setBody] = useState('');
-  const [generalNote, setGeneralNote] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [versionOpen, setVersionOpen] = useState(false);
+  const [isPlaying,     setIsPlaying]     = useState(false);
+  const [currentTime,   setCurrentTime]   = useState(0);
+  const [duration,      setDuration]      = useState(0);
+  const [body,          setBody]          = useState('');
+  const [generalNote,   setGeneralNote]   = useState(false);
+  const [saving,        setSaving]        = useState(false);
+  const [versionOpen,   setVersionOpen]   = useState(false);
+  const [addMarkerMode, setAddMarkerMode] = useState(false);
+  const [showSections,  setShowSections]  = useState(false);
+  const commentInputRef = useRef<HTMLInputElement | null>(null);
 
   const versions = useMemo(() => labeledAudioAssets(assets), [assets]);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
@@ -88,17 +91,46 @@ export function AudioReviewModal({ open, idea, assets, comments, onClose, onSave
   );
 
 
-  if (!open || !idea) return null;
+  // Derive waveform markers with truncated labels
+  const waveformMarkers: WaveformMarker[] = useMemo(
+    () =>
+      sortedComments
+        .filter((c) => c.timestamp_seconds != null)
+        .map((c) => ({
+          id: c.id!,
+          time: c.timestamp_seconds!,
+          label: c.body ? c.body.slice(0, 10) : undefined,
+          color: '#f59e0b',
+        })),
+    [sortedComments],
+  );
 
-  const waveformMarkers: WaveformMarker[] = sortedComments
-    .filter((c) => c.timestamp_seconds != null)
-    .map((c) => ({ id: c.id!, time: c.timestamp_seconds! }));
+  // Handle adding a marker: seek to position + focus comment input
+  const handleMarkerAdd = useCallback((time: number) => {
+    const a = audioRef.current;
+    if (a) a.currentTime = time;
+    setGeneralNote(false);
+    setAddMarkerMode(false);
+    setTimeout(() => commentInputRef.current?.focus(), 50);
+  }, []);
+
+  // Handle moving a marker: update DB timestamp + refresh
+  const handleMarkerMove = useCallback(async (markerId: string, newTime: number) => {
+    try {
+      await updateIdeaCommentTimestamp(markerId, newTime);
+      onSaved();
+    } catch (err) {
+      console.warn('[AudioReviewModal] marker move failed:', err);
+    }
+  }, [onSaved]);
+
+  if (!open || !idea) return null;
 
 
   const togglePlay = () => {
     const a = audioRef.current;
     if (!a) return;
-    if (a.paused) a.play();
+    if (a.paused) a.play().catch(() => {});
     else a.pause();
   };
 
@@ -219,11 +251,15 @@ export function AudioReviewModal({ open, idea, assets, comments, onClose, onSave
                 duration={duration}
                 onSeek={(t) => { if (audioRef.current) audioRef.current.currentTime = t; }}
                 markers={waveformMarkers}
-                height={64}
+                onMarkerAdd={handleMarkerAdd}
+                onMarkerMove={handleMarkerMove}
+                addMarkerMode={addMarkerMode}
+                autoSections={showSections}
+                height={72}
               />
 
               {/* Controls */}
-              <div className="flex items-center gap-4 mt-3">
+              <div className="flex items-center gap-3 mt-3">
                 <button
                   type="button"
                   onClick={togglePlay}
@@ -236,13 +272,36 @@ export function AudioReviewModal({ open, idea, assets, comments, onClose, onSave
                 <span className="text-xs font-mono text-slate-500 tabular-nums">
                   {fmt(currentTime)} / {fmt(duration)}
                 </span>
-                {sortedComments.filter((c) => c.timestamp_seconds != null).length > 0 && (
-                  <span className="ml-auto flex items-center gap-1.5 text-xs text-slate-400">
-                    <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
-                    {sortedComments.filter((c) => c.timestamp_seconds != null).length} marker
-                    {sortedComments.filter((c) => c.timestamp_seconds != null).length !== 1 ? 's' : ''}
-                  </span>
-                )}
+
+                {/* Marker tools */}
+                <div className="ml-auto flex items-center gap-2">
+                  <button
+                    type="button"
+                    title={addMarkerMode ? 'Cancel marker placement' : 'Add marker: click waveform to place'}
+                    onClick={() => setAddMarkerMode(v => !v)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                      addMarkerMode
+                        ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                        : 'border border-slate-200 text-slate-500 hover:bg-slate-100'
+                    }`}
+                  >
+                    <MapPin className="w-3 h-3" />
+                    {addMarkerMode ? 'Click waveform…' : 'Mark'}
+                  </button>
+                  <button
+                    type="button"
+                    title="Toggle section detection overlay"
+                    onClick={() => setShowSections(v => !v)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                      showSections
+                        ? 'bg-violet-100 text-violet-700 border border-violet-300'
+                        : 'border border-slate-200 text-slate-500 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Layers className="w-3 h-3" />
+                    Sections
+                  </button>
+                </div>
               </div>
             </>
           ) : (
@@ -255,6 +314,9 @@ export function AudioReviewModal({ open, idea, assets, comments, onClose, onSave
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs text-slate-500">
               {generalNote ? 'General note' : `Comment at ${fmt(currentTime)}`}
+              {addMarkerMode && (
+                <span className="ml-2 text-amber-500 font-semibold">· Click waveform to position</span>
+              )}
             </span>
             <button
               type="button"
@@ -266,11 +328,12 @@ export function AudioReviewModal({ open, idea, assets, comments, onClose, onSave
           </div>
           <div className="flex gap-2">
             <input
+              ref={commentInputRef}
               type="text"
               value={body}
               onChange={(e) => setBody(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment(); } }}
-              placeholder="Add a note…"
+              placeholder={addMarkerMode ? 'Click waveform, then type a note…' : 'Add a note…'}
               className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-400 transition-colors"
             />
             <button
@@ -298,37 +361,68 @@ export function AudioReviewModal({ open, idea, assets, comments, onClose, onSave
             </div>
           ) : (
             <ul>
-              {sortedComments.map((c, i) => (
-                <li
-                  key={c.id}
-                  className={`flex gap-3 px-6 py-4 hover:bg-slate-50 transition-colors ${
-                    i < sortedComments.length - 1 ? 'border-b border-slate-100' : ''
-                  }`}
-                >
-                  {c.timestamp_seconds != null ? (
-                    <button
-                      type="button"
-                      onClick={() => jumpTo(c.timestamp_seconds!)}
-                      className="shrink-0 mt-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 px-2 py-1 text-[11px] font-bold text-slate-600 font-mono transition-colors"
-                      title="Jump to this moment"
-                    >
-                      {fmt(c.timestamp_seconds)}
-                    </button>
-                  ) : (
-                    <span className="shrink-0 mt-0.5 rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-400">
-                      note
-                    </span>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-slate-800 leading-relaxed">{c.body}</p>
-                    {c.created_at && (
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        {new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    )}
-                  </div>
-                </li>
-              ))}
+              {sortedComments.map((c, i) => {
+                const initials = (c.author_name ?? 'A')
+                  .split(' ')
+                  .map((w: string) => w[0])
+                  .join('')
+                  .toUpperCase()
+                  .slice(0, 2);
+                const displayName = c.author_name ?? 'Anonymous';
+                const timeLabel = c.created_at
+                  ? new Date(c.created_at).toLocaleString([], {
+                      month: 'short', day: 'numeric',
+                      hour: '2-digit', minute: '2-digit',
+                    })
+                  : null;
+
+                return (
+                  <li
+                    key={c.id}
+                    className={`flex gap-3 px-4 py-3.5 hover:bg-slate-50 transition-colors ${
+                      i < sortedComments.length - 1 ? 'border-b border-slate-100' : ''
+                    }`}
+                  >
+                    {/* Avatar */}
+                    <div className="shrink-0 mt-0.5">
+                      {c.avatar_url ? (
+                        <img
+                          src={c.avatar_url}
+                          alt={displayName}
+                          className="w-7 h-7 rounded-full object-cover ring-1 ring-slate-200"
+                        />
+                      ) : (
+                        <div className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center ring-1 ring-slate-200">
+                          <span className="text-[10px] font-bold text-slate-600 leading-none">{initials}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      {/* Header row: name · time chip */}
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="text-xs font-semibold text-slate-700 leading-none">{displayName}</span>
+                        {c.timestamp_seconds != null && (
+                          <button
+                            type="button"
+                            onClick={() => jumpTo(c.timestamp_seconds!)}
+                            className="rounded-md bg-amber-50 hover:bg-amber-100 border border-amber-200 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 font-mono transition-colors"
+                            title="Jump to this moment"
+                          >
+                            ▶ {fmt(c.timestamp_seconds)}
+                          </button>
+                        )}
+                        {timeLabel && (
+                          <span className="text-[10px] text-slate-400 ml-auto">{timeLabel}</span>
+                        )}
+                      </div>
+                      {/* Body */}
+                      <p className="text-sm text-slate-800 leading-relaxed">{c.body}</p>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

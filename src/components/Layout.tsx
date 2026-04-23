@@ -16,6 +16,7 @@ import {
   Menu,
   X,
   LogOut,
+  Settings,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { GlobalSearch } from './GlobalSearch';
@@ -210,6 +211,18 @@ function LayoutInner() {
             )}
             <GlobalSearch compact />
             <AssistantTrigger />
+            <NavLink
+              to="/settings"
+              className={({ isActive }) =>
+                cn(
+                  'hidden md:flex items-center p-2 rounded-lg transition-colors',
+                  isActive ? 'text-brand' : 'text-text-muted hover:text-text-primary'
+                )
+              }
+              title="Settings"
+            >
+              <Settings className="w-4 h-4" />
+            </NavLink>
             <button
               onClick={handleLogout}
               className="hidden md:flex items-center p-2 text-text-muted hover:text-text-primary rounded-lg transition-colors"
@@ -308,7 +321,22 @@ function LayoutInner() {
                   );
                 })}
               </div>
-              <div className="p-4 border-t border-border/50">
+              <div className="p-4 border-t border-border/50 space-y-1">
+                <NavLink
+                  to="/settings"
+                  onClick={() => setMobileOpen(false)}
+                  className={({ isActive }) =>
+                    cn(
+                      'w-full flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-brand-dim text-brand'
+                        : 'text-text-muted hover:text-text-primary hover:bg-background/70'
+                    )
+                  }
+                >
+                  <Settings className="w-4 h-4" />
+                  Settings
+                </NavLink>
                 <button
                   onClick={handleLogout}
                   className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-text-muted hover:text-rose-500 hover:bg-background/70 rounded-xl text-sm font-medium transition-colors"

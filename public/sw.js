@@ -5,7 +5,26 @@ const SHELL_ASSETS = [
   '/favicon.svg',
 ];
 
+const IS_LOCAL_DEV =
+  self.location.hostname === 'localhost' ||
+  self.location.hostname === '127.0.0.1' ||
+  self.location.hostname === '[::1]';
+
+if (IS_LOCAL_DEV) {
+  self.addEventListener('install', (event) => {
+    self.skipWaiting();
+    event.waitUntil(Promise.resolve());
+  });
+
+  self.addEventListener('activate', (event) => {
+    event.waitUntil(
+      caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key)))).then(() => self.registration.unregister())
+    );
+  });
+}
+
 self.addEventListener('install', (event) => {
+  if (IS_LOCAL_DEV) return;
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_ASSETS))
@@ -14,6 +33,7 @@ self.addEventListener('install', (event) => {
 
 // Clean up old caches on activate so stale assets don't persist after deploys
 self.addEventListener('activate', (event) => {
+  if (IS_LOCAL_DEV) return;
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(
@@ -26,6 +46,7 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  if (IS_LOCAL_DEV) return;
   const url = new URL(event.request.url);
 
   // 1. Pass through all cross-origin requests (Supabase, Spotify, SoundCloud, Gemini, Sentry, etc.)

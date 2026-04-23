@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabase } from '../lib/supabase';
+import { requestCache } from '../lib/requestCache';
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -285,28 +286,82 @@ export function ArtistCoach() {
   };
 
   // ── Context fetching ───────────────────────────────────────────────────────
+  //
+  // Keyword routing: only fetch the tables that are relevant to the current
+  // query. This avoids 4 Supabase round-trips on every message when only 1-2
+  // tables are actually needed.
+  //
+  // Results are cached for 60 s (requestCache) so rapid follow-up messages
+  // within the same conversation share one set of Supabase reads.
 
-  // Fetch user context from Supabase — kept client-side because it needs user auth.
-  // Results are passed to the server endpoint; the server never touches Supabase directly.
-  const getContext = async (): Promise<string> => {
-    const [releases, content, goals, kb] = await Promise.all([
-      supabase.from('releases').select('title,status,release_date').limit(10),
-      supabase.from('content_items').select('title,platform,status,type').limit(10),
-      supabase.from('goals').select('title,current,target,unit,deadline').limit(6),
-      supabase.from('bot_resources').select('id,title,type,content,url').limit(8),
-    ]);
+  /** Topics that each keyword pattern gates. */
+  const CONTEXT_KEYWORDS = {
+    releases: /release|track|song|album|drop|music|stream|upload|distribut/i,
+    content:  /content|post|caption|schedule|instagram|tiktok|social|reel|story/i,
+    goals:    /goal|target|milestone|progress|metric|kpi|growth/i,
+    kb:       /knowledge|resource|link|ref|document|pdf|webpage|info|background/i,
+  } as const;
+
+  const getContext = async (query: string): Promise<string> => {
+    const q = query.toLowerCase();
+    // Decide which tables are relevant (always include kb as it's cheap)
+    const needsReleases = CONTEXT_KEYWORDS.releases.test(q);
+    const needsContent  = CONTEXT_KEYWORDS.content.test(q);
+    const needsGoals    = CONTEXT_KEYWORDS.goals.test(q);
+    const needsKb       = true; // knowledge base always included — small payload
+
+    // If nothing matched, include all tables (generic question)
+    const fetchAll = !needsReleases && !needsContent && !needsGoals;
+
+    const fetchers: Promise<void>[] = [];
+    let releasesData: unknown[] = [];
+    let contentData:  unknown[] = [];
+    let goalsData:    unknown[]  = [];
+    let kbData:       unknown[]  = [];
+
+    if (fetchAll || needsReleases) {
+      fetchers.push(
+        requestCache
+          .get('coach:releases', () => supabase.from('releases').select('title,status,release_date').limit(8).then(r => r.data ?? []), 60_000)
+          .then((d) => { releasesData = d as unknown[]; }),
+      );
+    }
+    if (fetchAll || needsContent) {
+      fetchers.push(
+        requestCache
+          .get('coach:content', () => supabase.from('content_items').select('title,platform,status,type').limit(8).then(r => r.data ?? []), 60_000)
+          .then((d) => { contentData = d as unknown[]; }),
+      );
+    }
+    if (fetchAll || needsGoals) {
+      fetchers.push(
+        requestCache
+          .get('coach:goals', () => supabase.from('goals').select('title,current,target,unit,deadline').limit(6).then(r => r.data ?? []), 60_000)
+          .then((d) => { goalsData = d as unknown[]; }),
+      );
+    }
+    if (needsKb) {
+      fetchers.push(
+        requestCache
+          .get('coach:kb', () => supabase.from('bot_resources').select('id,title,type,content,url').limit(8).then(r => r.data ?? []), 120_000)
+          .then((d) => { kbData = d as unknown[]; }),
+      );
+    }
+
+    await Promise.all(fetchers);
 
     let ctx = '';
-    if (releases.data?.length)
-      ctx += `RELEASES:\n${releases.data.map((r) => `- ${r.title} (${r.status}, ${r.release_date})`).join('\n')}\n\n`;
-    if (content.data?.length)
-      ctx += `CONTENT:\n${content.data.map((c) => `- ${c.title} on ${c.platform} (${c.status})`).join('\n')}\n\n`;
-    if (goals.data?.length)
-      ctx += `GOALS:\n${goals.data.map((g) => `- ${g.title}: ${g.current}/${g.target} ${g.unit}`).join('\n')}\n\n`;
-    if (kb.data?.length)
-      ctx += `KNOWLEDGE BASE:\n${kb.data
-        .map((r) => `[${r.title}] ${r.type === 'text' ? (r.content ?? '').slice(0, 300) : r.url}`)
+    if ((releasesData as any[]).length)
+      ctx += `RELEASES:\n${(releasesData as any[]).map((r: any) => `- ${r.title} (${r.status}, ${r.release_date})`).join('\n')}\n\n`;
+    if ((contentData as any[]).length)
+      ctx += `CONTENT:\n${(contentData as any[]).map((c: any) => `- ${c.title} on ${c.platform} (${c.status})`).join('\n')}\n\n`;
+    if ((goalsData as any[]).length)
+      ctx += `GOALS:\n${(goalsData as any[]).map((g: any) => `- ${g.title}: ${g.current}/${g.target} ${g.unit}`).join('\n')}\n\n`;
+    if ((kbData as any[]).length)
+      ctx += `KNOWLEDGE BASE:\n${(kbData as any[])
+        .map((r: any) => `[${r.title}] ${r.type === 'text' ? String(r.content ?? '').slice(0, 200) : r.url}`)
         .join('\n')}\n\n`;
+
     return ctx;
   };
 
@@ -333,7 +388,7 @@ export function ArtistCoach() {
     setLoading(true);
 
     try {
-      const contextText = await getContext();
+      const contextText = await getContext(text);
       const session = sessions.find((s) => s.id === sessionId);
       const recentMessages = updatedMessages.slice(-RECENT_MESSAGES_WINDOW);
 
@@ -398,6 +453,7 @@ export function ArtistCoach() {
         setNewResource({ title: '', content: '', category: 'General', type: 'text', url: '' });
         setSelectedFile(null);
         setIsAddingResource(false);
+        requestCache.invalidate('coach:kb');
         fetchResources();
       }
     } catch (err) {
@@ -409,7 +465,7 @@ export function ArtistCoach() {
 
   const handleSaveEditResource = async (id: string) => {
     const { error } = await supabase.from('bot_resources').update(editingResource).eq('id', id);
-    if (!error) { setEditingResourceId(null); fetchResources(); }
+    if (!error) { setEditingResourceId(null); requestCache.invalidate('coach:kb'); fetchResources(); }
   };
 
   const handleDrag = (e: React.DragEvent) => {
@@ -430,7 +486,7 @@ export function ArtistCoach() {
 
   const handleDeleteResource = async (id: string) => {
     const { error } = await supabase.from('bot_resources').delete().eq('id', id);
-    if (!error) fetchResources();
+    if (!error) { requestCache.invalidate('coach:kb'); fetchResources(); }
   };
 
   // ── Sidebar component ─────────────────────────────────────────────────────

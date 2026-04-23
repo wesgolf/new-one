@@ -1,24 +1,23 @@
 /**
- * PublicHub — Premium EDM Artist Landing Page
+ * PublicHub — Premium B&W Editorial Artist Landing Page
  *
- * Sections: Hero → Featured → Music → Shows → Contact
- * Features: Scroll-driven sticky logo, floating glassmorphism nav,
- *           stacked Komi-style release cards, track list, email capture.
+ * Design: Black and white only. Editorial serif headlines (Cormorant).
+ * Sections: Hero → Features → Music → Radio → Shows → Footer
+ * Editable via Settings (app_settings.public_hub).
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  motion,
-  useScroll,
-  useTransform,
-  useSpring,
-  AnimatePresence,
-  LayoutGroup,
-} from 'motion/react';
-import { Disc3, Lock, LogIn, Ticket, Share2, Play, Check, Radio } from 'lucide-react';
+import { motion, useScroll, useTransform, useSpring, AnimatePresence } from 'motion/react';
+import { LogIn, X, Send, Check } from 'lucide-react';
 import { ARTIST_INFO } from '../constants';
 import { fetchReleases } from '../lib/supabaseData';
+import { supabase } from '../lib/supabase';
+import { usePublicHubSettings } from '../hooks/usePublicHubSettings';
 import type { ReleaseRecord } from '../types/domain';
+
+// ─── Google Fonts: Cormorant (editorial serif) + Epilogue (clean sans) ─────────
+
+const FONT_LINK = 'https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400&family=Epilogue:wght@300;400;500;600&display=swap';
 
 // ─── Brand Icon SVGs ──────────────────────────────────────────────────────────
 
@@ -70,33 +69,188 @@ function YouTubeIcon({ className }: { className?: string }) {
   );
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Types & Constants ────────────────────────────────────────────────────────
 
-type NavSection = 'hero' | 'music' | 'shows' | 'contact';
+type NavSection = 'features' | 'music' | 'radio' | 'shows';
 
 const NAV_ITEMS: { id: NavSection; label: string }[] = [
-  { id: 'hero',    label: 'Home'    },
-  { id: 'music',   label: 'Music'   },
-  { id: 'shows',   label: 'Shows'   },
-  { id: 'contact', label: 'Contact' },
+  { id: 'features', label: 'Features' },
+  { id: 'music',    label: 'Music'    },
+  { id: 'radio',    label: 'Radio'    },
+  { id: 'shows',    label: 'Shows'    },
 ];
 
-const MOCK_TRACKS = [
-  { id: '1', title: 'Keep It Moving',         streams: '142K', duration: '3:22' },
-  { id: '2', title: 'Neon Frequencies',        streams: '89K',  duration: '4:01' },
-  { id: '3', title: 'Late Nights (Extended)',  streams: '67K',  duration: '6:14' },
-  { id: '4', title: 'The Drop',               streams: '51K',  duration: '3:47' },
-  { id: '5', title: 'Club Ready (VIP Mix)',    streams: '34K',  duration: '5:28' },
+interface Show {
+  id: string;
+  venue: string;
+  date: string;
+  time?: string;
+  status: 'upcoming' | 'completed';
+}
+
+const SOCIALS_BASE = [
+  { id: 'instagram',  label: 'Instagram',   Icon: InstagramIcon,  defaultHref: `https://instagram.com/${(import.meta.env.VITE_INSTAGRAM_HANDLE ?? 'wesleyrob').replace('@', '')}`, settingsKey: 'instagramUrl'  as const },
+  { id: 'spotify',    label: 'Spotify',      Icon: SpotifyIcon,    defaultHref: 'https://open.spotify.com',                                                                          settingsKey: 'spotifyUrl'    as const },
+  { id: 'apple',      label: 'Apple Music',  Icon: AppleMusicIcon, defaultHref: 'https://music.apple.com',                                                                           settingsKey: 'appleMusicUrl' as const },
+  { id: 'soundcloud', label: 'SoundCloud',   Icon: SoundCloudIcon, defaultHref: import.meta.env.VITE_SOUNDCLOUD_URL ?? 'https://soundcloud.com/wesmusic1',                           settingsKey: 'soundcloudUrl' as const },
+  { id: 'tiktok',     label: 'TikTok',       Icon: TikTokIcon,     defaultHref: 'https://tiktok.com',                                                                                settingsKey: 'tiktokUrl'     as const },
+  { id: 'youtube',    label: 'YouTube',      Icon: YouTubeIcon,    defaultHref: 'https://youtube.com',                                                                               settingsKey: 'youtubeUrl'    as const },
 ];
 
-const SOCIALS = [
-  { id: 'instagram',  label: 'Instagram',   href: `https://instagram.com/${(import.meta.env.VITE_INSTAGRAM_HANDLE ?? 'wesleyrob').replace('@', '')}`, Icon: InstagramIcon  },
-  { id: 'spotify',    label: 'Spotify',      href: 'https://open.spotify.com',                                                                         Icon: SpotifyIcon    },
-  { id: 'apple',      label: 'Apple Music',  href: 'https://music.apple.com',                                                                           Icon: AppleMusicIcon },
-  { id: 'soundcloud', label: 'SoundCloud',   href: import.meta.env.VITE_SOUNDCLOUD_URL ?? 'https://soundcloud.com/wesmusic1',                           Icon: SoundCloudIcon },
-  { id: 'tiktok',     label: 'TikTok',       href: 'https://tiktok.com',                                                                                Icon: TikTokIcon     },
-  { id: 'youtube',    label: 'YouTube',      href: 'https://youtube.com',                                                                               Icon: YouTubeIcon    },
-];
+// ─── Contact Modal ─────────────────────────────────────────────────────────────
+
+interface ContactModalProps {
+  onClose: () => void;
+  contactEmail: string;
+}
+
+function ContactModal({ onClose, contactEmail }: ContactModalProps) {
+  const [name,    setName]    = useState('');
+  const [email,   setEmail]   = useState('');
+  const [subject, setSubject] = useState('');
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sent,    setSent]    = useState(false);
+  const [error,   setError]   = useState<string | null>(null);
+
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !email.trim() || !message.trim()) return;
+    setSending(true);
+    setError(null);
+    try {
+      const { error: dbErr } = await supabase
+        .from('contact_submissions')
+        .insert({ name: name.trim(), email: email.trim(), subject: subject.trim(), message: message.trim() });
+      if (dbErr) throw dbErr;
+      setSent(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
+      setError(msg);
+    } finally {
+      setSending(false);
+    }
+  }, [name, email, subject, message]);
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      {/* Backdrop */}
+      <motion.div
+        className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+        onClick={onClose}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+      />
+
+      {/* Panel */}
+      <motion.div
+        className="relative w-full max-w-md rounded-none sm:rounded-sm border border-white/15 bg-[#0a0a0a] p-7 sm:p-8"
+        initial={{ opacity: 0, y: 32 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 24 }}
+        transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+      >
+        {/* Close */}
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute top-5 right-5 text-white/30 hover:text-white transition-colors"
+        >
+          <X className="h-4 w-4" />
+        </button>
+
+        {!sent ? (
+          <>
+            <p className="text-[10px] font-medium uppercase tracking-[0.28em] text-white/30 mb-2" style={{ fontFamily: "'Epilogue', sans-serif" }}>
+              Get in Touch
+            </p>
+            <h2 className="text-[26px] font-light leading-tight text-white mb-6" style={{ fontFamily: "'Cormorant', serif" }}>
+              Contact
+            </h2>
+
+            {error && (
+              <p className="mb-4 text-[12px] text-red-400/80 border border-red-500/20 rounded-sm px-3 py-2">
+                {error}
+              </p>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  placeholder="Name"
+                  required
+                  className="col-span-1 w-full border-b border-white/12 bg-transparent py-2.5 text-[13px] text-white placeholder:text-white/25 focus:border-white/40 focus:outline-none transition-colors"
+                  style={{ fontFamily: "'Epilogue', sans-serif" }}
+                />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="Email"
+                  required
+                  className="col-span-1 w-full border-b border-white/12 bg-transparent py-2.5 text-[13px] text-white placeholder:text-white/25 focus:border-white/40 focus:outline-none transition-colors"
+                  style={{ fontFamily: "'Epilogue', sans-serif" }}
+                />
+              </div>
+              <input
+                value={subject}
+                onChange={e => setSubject(e.target.value)}
+                placeholder="Subject"
+                className="w-full border-b border-white/12 bg-transparent py-2.5 text-[13px] text-white placeholder:text-white/25 focus:border-white/40 focus:outline-none transition-colors"
+                style={{ fontFamily: "'Epilogue', sans-serif" }}
+              />
+              <textarea
+                value={message}
+                onChange={e => setMessage(e.target.value)}
+                placeholder="Message"
+                required
+                rows={4}
+                className="w-full border-b border-white/12 bg-transparent py-2.5 text-[13px] text-white placeholder:text-white/25 focus:border-white/40 focus:outline-none transition-colors resize-none"
+                style={{ fontFamily: "'Epilogue', sans-serif" }}
+              />
+              <div className="flex items-center justify-between pt-2">
+                {contactEmail && (
+                  <a href={`mailto:${contactEmail}`} className="text-[11px] text-white/25 hover:text-white/50 transition-colors" style={{ fontFamily: "'Epilogue', sans-serif" }}>
+                    {contactEmail}
+                  </a>
+                )}
+                <button
+                  type="submit"
+                  disabled={sending}
+                  className="ml-auto inline-flex items-center gap-2 border border-white/20 px-5 py-2.5 text-[11px] font-medium uppercase tracking-[0.18em] text-white/70 hover:border-white/50 hover:text-white transition-all disabled:opacity-40"
+                  style={{ fontFamily: "'Epilogue', sans-serif" }}
+                >
+                  <Send className="h-3 w-3" />
+                  {sending ? 'Sending…' : 'Send'}
+                </button>
+              </div>
+            </form>
+          </>
+        ) : (
+          <div className="py-8 text-center">
+            <div className="inline-flex h-12 w-12 items-center justify-center border border-white/15 mb-5">
+              <Check className="h-5 w-5 text-white/70" />
+            </div>
+            <h2 className="text-[24px] font-light text-white mb-2" style={{ fontFamily: "'Cormorant', serif" }}>
+              Message received
+            </h2>
+            <p className="text-[13px] text-white/35" style={{ fontFamily: "'Epilogue', sans-serif" }}>
+              We'll be in touch.
+            </p>
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -105,42 +259,65 @@ interface PublicHubProps {
 }
 
 export function PublicHub({ authPanel }: PublicHubProps) {
-  const [releases,       setReleases]       = useState<ReleaseRecord[]>([]);
-  const [activeSection,  setActiveSection]  = useState<NavSection>('hero');
-  const [email,          setEmail]          = useState('');
-  const [subscribed,     setSubscribed]     = useState(false);
-  const [playingTrack,   setPlayingTrack]   = useState<string | null>(null);
+  const [releases,      setReleases]      = useState<ReleaseRecord[]>([]);
+  const [shows,         setShows]         = useState<Show[]>([]);
+  const [activeSection, setActiveSection] = useState<NavSection>('features');
+  const [navVisible,    setNavVisible]    = useState(false);
+  const [contactOpen,   setContactOpen]   = useState(false);
 
-  const heroRef    = useRef<HTMLElement>(null);
-  const musicRef   = useRef<HTMLElement>(null);
-  const showsRef   = useRef<HTMLElement>(null);
-  const contactRef = useRef<HTMLElement>(null);
+  const { settings } = usePublicHubSettings();
 
-  // ── Scroll-driven logo animation ──
+  // Merge settings URLs over env defaults
+  const SOCIALS = SOCIALS_BASE.map(({ settingsKey, defaultHref, ...rest }) => ({
+    ...rest,
+    href: settings[settingsKey] || defaultHref,
+  }));
+
+  const featuresRef = useRef<HTMLElement>(null);
+  const musicRef    = useRef<HTMLElement>(null);
+  const radioRef    = useRef<HTMLElement>(null);
+  const showsRef    = useRef<HTMLElement>(null);
+
   const { scrollY } = useScroll();
-  const rawScale    = useTransform(scrollY, [0, 400], [6, 1]);
-  const rawY        = useTransform(scrollY, [0, 400], [320, 0]);
-  const logoScale   = useSpring(rawScale, { stiffness: 140, damping: 32 });
-  const logoY       = useSpring(rawY,     { stiffness: 140, damping: 32 });
-
-  const rawNavOpacity = useTransform(scrollY, [200, 380], [0, 1]);
-  const rawNavY       = useTransform(scrollY, [200, 380], [12, 0]);
-  const navOpacity    = useSpring(rawNavOpacity, { stiffness: 200, damping: 40 });
-  const navPillY      = useSpring(rawNavY,       { stiffness: 200, damping: 40 });
+  const rawNavOpacity = useTransform(scrollY, [120, 220], [0, 1]);
+  const navOpacity    = useSpring(rawNavOpacity, { stiffness: 220, damping: 40 });
 
   useEffect(() => {
-    fetchReleases().then(setReleases).catch(() => {});
+    fetchReleases().then(data => setReleases(data)).catch(() => {});
+    void (async () => {
+      try {
+        const { data } = await supabase
+          .from('shows')
+          .select('id, venue, date, time, status')
+          .eq('status', 'upcoming')
+          .order('date', { ascending: true });
+        if (data) setShows(data as Show[]);
+      } catch {}
+    })();
   }, []);
 
-  // ── Active-section tracker ──
+  // Font injection
+  useEffect(() => {
+    if (!document.getElementById('ph-fonts')) {
+      const link = document.createElement('link');
+      link.id = 'ph-fonts';
+      link.rel = 'stylesheet';
+      link.href = FONT_LINK;
+      document.head.appendChild(link);
+    }
+    return () => {};
+  }, []);
+
+  // Nav visibility + active section tracker
   useEffect(() => {
     const sections = [
-      { id: 'hero'    as NavSection, ref: heroRef    },
-      { id: 'music'   as NavSection, ref: musicRef   },
-      { id: 'shows'   as NavSection, ref: showsRef   },
-      { id: 'contact' as NavSection, ref: contactRef },
+      { id: 'features' as NavSection, ref: featuresRef },
+      { id: 'music'    as NavSection, ref: musicRef    },
+      { id: 'radio'    as NavSection, ref: radioRef    },
+      { id: 'shows'    as NavSection, ref: showsRef    },
     ];
     const handler = () => {
+      setNavVisible(window.scrollY > 120);
       const pos = window.scrollY + 200;
       for (let i = sections.length - 1; i >= 0; i--) {
         const el = sections[i].ref.current;
@@ -153,38 +330,78 @@ export function PublicHub({ authPanel }: PublicHubProps) {
 
   const scrollToSection = useCallback((id: NavSection) => {
     const el = document.getElementById(id);
-    if (el) window.scrollTo({ top: el.offsetTop - 140, behavior: 'smooth' });
+    if (el) window.scrollTo({ top: el.offsetTop - 72, behavior: 'smooth' });
   }, []);
 
   const scrollToTop = useCallback(() => window.scrollTo({ top: 0, behavior: 'smooth' }), []);
 
   const featuredRelease = releases.find(r => r.status === 'released') ?? releases[0] ?? null;
+  const artistName = settings.heroTitle || ARTIST_INFO.name;
+  const artistSubtitle = settings.heroSubtitle || 'Artist & Producer';
+
+  const STREAMING_LINKS = [
+    { Icon: SpotifyIcon,    href: settings.spotifyUrl    || 'https://open.spotify.com',   label: 'Spotify'     },
+    { Icon: AppleMusicIcon, href: settings.appleMusicUrl || 'https://music.apple.com',    label: 'Apple Music' },
+    { Icon: SoundCloudIcon, href: settings.soundcloudUrl || (import.meta.env.VITE_SOUNDCLOUD_URL ?? 'https://soundcloud.com/wesmusic1'), label: 'SoundCloud' },
+    { Icon: YouTubeIcon,    href: settings.youtubeUrl    || 'https://youtube.com',         label: 'YouTube'    },
+  ];
 
   return (
     <div
-      className="min-h-screen overflow-x-hidden selection:bg-violet-500/30 selection:text-violet-200"
-      style={{
-        background:  'radial-gradient(ellipse 100% 55% at 50% -5%, #1e1b4b 0%, transparent 65%), #07070f',
-        fontFamily:  "'Syne', 'DM Sans', system-ui, sans-serif",
-      }}
+      className="min-h-screen overflow-x-hidden selection:bg-white/20 selection:text-white"
+      style={{ background: '#000', fontFamily: "'Epilogue', 'DM Sans', system-ui, sans-serif" }}
     >
-      {/* ── Ambient glows ── */}
-      <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden>
-        <div
-          className="absolute -top-32 left-1/2 -translate-x-1/2 h-[360px] w-[700px] opacity-25"
-          style={{ background: 'radial-gradient(ellipse, #4f46e5, transparent 70%)' }}
-        />
-        <div
-          className="absolute bottom-0 right-[-10%] h-[350px] w-[350px] opacity-10"
-          style={{ background: 'radial-gradient(circle, #2563eb, transparent 70%)' }}
-        />
-      </div>
+      {/* ── Sticky top nav ── */}
+      <motion.header
+        style={{ opacity: navOpacity }}
+        className="fixed top-0 inset-x-0 z-40 border-b border-white/8 bg-black/90 backdrop-blur-md pointer-events-none"
+      >
+        <div className="mx-auto flex h-[52px] max-w-[620px] items-center justify-between px-5 sm:px-8 pointer-events-auto">
+          {/* Artist mark */}
+          <button
+            onClick={scrollToTop}
+            className="text-[13px] font-semibold uppercase tracking-[0.22em] text-white/60 hover:text-white transition-colors"
+            style={{ fontFamily: "'Epilogue', sans-serif" }}
+          >
+            {artistName.split(' ')[0].toUpperCase()}
+          </button>
 
-      {/* ── Sign-in button ── */}
-      <div className="fixed top-4 right-4 z-50">
+          {/* Nav items */}
+          <nav className="flex items-center gap-5 sm:gap-7" aria-label="Page sections">
+            {NAV_ITEMS.map(({ id, label }) => (
+              <button
+                key={id}
+                onClick={() => scrollToSection(id)}
+                className="text-[10px] font-medium uppercase tracking-[0.22em] transition-colors"
+                style={{
+                  fontFamily: "'Epilogue', sans-serif",
+                  color: activeSection === id ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.30)',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+
+          {/* Sign in */}
+          <Link
+            to="/login"
+            className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.18em] text-white/25 hover:text-white/60 transition-colors"
+            style={{ fontFamily: "'Epilogue', sans-serif" }}
+          >
+            <LogIn className="h-3 w-3" />
+            <span className="hidden sm:inline">Sign In</span>
+          </Link>
+        </div>
+      </motion.header>
+
+      {/* ── Top sign-in (above fold, hidden once nav appears) ── */}
+      <div className="fixed top-4 right-4 z-30" style={{ opacity: navVisible ? 0 : 1, transition: 'opacity 0.2s' }} aria-hidden={navVisible}>
         <Link
           to="/login"
-          className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-[11px] font-semibold uppercase tracking-widest text-white/40 backdrop-blur-sm transition-all hover:bg-white/[0.10] hover:text-white/80"
+          className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.18em] text-white/25 hover:text-white/55 transition-colors pointer-events-auto"
+          style={{ fontFamily: "'Epilogue', sans-serif" }}
+          tabIndex={navVisible ? -1 : 0}
         >
           <LogIn className="h-3 w-3" />
           Sign In
@@ -192,450 +409,447 @@ export function PublicHub({ authPanel }: PublicHubProps) {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════
-          STICKY LOGO + NAV
-      ═══════════════════════════════════════════════════════════════ */}
-      <div className="sticky top-0 z-40 flex h-16 items-center justify-center pointer-events-none">
-
-        {/* Logo — scroll-driven scale + y */}
-        <motion.button
-          style={{ scale: logoScale, y: logoY }}
-          onClick={scrollToTop}
-          className="pointer-events-auto font-black text-white tracking-[-0.05em] select-none text-[26px]"
-          whileHover={{ opacity: 0.75 }}
-          whileTap={{ scale: 0.96 }}
-          aria-label="Back to top"
-        >
-          WES.
-        </motion.button>
-
-        {/* Floating pill nav — fades in as logo shrinks */}
-        <motion.div
-          style={{ opacity: navOpacity, y: navPillY }}
-          className="pointer-events-auto absolute"
-        >
-          <LayoutGroup id="hub-nav">
-            <div className="flex items-center gap-0.5 rounded-full border border-white/[0.08] bg-black/60 px-1.5 py-1.5 backdrop-blur-xl shadow-[0_2px_24px_rgba(0,0,0,0.4)]">
-              {NAV_ITEMS.map(({ id, label }) => (
-                <button
-                  key={id}
-                  onClick={() => scrollToSection(id)}
-                  className="relative rounded-full px-3.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors duration-150"
-                  style={{ color: activeSection === id ? '#fff' : 'rgba(255,255,255,0.38)' }}
-                >
-                  {activeSection === id && (
-                    <motion.div
-                      layoutId="activeTab"
-                      className="absolute inset-0 rounded-full bg-white/[0.11]"
-                      transition={{ type: 'spring', stiffness: 380, damping: 38 }}
-                    />
-                  )}
-                  <span className="relative z-10">{label}</span>
-                </button>
-              ))}
-            </div>
-          </LayoutGroup>
-        </motion.div>
-      </div>
-
-      {/* ═══════════════════════════════════════════════════════════════
           PAGE CONTENT
       ═══════════════════════════════════════════════════════════════ */}
-      <div className="relative mx-auto max-w-2xl px-5 sm:px-8">
+      <div className="relative mx-auto max-w-[620px] px-5 sm:px-8">
 
         {/* ── HERO ─────────────────────────────────────────────────── */}
-        <section id="hero" ref={heroRef} className="min-h-[92vh] flex flex-col">
-
-          {/* Portrait with blurred edges — the logo floats over this visually */}
+        <section id="hero" className="pt-20 pb-16">
+          {/* Portrait */}
           <motion.div
-            className="relative w-full overflow-hidden rounded-3xl"
-            style={{ height: '62vh', minHeight: 320, maxHeight: 560 }}
-            initial={{ opacity: 0, scale: 1.04 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
+            className="relative w-full overflow-hidden"
+            style={{ aspectRatio: '4/5', maxHeight: '72vh' }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 1.0, ease: [0.22, 1, 0.36, 1] }}
           >
-            {/* Edge blur mask */}
-            <div
-              className="absolute inset-0 z-10 pointer-events-none"
-              style={{
-                background:
-                  'radial-gradient(ellipse 88% 80% at 50% 50%, transparent 35%, #07070f 100%)',
-              }}
-            />
-
-            {/* Portrait — shows cover art if available, else premium gradient */}
-            {featuredRelease?.cover_art_url ? (
+            {settings.heroImage ? (
+              <img
+                src={settings.heroImage}
+                alt={artistName}
+                className="h-full w-full object-cover"
+              />
+            ) : featuredRelease?.cover_art_url ? (
               <img
                 src={featuredRelease.cover_art_url}
-                alt="Artist"
-                className="h-full w-full object-cover opacity-40"
+                alt={artistName}
+                className="h-full w-full object-cover"
+                style={{ filter: 'grayscale(100%)' }}
               />
             ) : (
               <div
-                className="h-full w-full"
-                style={{
-                  background:
-                    'linear-gradient(160deg, #1e1b4b 0%, #0f172a 45%, #0c0a1e 100%)',
-                }}
+                className="h-full w-full flex items-center justify-center"
+                style={{ background: 'linear-gradient(160deg, #111 0%, #1a1a1a 50%, #0d0d0d 100%)' }}
               >
-                {/* Decorative EDM rings */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  {[160, 220, 280].map((size, i) => (
-                    <div
-                      key={i}
-                      className="absolute rounded-full border border-white/[0.04]"
-                      style={{ width: size, height: size, opacity: 1 - i * 0.25 }}
-                    />
-                  ))}
-                  <div
-                    className="h-24 w-24 rounded-full flex items-center justify-center text-[36px] font-black text-white/80 tracking-[-0.05em]"
-                    style={{
-                      background:
-                        'radial-gradient(circle at 35% 35%, #4f46e5, #1e1b4b)',
-                      boxShadow: '0 0 60px rgba(79,70,229,0.35)',
-                    }}
-                  >
-                    W
-                  </div>
-                </div>
+                <span
+                  className="text-[100px] sm:text-[140px] font-light tracking-[-0.04em] text-white/10 select-none"
+                  style={{ fontFamily: "'Cormorant', serif" }}
+                >
+                  {artistName.charAt(0)}
+                </span>
               </div>
             )}
+            {/* Bottom fade to black */}
+            <div
+              className="absolute bottom-0 inset-x-0 h-32 pointer-events-none"
+              style={{ background: 'linear-gradient(to top, #000 0%, transparent 100%)' }}
+            />
           </motion.div>
 
-          {/* Genre / tagline */}
+          {/* Name + subtitle (width visually matches portrait) */}
           <motion.div
-            className="mt-6 text-center"
-            initial={{ opacity: 0, y: 16 }}
+            className="mt-6"
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.45, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.7, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}
           >
-            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-white/28">
-              Multi-genre Artist &amp; Producer
-            </p>
-            <p className="mt-1.5 text-[14px] text-white/35 tracking-wide">
-              Electronic · R&amp;B · Hip-Hop
+            <h1
+              className="text-[clamp(42px,10vw,82px)] font-light leading-[0.92] tracking-[-0.03em] text-white"
+              style={{ fontFamily: "'Cormorant', serif" }}
+            >
+              {artistName}
+            </h1>
+            <p
+              className="mt-3 text-[11px] font-medium uppercase tracking-[0.32em] text-white/35"
+              style={{ fontFamily: "'Epilogue', sans-serif" }}
+            >
+              {artistSubtitle}
             </p>
           </motion.div>
 
-          {/* Social icon row — 6 icons, evenly spaced */}
-          <div className="mt-8 flex items-center justify-center gap-2.5 pb-8">
-            {SOCIALS.map(({ id, label, href, Icon }, i) => (
-              <motion.a
+          {/* Social icon row — bare icons, no circle backgrounds */}
+          <motion.div
+            className="mt-7 flex items-center gap-5"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.6, delay: 0.55 }}
+          >
+            {SOCIALS.map(({ id, label, href, Icon }) => (
+              <a
                 key={id}
                 href={href}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={label}
-                className="flex h-11 w-11 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.04] text-white/35 transition-colors hover:border-white/20 hover:bg-white/[0.09] hover:text-white"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.55 + i * 0.07, duration: 0.4 }}
-                whileHover={{ scale: 1.14 }}
-                whileTap={{ scale: 0.93 }}
+                className="text-white/25 hover:text-white/70 transition-colors"
               >
-                <Icon className="h-[15px] w-[15px]" />
-              </motion.a>
+                <Icon className="h-[18px] w-[18px]" />
+              </a>
             ))}
-          </div>
+          </motion.div>
         </section>
 
-        {/* ── FEATURED (Komi-style stacked cards) ─────────────────── */}
-        <section className="pb-24 space-y-3">
-          <p className="mb-5 text-[10px] font-semibold uppercase tracking-[0.28em] text-white/22">
+        {/* ── FEATURES ─────────────────────────────────────────────── */}
+        <section id="features" ref={featuresRef} className="pb-20">
+          <p
+            className="mb-5 text-[9px] font-semibold uppercase tracking-[0.36em] text-white/20"
+            style={{ fontFamily: "'Epilogue', sans-serif" }}
+          >
             Featured
           </p>
 
-          {/* Featured Release — horizontal on desktop */}
+          {/* Main feature card — full width, 5:2 ratio, 30% art / 70% info */}
           <motion.div
-            className="overflow-hidden rounded-3xl border border-white/[0.07] bg-white/[0.025] group cursor-pointer"
-            initial={{ opacity: 0, y: 28 }}
+            className="w-full overflow-hidden border border-white/8 group"
+            style={{ aspectRatio: '5/2' }}
+            initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: '-40px' }}
-            transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
-            whileHover={{ borderColor: 'rgba(255,255,255,0.11)' }}
+            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
           >
-            <div className="flex flex-col sm:flex-row">
-              {/* Cover art — compact square sm:w-48 */}
-              <div className="sm:w-48 shrink-0 overflow-hidden">
+            <div className="flex h-full">
+              {/* Left: cover art — 30% */}
+              <div className="w-[30%] shrink-0 overflow-hidden">
                 {featuredRelease?.cover_art_url ? (
                   <img
                     src={featuredRelease.cover_art_url}
                     alt={featuredRelease.title}
-                    className="w-full aspect-square sm:h-full sm:aspect-auto object-cover transition-transform duration-700 group-hover:scale-105"
+                    className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+                    style={{ filter: 'grayscale(100%)' }}
                   />
                 ) : (
                   <div
-                    className="aspect-square sm:aspect-auto min-h-[180px] sm:h-full flex items-center justify-center"
-                    style={{ background: 'linear-gradient(145deg, #1e1b4b 0%, #2e1065 100%)' }}
-                  >
-                    <Disc3 className="h-10 w-10 text-white/20" />
-                  </div>
+                    className="h-full w-full"
+                    style={{ background: 'linear-gradient(135deg, #111 0%, #1c1c1c 100%)' }}
+                  />
                 )}
               </div>
 
-              {/* Info + CTAs */}
-              <div className="flex flex-1 flex-col justify-between p-6 sm:p-7">
+              {/* Right: metadata + streaming links — 70% */}
+              <div className="flex flex-1 flex-col justify-between p-5 sm:p-7 border-l border-white/8">
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-violet-400/60 mb-2">
+                  <p
+                    className="text-[9px] font-medium uppercase tracking-[0.30em] text-white/22 mb-2"
+                    style={{ fontFamily: "'Epilogue', sans-serif" }}
+                  >
                     Latest Release
                   </p>
-                  <h2 className="text-[22px] sm:text-[26px] font-black tracking-[-0.03em] text-white leading-tight">
+                  <h2
+                    className="text-[clamp(18px,3.5vw,32px)] font-light leading-tight text-white"
+                    style={{ fontFamily: "'Cormorant', serif" }}
+                  >
                     {featuredRelease?.title ?? 'Upcoming Release'}
                   </h2>
-                  <p className="mt-1.5 text-[12px] text-white/30">
-                    {featuredRelease?.release_date ?? 'Coming Soon'}
-                  </p>
+                  {featuredRelease?.release_date && (
+                    <p
+                      className="mt-1 text-[11px] text-white/28"
+                      style={{ fontFamily: "'Epilogue', sans-serif" }}
+                    >
+                      {featuredRelease.release_date}
+                    </p>
+                  )}
                 </div>
 
-                {/* CTA row */}
-                <div className="mt-6 flex items-center flex-wrap gap-2.5">
-                  <a
-                    href="https://open.spotify.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 rounded-full bg-violet-600 px-5 py-2.5 text-[11px] font-bold uppercase tracking-[0.14em] text-white transition-all hover:bg-violet-500 active:scale-[0.97]"
-                  >
-                    <SpotifyIcon className="h-3.5 w-3.5" />
-                    Stream Now
-                  </a>
-                  {[
-                    { Icon: AppleMusicIcon, href: 'https://music.apple.com',    label: 'Apple Music' },
-                    { Icon: SoundCloudIcon, href: import.meta.env.VITE_SOUNDCLOUD_URL ?? 'https://soundcloud.com/wesmusic1', label: 'SoundCloud' },
-                  ].map(({ Icon, href, label }) => (
+                {/* Streaming links row */}
+                <div className="flex items-center gap-4">
+                  {STREAMING_LINKS.map(({ Icon, href, label }) => (
                     <a
                       key={label}
                       href={href}
                       target="_blank"
                       rel="noopener noreferrer"
                       aria-label={label}
-                      className="flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.04] text-white/35 transition-all hover:text-white hover:border-white/20"
+                      className="text-white/22 hover:text-white/70 transition-colors"
                     >
-                      <Icon className="h-4 w-4" />
+                      <Icon className="h-[15px] w-[15px]" />
                     </a>
                   ))}
                 </div>
               </div>
             </div>
           </motion.div>
-
-          {/* Secondary cards row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* Radio Mix */}
-            <motion.div
-              className="overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4 flex items-center gap-4 group cursor-pointer"
-              initial={{ opacity: 0, y: 18 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
-              whileHover={{ borderColor: 'rgba(255,255,255,0.10)' }}
-            >
-              <div
-                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl"
-                style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)' }}
-              >
-                <Radio className="h-6 w-6 text-white" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/28">Mix</p>
-                <p className="truncate text-[14px] font-bold text-white">Radio Edit Mix</p>
-              </div>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-white/20 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                Listen →
-              </span>
-            </motion.div>
-
-            {/* Latest Reel */}
-            <motion.div
-              className="overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4 flex items-center gap-4 group cursor-pointer"
-              initial={{ opacity: 0, y: 18 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: 0.16, ease: [0.22, 1, 0.36, 1] }}
-              whileHover={{ borderColor: 'rgba(255,255,255,0.10)' }}
-            >
-              <div
-                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl"
-                style={{ background: 'linear-gradient(135deg, #e11d48, #be185d)' }}
-              >
-                <Play className="h-6 w-6 text-white fill-white" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/28">Video</p>
-                <p className="truncate text-[14px] font-bold text-white">Latest Reel</p>
-              </div>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-white/20 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                Watch →
-              </span>
-            </motion.div>
-          </div>
         </section>
 
         {/* ── MUSIC ────────────────────────────────────────────────── */}
-        <section id="music" ref={musicRef} className="pb-24">
+        <section id="music" ref={musicRef} className="pb-20">
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 14 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.28em] text-white/22">
+            <p
+              className="mb-2 text-[9px] font-semibold uppercase tracking-[0.36em] text-white/20"
+              style={{ fontFamily: "'Epilogue', sans-serif" }}
+            >
               Catalog
             </p>
-            <h2 className="mb-8 text-[28px] sm:text-[32px] font-black tracking-[-0.03em] text-white">
-              Popular Tracks
+            <h2
+              className="mb-8 text-[clamp(28px,6vw,44px)] font-light tracking-[-0.02em] text-white leading-none"
+              style={{ fontFamily: "'Cormorant', serif" }}
+            >
+              Music
             </h2>
           </motion.div>
 
-          <div className="space-y-0.5">
-            {MOCK_TRACKS.map((track, i) => (
+          {/* Horizontal scroll track cards */}
+          <div
+            className="flex gap-3 overflow-x-auto pb-4 snap-x snap-mandatory"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          >
+            {(settings.featuredTracks.length > 0
+              ? settings.featuredTracks.map(t => ({ id: t.title, title: t.title, artistName, url: t.url }))
+              : [
+                  { id: '1', title: 'Keep It Moving',        artistName, url: '' },
+                  { id: '2', title: 'Neon Frequencies',       artistName, url: '' },
+                  { id: '3', title: 'Late Nights (Extended)', artistName, url: '' },
+                  { id: '4', title: 'The Drop',              artistName, url: '' },
+                  { id: '5', title: 'Club Ready (VIP Mix)',   artistName, url: '' },
+                ]
+            ).map((track, i) => (
               <motion.div
                 key={track.id}
-                className="group flex items-center gap-3 sm:gap-4 rounded-2xl px-4 py-3.5 transition-colors hover:bg-white/[0.04] cursor-pointer"
-                initial={{ opacity: 0, x: -14 }}
+                className="shrink-0 snap-start w-[140px] sm:w-[160px]"
+                initial={{ opacity: 0, x: 20 }}
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
-                transition={{ duration: 0.4, delay: i * 0.06 }}
-                onClick={() => setPlayingTrack(playingTrack === track.id ? null : track.id)}
+                transition={{ duration: 0.4, delay: i * 0.05 }}
               >
-                {/* Index / play */}
-                <div className="relative flex h-7 w-7 shrink-0 items-center justify-center">
-                  <span className="text-[12px] text-white/22 group-hover:opacity-0 transition-opacity tabular-nums font-medium">
-                    {String(i + 1).padStart(2, '0')}
-                  </span>
-                  <Play className="absolute h-3.5 w-3.5 text-white fill-current opacity-0 group-hover:opacity-100 transition-opacity" />
+                {/* Small cover art */}
+                <div
+                  className="w-full aspect-square mb-3 overflow-hidden border border-white/8"
+                  style={{ background: '#111' }}
+                >
+                  {featuredRelease?.cover_art_url && (
+                    <img
+                      src={featuredRelease.cover_art_url}
+                      alt={track.title}
+                      className="h-full w-full object-cover"
+                      style={{ filter: 'grayscale(100%)' }}
+                    />
+                  )}
                 </div>
-
-                {/* Title */}
-                <p className="flex-1 text-[14px] font-semibold text-white/70 group-hover:text-white transition-colors truncate">
+                <p
+                  className="text-[13px] font-medium text-white/80 leading-snug truncate"
+                  style={{ fontFamily: "'Epilogue', sans-serif" }}
+                >
                   {track.title}
                 </p>
-
-                {/* Streams (hidden on mobile) */}
-                <span className="hidden sm:block text-[12px] text-white/22 tabular-nums mr-4 font-medium">
-                  {track.streams}
-                </span>
-
-                {/* Duration */}
-                <span className="text-[12px] text-white/28 tabular-nums font-medium">
-                  {track.duration}
-                </span>
-
-                {/* Share */}
-                <button
-                  className="ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full opacity-0 group-hover:opacity-100 text-white/30 hover:text-white hover:bg-white/[0.08] transition-all"
-                  aria-label={`Share ${track.title}`}
-                  onClick={e => e.stopPropagation()}
+                <p
+                  className="text-[11px] text-white/28 mt-0.5 truncate"
+                  style={{ fontFamily: "'Epilogue', sans-serif" }}
                 >
-                  <Share2 className="h-3.5 w-3.5" />
-                </button>
+                  {track.artistName}
+                </p>
+                {/* Streaming icon links */}
+                <div className="flex items-center gap-3 mt-3">
+                  {track.url ? (
+                    <a
+                      href={track.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-white/22 hover:text-white/60 transition-colors"
+                    >
+                      <SpotifyIcon className="h-[13px] w-[13px]" />
+                    </a>
+                  ) : (
+                    STREAMING_LINKS.slice(0, 3).map(({ Icon, href, label }) => (
+                      <a
+                        key={label}
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={label}
+                        className="text-white/22 hover:text-white/60 transition-colors"
+                      >
+                        <Icon className="h-[13px] w-[13px]" />
+                      </a>
+                    ))
+                  )}
+                </div>
               </motion.div>
             ))}
           </div>
         </section>
 
-        {/* ── SHOWS ────────────────────────────────────────────────── */}
-        <section id="shows" ref={showsRef} className="pb-24">
+        {/* ── RADIO ────────────────────────────────────────────────── */}
+        <section id="radio" ref={radioRef} className="pb-20">
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 14 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.28em] text-white/22">
-              Live
+            <p
+              className="mb-2 text-[9px] font-semibold uppercase tracking-[0.36em] text-white/20"
+              style={{ fontFamily: "'Epilogue', sans-serif" }}
+            >
+              Mixes
             </p>
-            <h2 className="mb-8 text-[28px] sm:text-[32px] font-black tracking-[-0.03em] text-white">
-              Shows
+            <h2
+              className="mb-8 text-[clamp(28px,6vw,44px)] font-light tracking-[-0.02em] text-white leading-none"
+              style={{ fontFamily: "'Cormorant', serif" }}
+            >
+              Radio
             </h2>
           </motion.div>
 
           <motion.div
-            className="flex flex-col items-center justify-center py-20 rounded-3xl border border-dashed border-white/[0.07]"
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
+            className="border border-white/8 p-5 sm:p-6 flex items-center justify-between group cursor-pointer"
+            initial={{ opacity: 0, y: 14 }}
+            whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.7 }}
+            transition={{ duration: 0.5 }}
+            whileHover={{ borderColor: 'rgba(255,255,255,0.18)' }}
           >
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.03] mb-5">
-              <Ticket className="h-7 w-7 text-white/18" />
+            <div>
+              <p
+                className="text-[9px] font-medium uppercase tracking-[0.28em] text-white/22 mb-1.5"
+                style={{ fontFamily: "'Epilogue', sans-serif" }}
+              >
+                Mix
+              </p>
+              <p
+                className="text-[20px] font-light text-white"
+                style={{ fontFamily: "'Cormorant', serif" }}
+              >
+                Radio Edit Mix
+              </p>
             </div>
-            <p className="text-[15px] font-semibold text-white/45 mb-1">No upcoming shows</p>
-            <p className="text-[13px] text-white/22">Check back soon.</p>
+            <div className="flex items-center gap-4">
+              {STREAMING_LINKS.slice(0, 3).map(({ Icon, href, label }) => (
+                <a
+                  key={label}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={label}
+                  className="text-white/20 hover:text-white/60 transition-colors"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <Icon className="h-[15px] w-[15px]" />
+                </a>
+              ))}
+            </div>
           </motion.div>
         </section>
 
-        {/* ── CONTACT ──────────────────────────────────────────────── */}
-        <section id="contact" ref={contactRef} className="pb-32">
+        {/* ── SHOWS ────────────────────────────────────────────────── */}
+        <section id="shows" ref={showsRef} className="pb-20">
           <motion.div
-            className="relative overflow-hidden rounded-3xl border border-white/[0.07] bg-white/[0.02] p-8 sm:p-10"
-            initial={{ opacity: 0, y: 24 }}
+            initial={{ opacity: 0, y: 14 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.5 }}
           >
-            {/* Corner glows */}
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -top-24 -left-24 h-56 w-56 rounded-full opacity-18"
-              style={{ background: 'radial-gradient(circle, #6366f1, transparent 70%)' }}
-            />
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -bottom-24 -right-24 h-56 w-56 rounded-full opacity-12"
-              style={{ background: 'radial-gradient(circle, #3b82f6, transparent 70%)' }}
-            />
-
-            <div className="relative z-10">
-              <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.28em] text-white/22">
-                Newsletter
-              </p>
-              <h2 className="text-[28px] sm:text-[32px] font-black tracking-[-0.03em] text-white mb-2">
-                New music. First.
-              </h2>
-              <p className="text-[14px] text-white/38 mb-8 max-w-[340px] leading-relaxed">
-                Exclusive drops, tour dates, and unreleased content — straight to your inbox.
-              </p>
-
-              <AnimatePresence mode="wait">
-                {subscribed ? (
-                  <motion.div
-                    key="done"
-                    initial={{ opacity: 0, scale: 0.96 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="flex items-center gap-3 rounded-2xl border border-violet-500/20 bg-violet-500/10 px-5 py-4"
-                  >
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-500/20">
-                      <Check className="h-4 w-4 text-violet-400" />
-                    </div>
-                    <div>
-                      <p className="text-[14px] font-semibold text-white">You're on the list</p>
-                      <p className="text-[12px] text-white/38">New drops coming your way.</p>
-                    </div>
-                  </motion.div>
-                ) : (
-                  <motion.form
-                    key="form"
-                    className="space-y-3"
-                    onSubmit={e => { e.preventDefault(); if (email.trim()) setSubscribed(true); }}
-                  >
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={e => setEmail(e.target.value)}
-                      placeholder="YOUR EMAIL ADDRESS"
-                      required
-                      className="w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-5 py-3.5 text-[12px] font-semibold uppercase tracking-[0.12em] text-white placeholder:text-white/18 focus:border-violet-500/40 focus:outline-none focus:ring-1 focus:ring-violet-500/20 transition-all"
-                    />
-                    <button
-                      type="submit"
-                      className="w-full rounded-2xl bg-violet-600 py-3.5 text-[12px] font-bold uppercase tracking-[0.14em] text-white transition-all hover:bg-violet-500 active:scale-[0.98]"
-                    >
-                      Subscribe
-                    </button>
-                  </motion.form>
-                )}
-              </AnimatePresence>
-            </div>
+            <p
+              className="mb-2 text-[9px] font-semibold uppercase tracking-[0.36em] text-white/20"
+              style={{ fontFamily: "'Epilogue', sans-serif" }}
+            >
+              Live
+            </p>
+            <h2
+              className="mb-8 text-[clamp(28px,6vw,44px)] font-light tracking-[-0.02em] text-white leading-none"
+              style={{ fontFamily: "'Cormorant', serif" }}
+            >
+              Shows
+            </h2>
           </motion.div>
+
+          {shows.length > 0 ? (
+            <div className="divide-y divide-white/6">
+              {shows.map((show, i) => {
+                const d = new Date(show.date + 'T00:00:00');
+                const month = d.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+                const day = d.getDate();
+                return (
+                  <motion.div
+                    key={show.id}
+                    className="flex items-center gap-6 py-5"
+                    initial={{ opacity: 0, y: 10 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.4, delay: i * 0.06 }}
+                  >
+                    {/* Date block */}
+                    <div className="w-[44px] shrink-0 text-center">
+                      <p
+                        className="text-[9px] font-medium uppercase tracking-[0.22em] text-white/30"
+                        style={{ fontFamily: "'Epilogue', sans-serif" }}
+                      >
+                        {month}
+                      </p>
+                      <p
+                        className="text-[26px] font-light leading-none text-white"
+                        style={{ fontFamily: "'Cormorant', serif" }}
+                      >
+                        {day}
+                      </p>
+                    </div>
+
+                    <div className="h-8 w-px bg-white/8 shrink-0" />
+
+                    {/* Venue */}
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="text-[15px] font-medium text-white/80 leading-snug truncate"
+                        style={{ fontFamily: "'Epilogue', sans-serif" }}
+                      >
+                        {show.venue}
+                      </p>
+                      {show.time && (
+                        <p
+                          className="text-[11px] text-white/28 mt-0.5"
+                          style={{ fontFamily: "'Epilogue', sans-serif" }}
+                        >
+                          {show.time}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Status badge */}
+                    <span
+                      className="text-[9px] font-semibold uppercase tracking-[0.22em] text-white/28 border border-white/10 px-2.5 py-1 shrink-0"
+                      style={{ fontFamily: "'Epilogue', sans-serif" }}
+                    >
+                      Upcoming
+                    </span>
+                  </motion.div>
+                );
+              })}
+            </div>
+          ) : (
+            <motion.div
+              className="border border-white/6 py-16 text-center"
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+            >
+              <p
+                className="text-[15px] font-light text-white/30"
+                style={{ fontFamily: "'Cormorant', serif" }}
+              >
+                No upcoming shows
+              </p>
+              <p
+                className="mt-1.5 text-[11px] text-white/18"
+                style={{ fontFamily: "'Epilogue', sans-serif" }}
+              >
+                Check back soon.
+              </p>
+            </motion.div>
+          )}
         </section>
 
         {/* ── Auth panel (injected by Unauthorized) ── */}
@@ -646,10 +860,12 @@ export function PublicHub({ authPanel }: PublicHubProps) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.25 }}
           >
-            <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-white/95">
+            <div className="overflow-hidden border border-white/10 bg-white/95">
               <div className="flex items-center gap-2 border-b border-zinc-200 px-5 py-3.5">
-                <Lock className="h-3.5 w-3.5 text-zinc-400" />
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                <p
+                  className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400"
+                  style={{ fontFamily: "'Epilogue', sans-serif" }}
+                >
                   Artist OS Access
                 </p>
               </div>
@@ -659,15 +875,48 @@ export function PublicHub({ authPanel }: PublicHubProps) {
         )}
 
         {/* ── Footer ── */}
-        <footer className="pb-12 text-center">
-          <p className="text-[11px] text-white/14 tracking-[0.12em] uppercase">
-            © {new Date().getFullYear()} {ARTIST_INFO.name}
+        <footer className="border-t border-white/8 py-10 flex flex-col sm:flex-row items-center justify-between gap-6">
+          <p
+            className="text-[10px] text-white/18 tracking-[0.14em] uppercase"
+            style={{ fontFamily: "'Epilogue', sans-serif" }}
+          >
+            © {new Date().getFullYear()} {artistName}
           </p>
+
+          <div className="flex items-center gap-8">
+            {settings.pressKitUrl && (
+              <a
+                href={settings.pressKitUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] font-medium uppercase tracking-[0.22em] text-white/28 hover:text-white/60 transition-colors"
+                style={{ fontFamily: "'Epilogue', sans-serif" }}
+              >
+                Press Kit
+              </a>
+            )}
+            <button
+              onClick={() => setContactOpen(true)}
+              className="text-[10px] font-medium uppercase tracking-[0.22em] text-white/28 hover:text-white/60 transition-colors"
+              style={{ fontFamily: "'Epilogue', sans-serif" }}
+            >
+              Contact
+            </button>
+          </div>
         </footer>
 
       </div>
+
+      {/* ── Contact Modal ── */}
+      <AnimatePresence>
+        {contactOpen && (
+          <ContactModal
+            onClose={() => setContactOpen(false)}
+            contactEmail={settings.contactEmail}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
-
 
