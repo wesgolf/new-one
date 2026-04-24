@@ -1,0 +1,116 @@
+12:51:01 AM: dist/assets/index-CmU7YpJb.js   2,637.35 kB │ gzip: 652.13 kB
+12:51:01 AM: 
+12:51:01 AM: (!) Some chunks are larger than 500 kB after minification. Consider:
+12:51:01 AM: - Using dynamic import() to code-split the application
+12:51:01 AM: - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+12:51:01 AM: - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+12:51:01 AM: ✓ built in 9.69s
+12:51:01 AM: ​
+12:51:01 AM: (build.command completed in 10.2s)
+12:51:01 AM: ​
+12:51:01 AM: Functions bundling                                            
+12:51:01 AM: ────────────────────────────────────────────────────────────────
+12:51:01 AM: ​
+12:51:01 AM: Packaging Functions from netlify/functions directory:
+12:51:01 AM:  - ai-analyze.ts
+12:51:01 AM:  - assistant-chat.ts
+12:51:01 AM:  - audio-proxy.ts
+12:51:01 AM:  - coach-chat.ts
+12:51:01 AM:  - coach-context.ts
+12:51:01 AM:  - coach-summarize.ts
+12:51:01 AM:  - email-draft.ts
+12:51:01 AM:  - email-send.ts
+12:51:01 AM:  - goals-analyze.ts
+12:51:01 AM:  - report-summary.ts
+12:51:01 AM:  - search.ts
+12:51:01 AM:  - songstats.ts
+12:51:01 AM:  - zernio-config-check.ts
+12:51:01 AM:  - zernio.ts
+12:51:01 AM: ​
+12:51:02 AM: ✘ [ERROR] Expected "finally" but found ";"
+12:51:02 AM:     netlify/functions/songstats.ts:82:1:
+12:51:02 AM:       82 │ };
+12:51:02 AM:          │  ^
+12:51:02 AM:          ╵  finally
+12:51:02 AM: ​
+12:51:02 AM: Bundling of function "songstats" failed                       
+12:51:02 AM: ────────────────────────────────────────────────────────────────
+12:51:02 AM: ​
+12:51:02 AM:   Error message
+12:51:02 AM:   Build failed with 1 error:
+12:51:02 AM:   netlify/functions/songstats.ts:82:1: ERROR: Expected "finally" but found ";"
+12:51:02 AM: ​
+12:51:02 AM:   Error location
+12:51:02 AM:   While bundling function "songstats"
+12:51:02 AM: ​
+12:51:02 AM:   Resolved config
+12:51:02 AM:   build:
+12:51:02 AM:     command: npm run build
+12:51:02 AM:     commandOrigin: config
+12:51:02 AM:     environment:
+12:51:02 AM:       - NODE_ENV
+12:51:02 AM:       - PORT
+12:51:02 AM:       - SESSION_SECRET
+12:51:02 AM:       - VITE_DROPBOX_ACCESS_TOKEN
+12:51:02 AM:       - VITE_DROPBOX_API_KEY
+12:51:02 AM:       - VITE_DROPBOX_APP_SECRET
+12:51:02 AM:       - VITE_SONGSTATS_API_KEY
+12:51:02 AM:       - VITE_SONGSTATS_ARTIST_ID
+12:51:02 AM:       - VITE_SUPABASE_ANON
+12:51:02 AM:       - VITE_SUPABASE_PK
+12:51:02 AM:       - VITE_SUPABASE_URL
+12:51:02 AM:       - VITE_ZERNIO_API_KEY
+12:51:02 AM:     publish: /opt/build/repo/dist
+12:51:02 AM:     publishOrigin: config
+12:51:02 AM:   functionsDirectory: /opt/build/repo/netlify/functions
+12:51:02 AM:   redirects:
+12:51:02 AM:     - from: /api/search
+12:51:02 AM:       status: 200
+12:51:02 AM:       to: /.netlify/functions/search
+12:51:02 AM:     - from: /api/coach/context
+12:51:02 AM:       status: 200
+12:51:02 AM:       to: /.netlify/functions/coach-context
+12:51:02 AM:     - from: /api/coach/chat
+12:51:02 AM:       status: 200
+12:51:02 AM:       to: /.netlify/functions/coach-chat
+12:51:02 AM:     - from: /api/coach/summarize
+12:51:02 AM:       status: 200
+12:51:02 AM:       to: /.netlify/functions/coach-summarize
+12:51:02 AM:     - from: /api/assistant/chat
+12:51:02 AM:       status: 200
+12:51:02 AM:       to: /.netlify/functions/assistant-chat
+12:51:02 AM:     - from: /api/ai/analyze
+12:51:02 AM:       status: 200
+12:51:02 AM:       to: /.netlify/functions/ai-analyze
+12:51:02 AM:     - from: /api/email/draft
+12:51:02 AM:       status: 200
+12:51:02 AM:       to: /.netlify/functions/email-draft
+12:51:02 AM:     - from: /api/email/send
+12:51:02 AM:       status: 200
+12:51:02 AM:       to: /.netlify/functions/email-send
+12:51:02 AM:     - from: /api/report/summary
+12:51:02 AM:       status: 200
+12:51:02 AM:       to: /.netlify/functions/report-summary
+12:51:02 AM:     - from: /api/goals/analyze
+12:51:02 AM:       status: 200
+12:51:02 AM:       to: /.netlify/functions/goals-analyze
+12:51:02 AM:     - from: /api/audio-proxy
+12:51:02 AM:       status: 200
+12:51:02 AM:       to: /.netlify/functions/audio-proxy
+12:51:02 AM:     - from: /api/zernio/config-check
+12:51:02 AM:       status: 200
+12:51:02 AM:       to: /.netlify/functions/zernio-config-check
+12:51:03 AM: Failed during stage 'building site': Build script returned non-zero exit code: 2 (https://ntl.fyi/exit-code-2)
+12:51:03 AM:     - from: /api/zernio/*
+      status: 200
+      to: /.netlify/functions/zernio
+    - from: /api/songstats/*
+      status: 200
+      to: /.netlify/functions/songstats/:splat
+    - from: /*
+      status: 200
+      to: /index.html
+  redirectsOrigin: config
+12:51:03 AM: Build failed due to a user error: Build script returned non-zero exit code: 2
+12:51:03 AM: Failing build: Failed to build site
+12:51:03 AM: Finished processing build request in 24.247s

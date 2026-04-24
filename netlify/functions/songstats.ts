@@ -79,4 +79,17 @@ export const handler: Handler = async (event) => {
         };
       }
     }
+  } catch (error) {
+    console.error('Songstats handler error:', error);
+    return {
+      statusCode: 500,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        error: 'Failed to parse request.',
+        details: error instanceof Error ? error.message : String(error),
+      }),
+    };
+  }
 };
