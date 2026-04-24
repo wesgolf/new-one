@@ -75,6 +75,11 @@ CREATE POLICY releases_delete ON releases
   FOR DELETE
   USING (auth.uid() = user_id);
 
+-- The anon key is safe to expose because Row Level Security (RLS) ensures that:
+-- 1. Public-facing tables allow only SELECT operations.
+-- 2. User-owned tables enforce auth.uid() = user_id for sensitive operations.
+-- 3. No public INSERT/UPDATE/DELETE operations are allowed unless explicitly required.
+
 -- ── Storage bucket (create manually in dashboard) ─────────────────────────────
 -- Name:    release-artwork
 -- Public:  true

@@ -3,22 +3,17 @@
 -- Profiles Table
 -- id is a FK to auth.users(id) — NOT a separate auto-generated UUID
 CREATE TABLE IF NOT EXISTS profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  role TEXT NOT NULL DEFAULT 'artist' CHECK (role IN ('artist', 'manager')),
-  full_name TEXT,
-  email TEXT,
-  artist_name TEXT,
-  bio TEXT,
-  soundcloud_url TEXT,
-  spotify_id TEXT,
-  instagram_handle TEXT,
-  tiktok_handle TEXT,
-  youtube_channel TEXT,
-  email_contact TEXT,
-  website TEXT,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP DEFAULT now(),
+  role TEXT NOT NULL CHECK (role IN ('artist', 'admin')),
+  CONSTRAINT fk_role FOREIGN KEY (role) REFERENCES roles(role) ON DELETE CASCADE
 );
+
+-- Add additional constraints or policies as needed
+CREATE POLICY "Allow read access" ON profiles
+  FOR SELECT
+  USING (true);
 
 -- Releases Table
 CREATE TABLE IF NOT EXISTS releases (
@@ -438,3 +433,8 @@ CREATE TABLE IF NOT EXISTS report_snapshots (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE (user_id, period_type, period_start, platform)
 );
+
+-- The anon key is safe to expose because Row Level Security (RLS) ensures that:
+-- 1. Public-facing tables allow only SELECT operations.
+-- 2. User-owned tables enforce auth.uid() = user_id for sensitive operations.
+-- 3. No public INSERT/UPDATE/DELETE operations are allowed unless explicitly required.

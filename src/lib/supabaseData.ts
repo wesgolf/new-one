@@ -215,6 +215,7 @@ export async function saveIdea(idea: Partial<IdeaRecord>) {
     artist_name: idea.artist_name ?? null,
     voice_memo_url: idea.voice_memo_url ?? null,
     user_id: idea.user_id || user?.id || null,
+    created_by: idea.user_id || user?.id || null,
     updated_at: new Date().toISOString(),
   };
   if (idea.id) payload.id = idea.id;

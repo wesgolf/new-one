@@ -287,82 +287,63 @@ export function ArtistCoach() {
 
   // ── Context fetching ───────────────────────────────────────────────────────
   //
-  // Keyword routing: only fetch the tables that are relevant to the current
-  // query. This avoids 4 Supabase round-trips on every message when only 1-2
-  // tables are actually needed.
+  // Calls /api/coach/context — a server-side endpoint that runs Postgres FTS
+  // (search_records RPC) and targeted queries for analytics snapshots and
+  // calendar events, all scoped to the authenticated user via their JWT.
   //
-  // Results are cached for 60 s (requestCache) so rapid follow-up messages
-  // within the same conversation share one set of Supabase reads.
+  // The server enforces a 3 000-char budget so the AI never receives a full
+  // database dump. Sensitive field values are never logged server-side.
+  //
+  // Results are cached for 60 s (requestCache) so rapid follow-ups within the
+  // same conversation share one context round-trip.
 
-  /** Topics that each keyword pattern gates. */
-  const CONTEXT_KEYWORDS = {
-    releases: /release|track|song|album|drop|music|stream|upload|distribut/i,
-    content:  /content|post|caption|schedule|instagram|tiktok|social|reel|story/i,
-    goals:    /goal|target|milestone|progress|metric|kpi|growth/i,
-    kb:       /knowledge|resource|link|ref|document|pdf|webpage|info|background/i,
-  } as const;
+  const CONTEXT_TIMEOUT = 15_000; // 15 seconds
 
-  const getContext = async (query: string): Promise<string> => {
-    const q = query.toLowerCase();
-    // Decide which tables are relevant (always include kb as it's cheap)
-    const needsReleases = CONTEXT_KEYWORDS.releases.test(q);
-    const needsContent  = CONTEXT_KEYWORDS.content.test(q);
-    const needsGoals    = CONTEXT_KEYWORDS.goals.test(q);
-    const needsKb       = true; // knowledge base always included — small payload
+  const getContext = async (query: string, entityIds: string[] = []): Promise<string> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), CONTEXT_TIMEOUT);
 
-    // If nothing matched, include all tables (generic question)
-    const fetchAll = !needsReleases && !needsContent && !needsGoals;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return '';
 
-    const fetchers: Promise<void>[] = [];
-    let releasesData: unknown[] = [];
-    let contentData:  unknown[] = [];
-    let goalsData:    unknown[]  = [];
-    let kbData:       unknown[]  = [];
+      const cacheKey = `coach:context:${query.slice(0, 80)}`;
 
-    if (fetchAll || needsReleases) {
-      fetchers.push(
-        requestCache
-          .get('coach:releases', () => supabase.from('releases').select('title,status,release_date').limit(8).then(r => r.data ?? []), 60_000)
-          .then((d) => { releasesData = d as unknown[]; }),
+      const result = await requestCache.get(
+        cacheKey,
+        async () => {
+          const res = await fetch('/api/coach/context', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ question: query, page: 'coach', entityIds }),
+            signal: controller.signal,
+          });
+
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body?.error ?? `Context fetch failed (${res.status})`);
+          }
+
+          const json = await res.json();
+          return (json.context ?? '') as string;
+        },
+        60_000, // 60-second TTL
       );
-    }
-    if (fetchAll || needsContent) {
-      fetchers.push(
-        requestCache
-          .get('coach:content', () => supabase.from('content_items').select('title,platform,status,type').limit(8).then(r => r.data ?? []), 60_000)
-          .then((d) => { contentData = d as unknown[]; }),
-      );
-    }
-    if (fetchAll || needsGoals) {
-      fetchers.push(
-        requestCache
-          .get('coach:goals', () => supabase.from('goals').select('title,current,target,unit,deadline').limit(6).then(r => r.data ?? []), 60_000)
-          .then((d) => { goalsData = d as unknown[]; }),
-      );
-    }
-    if (needsKb) {
-      fetchers.push(
-        requestCache
-          .get('coach:kb', () => supabase.from('bot_resources').select('id,title,type,content,url').limit(8).then(r => r.data ?? []), 120_000)
-          .then((d) => { kbData = d as unknown[]; }),
-      );
-    }
 
-    await Promise.all(fetchers);
-
-    let ctx = '';
-    if ((releasesData as any[]).length)
-      ctx += `RELEASES:\n${(releasesData as any[]).map((r: any) => `- ${r.title} (${r.status}, ${r.release_date})`).join('\n')}\n\n`;
-    if ((contentData as any[]).length)
-      ctx += `CONTENT:\n${(contentData as any[]).map((c: any) => `- ${c.title} on ${c.platform} (${c.status})`).join('\n')}\n\n`;
-    if ((goalsData as any[]).length)
-      ctx += `GOALS:\n${(goalsData as any[]).map((g: any) => `- ${g.title}: ${g.current}/${g.target} ${g.unit}`).join('\n')}\n\n`;
-    if ((kbData as any[]).length)
-      ctx += `KNOWLEDGE BASE:\n${(kbData as any[])
-        .map((r: any) => `[${r.title}] ${r.type === 'text' ? String(r.content ?? '').slice(0, 200) : r.url}`)
-        .join('\n')}\n\n`;
-
-    return ctx;
+      return result as string;
+    } catch (error: unknown) {
+      if ((error as Error).name === 'AbortError') {
+        console.warn('[coach] Context retrieval timed out — proceeding without context.');
+        return '';
+      }
+      console.warn('[coach] Context retrieval failed:', (error as Error).message);
+      return ''; // non-fatal: the coach can still respond without context
+    } finally {
+      clearTimeout(timeoutId);
+    }
   };
 
   // ── Message sending ───────────────────────────────────────────────────────
@@ -388,7 +369,7 @@ export function ArtistCoach() {
     setLoading(true);
 
     try {
-      const contextText = await getContext(text);
+      const contextText = await getContext(text, []);
       const session = sessions.find((s) => s.id === sessionId);
       const recentMessages = updatedMessages.slice(-RECENT_MESSAGES_WINDOW);
 

@@ -145,3 +145,8 @@ CREATE POLICY "content_items_own"
     )
   )
   WITH CHECK (auth.uid() = user_id);
+
+-- The anon key is safe to expose because Row Level Security (RLS) ensures that:
+-- 1. Public-facing tables allow only SELECT operations.
+-- 2. User-owned tables enforce auth.uid() = user_id for sensitive operations.
+-- 3. No public INSERT/UPDATE/DELETE operations are allowed unless explicitly required.

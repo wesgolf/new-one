@@ -13,6 +13,21 @@
 // to avoid CORS — the proxy (server.ts) injects the API key.
 const BASE = '/api/songstats';
 
+const fetchSongstatsData = async (endpoint: string) => {
+  const response = await fetch(`/api/songstats${endpoint}`);
+
+  if (!response.ok) {
+    throw new Error('Analytics API route is not configured correctly.');
+  }
+
+  const contentType = response.headers.get('content-type');
+  if (!contentType || !contentType.includes('application/json')) {
+    throw new Error('Invalid response format. Expected JSON.');
+  }
+
+  return response.json();
+};
+
 async function get<T>(path: string, params?: Record<string, string>): Promise<T> {
   const url = new URL(`${BASE}${path}`, window.location.origin);
   if (params) {

@@ -1,0 +1,78 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[[redirects]]
+  from = "/api/search"
+  to = "/.netlify/functions/search"
+  status = 200
+
+[[redirects]]
+  from = "/api/coach/context"
+  to = "/.netlify/functions/coach-context"
+  status = 200
+
+[[redirects]]
+  from = "/api/coach/chat"
+  to = "/.netlify/functions/coach-chat"
+  status = 200
+
+[[redirects]]
+  from = "/api/coach/summarize"
+  to = "/.netlify/functions/coach-summarize"
+  status = 200
+
+[[redirects]]
+  from = "/api/assistant/chat"
+  to = "/.netlify/functions/assistant-chat"
+  status = 200
+
+[[redirects]]
+  from = "/api/ai/analyze"
+  to = "/.netlify/functions/ai-analyze"
+  status = 200
+
+[[redirects]]
+  from = "/api/email/draft"
+  to = "/.netlify/functions/email-draft"
+  status = 200
+
+[[redirects]]
+  from = "/api/email/send"
+  to = "/.netlify/functions/email-send"
+  status = 200
+
+[[redirects]]
+  from = "/api/report/summary"
+  to = "/.netlify/functions/report-summary"
+  status = 200
+
+[[redirects]]
+  from = "/api/goals/analyze"
+  to = "/.netlify/functions/goals-analyze"
+  status = 200
+
+[[redirects]]
+  from = "/api/audio-proxy"
+  to = "/.netlify/functions/audio-proxy"
+  status = 200
+
+[[redirects]]
+  from = "/api/zernio/config-check"
+  to = "/.netlify/functions/zernio-config-check"
+  status = 200
+
+[[redirects]]
+  from = "/api/zernio/*"
+  to = "/.netlify/functions/zernio"
+  status = 200
+
+[[redirects]]
+  from = "/api/songstats/*"
+  to = "/.netlify/functions/songstats/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

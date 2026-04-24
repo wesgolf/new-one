@@ -537,3 +537,5 @@ export function AudioWaveform({
     </div>
   );
 }
+
+export default AudioWaveform;

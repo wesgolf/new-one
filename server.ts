@@ -517,8 +517,8 @@ async function startServer() {
   });
 
   // ── Coach AI Proxy ────────────────────────────────────────────────────────
-  // Gemini is called server-side only. The API key is never sent to the browser.
-  const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+  // OpenAI is called server-side only. The API key is never sent to the browser.
+  const OPENAI_API_KEY = process.env.VITE_CHATGPT_API_KEY || process.env.OPENAI_API_KEY;
 
   // Hard cap on context payload to control token spend
   const MAX_CONTEXT_CHARS = 3000;
@@ -528,8 +528,199 @@ async function startServer() {
     return ctx.slice(0, MAX_CONTEXT_CHARS) + '\n[context trimmed for brevity]';
   }
 
+  // ── Coach context retrieval ───────────────────────────────────────────────
+  // Server-side context gathering using Postgres FTS + targeted queries.
+  // Mirrors netlify/functions/coach-context.ts for local dev (server.ts env).
+  //
+  // Token budget: 3 000 chars total.
+  //   FTS results:   up to 1 500 chars   (10 results × 150 chars)
+  //   Analytics:     up to   500 chars
+  //   Calendar:      up to   400 chars
+  //
+  // Future upgrade: replace the FTS block with a fetch() to Meilisearch /
+  // Typesense / OpenSearch / Elasticsearch. Response shape stays the same.
+  const SUPABASE_URL_SERVER  = process.env.SUPABASE_URL  ?? process.env.VITE_SUPABASE_URL  ?? '';
+  const SUPABASE_ANON_SERVER = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON ?? process.env.VITE_SUPABASE_PK ?? '';
+
+  app.post('/api/coach/context', async (req: Request, res: Response) => {
+    const authHeader = (req.headers['authorization'] ?? '') as string;
+    if (!authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing Authorization header' });
+    }
+    const token = authHeader.slice(7);
+
+    const { question, page = '', entityIds = [] } = req.body as {
+      question?: string;
+      page?: string;
+      entityIds?: string[];
+    };
+
+    if (!question || typeof question !== 'string' || question.trim().length < 2) {
+      return res.status(400).json({ error: 'question is required (min 2 chars)' });
+    }
+    if (!SUPABASE_URL_SERVER || !SUPABASE_ANON_SERVER) {
+      return res.status(500).json({ error: 'Context service not configured' });
+    }
+
+    const { createClient: createSbClient } = await import('@supabase/supabase-js');
+    const sb = createSbClient(SUPABASE_URL_SERVER, SUPABASE_ANON_SERVER, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+      auth: { persistSession: false },
+    });
+
+    const { data: { user }, error: authErr } = await sb.auth.getUser(token);
+    if (authErr || !user) return res.status(401).json({ error: 'Invalid or expired token' });
+
+    // ── Shared budget constants ──────────────────────────────────────────────
+    const BUDGET_PROFILE   = 800;
+    const BUDGET_FTS_MAX   = 10;
+    const BUDGET_SNIPPET   = 150;
+    const BUDGET_ANALYTICS = 500;
+    const BUDGET_CALENDAR  = 400;
+    const BUDGET_TOTAL     = 4_000;
+
+    const sections: string[] = [];
+    const sources:  string[] = [];
+    let charBudget = BUDGET_TOTAL;
+    const t0 = Date.now();
+
+    // 0. Artist profile + recent releases, goals, tasks (always included first)
+    try {
+      const [profileRes, releasesRes, goalsRes, tasksRes] = await Promise.all([
+        sb.from('profiles').select('full_name, email, role').eq('id', user.id).single(),
+        sb.from('releases').select('title, status, release_date').eq('user_id', user.id).order('created_at', { ascending: false }).limit(6),
+        sb.from('goals').select('title, description, status').eq('user_id', user.id).order('created_at', { ascending: false }).limit(5),
+        sb.from('tasks').select('title, status, due_date').eq('user_id', user.id).order('created_at', { ascending: false }).limit(5),
+      ]);
+
+      const profile = profileRes.data;
+      const name = profile?.full_name ?? user.email ?? 'the artist';
+
+      let block = `ARTIST PROFILE:\n- Name: ${name}\n- Role: ${profile?.role ?? 'artist'}\n`;
+
+      const releases = releasesRes.data ?? [];
+      if (releases.length > 0) {
+        block += `\nRECENT RELEASES:\n`;
+        for (const r of releases) block += `- ${r.title} (${r.status}${r.release_date ? ', ' + r.release_date : ''})\n`;
+      }
+
+      const goals = goalsRes.data ?? [];
+      if (goals.length > 0) {
+        block += `\nACTIVE GOALS:\n`;
+        for (const g of goals) block += `- ${g.title}${g.description ? ': ' + String(g.description).slice(0, 80) : ''} (${g.status ?? 'active'})\n`;
+      }
+
+      const tasks = tasksRes.data ?? [];
+      if (tasks.length > 0) {
+        block += `\nRECENT TASKS:\n`;
+        for (const t of tasks) block += `- ${t.title} (${t.status ?? 'pending'}${t.due_date ? ', due ' + t.due_date : ''})\n`;
+      }
+
+      block += '\n';
+      sections.unshift(block.slice(0, BUDGET_PROFILE));
+      charBudget -= Math.min(block.length, BUDGET_PROFILE);
+      sources.unshift('profile');
+    } catch (e) { console.warn('[coach/context] profile skipped:', (e as Error).message); }
+
+    // 1. FTS via search_records() RPC
+    try {
+      const { data: ftsRows, error: ftsErr } = await sb.rpc('search_records', {
+        query_text: String(question).slice(0, 500),
+        uid: user.id,
+      });
+      if (!ftsErr && Array.isArray(ftsRows) && ftsRows.length > 0) {
+        const rows = ftsRows.slice(0, BUDGET_FTS_MAX);
+        const grouped: Record<string, typeof rows> = {};
+        for (const r of rows) {
+          grouped[r.record_type] = grouped[r.record_type] ?? [];
+          grouped[r.record_type].push(r);
+        }
+        let block = '';
+        for (const [type, items] of Object.entries(grouped)) {
+          const lines = items.map((r) => {
+            const snip = ((r.snippet as string) ?? '').slice(0, BUDGET_SNIPPET);
+            return snip ? `- ${r.title}: ${snip}` : `- ${r.title}`;
+          });
+          block += `${type.toUpperCase()}S:\n${lines.join('\n')}\n\n`;
+          sources.push(type);
+        }
+        const allowed = Math.max(0, charBudget - BUDGET_ANALYTICS - BUDGET_CALENDAR);
+        sections.push(block.slice(0, allowed));
+        charBudget -= Math.min(block.length, allowed);
+      }
+    } catch (e) {
+      console.warn('[coach/context] FTS unavailable:', (e as Error).message);
+    }
+
+    // 2. Analytics snapshots
+    if (charBudget > 100) {
+      try {
+        const { data: snaps } = await sb
+          .from('report_snapshots')
+          .select('period_type, period_start, platform, data')
+          .eq('user_id', user.id)
+          .order('period_start', { ascending: false })
+          .limit(2);
+        if (snaps && snaps.length > 0) {
+          const lines = snaps.map((s) => {
+            const d = (s.data ?? {}) as Record<string, unknown>;
+            const stats = Object.entries(d).filter(([, v]) => typeof v === 'number').slice(0, 5).map(([k, v]) => `${k}: ${v}`).join(', ');
+            return `- ${s.platform ?? 'overall'} (${s.period_type} ${s.period_start}): ${stats || 'no stats'}`;
+          });
+          const block = `ANALYTICS SNAPSHOTS:\n${lines.join('\n')}\n\n`;
+          sections.push(block.slice(0, BUDGET_ANALYTICS));
+          charBudget -= Math.min(block.length, BUDGET_ANALYTICS);
+          sources.push('analytics');
+        }
+      } catch (e) { console.warn('[coach/context] analytics skipped:', (e as Error).message); }
+    }
+
+    // 3. Upcoming calendar
+    if (charBudget > 100) {
+      const today = new Date().toISOString().slice(0, 10);
+      try {
+        const [showsRes, meetRes] = await Promise.all([
+          sb.from('shows').select('venue, date, status').eq('user_id', user.id).gte('date', today).order('date').limit(3),
+          sb.from('meetings').select('title, date').eq('user_id', user.id).gte('date', today).order('date').limit(2),
+        ]);
+        const calLines: string[] = [];
+        for (const s of showsRes.data ?? []) calLines.push(`- Show @ ${s.venue} on ${s.date} (${s.status})`);
+        for (const m of meetRes.data ?? [])  calLines.push(`- Meeting: ${m.title} on ${m.date}`);
+        if (calLines.length > 0) {
+          const block = `UPCOMING CALENDAR:\n${calLines.join('\n')}\n\n`;
+          sections.push(block.slice(0, BUDGET_CALENDAR));
+          charBudget -= Math.min(block.length, BUDGET_CALENDAR);
+          sources.push('calendar');
+        }
+      } catch (e) { console.warn('[coach/context] calendar skipped:', (e as Error).message); }
+    }
+
+    // 4. Entity-pinned lookups
+    const safeIds = Array.isArray(entityIds) ? (entityIds as unknown[]).filter((x): x is string => typeof x === 'string').slice(0, 3) : [];
+    if (safeIds.length > 0 && charBudget > 100) {
+      try {
+        const { data: pinned } = await sb.from('releases').select('title, status, notes, release_date').eq('user_id', user.id).in('id', safeIds);
+        if (pinned && pinned.length > 0) {
+          const lines = pinned.map((r) => `- ${r.title} (${r.status}, ${r.release_date ?? 'no date'})${r.notes ? ': ' + String(r.notes).slice(0, 100) : ''}`);
+          sections.unshift(`PINNED RELEASES:\n${lines.join('\n')}\n\n`);
+          sources.unshift('pinned_releases');
+        }
+      } catch (e) { console.warn('[coach/context] entity pinning skipped:', (e as Error).message); }
+    }
+
+    let context = sections.join('');
+    if (context.length > BUDGET_TOTAL) {
+      context = context.slice(0, BUDGET_TOTAL) + '\n[context trimmed — token budget reached]';
+    }
+
+    // Log types used — never log content
+    console.log(`[coach/context] uid=${user.id.slice(0, 8)}… page="${page}" sources=[${[...new Set(sources)].join(',')}] chars=${context.length} ms=${Date.now() - t0}`);
+
+    return res.json({ context, sources: [...new Set(sources)] });
+  });
+
   app.post('/api/coach/chat', async (req: Request, res: Response) => {
-    if (!GEMINI_API_KEY) {
+    if (!OPENAI_API_KEY) {
       return res.status(503).json({ error: 'AI service not configured on server.' });
     }
 
@@ -555,33 +746,38 @@ async function startServer() {
 
     const systemInstruction =
       `You are the "Artist OS Coach" — a strategic AI mentor for independent music artists. ` +
-      `Use the USER DATA CONTEXT to personalise your advice. Be concise, cite data when relevant, use Markdown for structure.\n\n` +
+      `The USER DATA section below contains the artist's name, releases, goals, tasks, and other personal data. ` +
+      `Always address them by their first name. Use their actual releases, goals, and tasks to give specific, personalised advice. ` +
+      `Be concise, cite their data when relevant, use Markdown for structure.\n\n` +
       `USER DATA:\n${trimContext(contextText ?? '')}\n${summaryBlock}`;
 
     try {
-      const { GoogleGenAI } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+      const { default: OpenAI } = await import('openai');
+      const ai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: cleanMessages.map((m) => ({
-          role: m.role === 'user' ? 'user' : 'model',
-          parts: [{ text: m.content }],
-        })),
-        config: { systemInstruction, temperature: 0.7 },
+      const response = await ai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemInstruction },
+          ...cleanMessages.map((m) => ({
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+          })),
+        ],
+        temperature: 0.7,
       });
 
-      const text = response.text ?? "I couldn't process that — please try again.";
+      const text = response.choices[0]?.message?.content ?? "I couldn't process that — please try again.";
       console.log(`[coach/chat] ok — ${cleanMessages.length} messages, ~${systemInstruction.length} sys chars`);
       res.json({ text });
     } catch (err: any) {
-      console.error('[coach/chat] Gemini error:', err.message);
+      console.error('[coach/chat] OpenAI error:', err.message);
       res.status(500).json({ error: 'AI service error. Please try again.' });
     }
   });
 
   app.post('/api/coach/summarize', async (req: Request, res: Response) => {
-    if (!GEMINI_API_KEY) {
+    if (!OPENAI_API_KEY) {
       return res.status(503).json({ error: 'AI service not configured on server.' });
     }
 
@@ -591,31 +787,29 @@ async function startServer() {
     }
 
     try {
-      const { GoogleGenAI } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+      const { default: OpenAI } = await import('openai');
+      const ai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: [{
+      const response = await ai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{
           role: 'user',
-          parts: [{
-            text: `Summarize this coaching conversation in 3–4 sentences. Capture: the main topics discussed, any key decisions or action items, and the artist's current focus. Be concise and write in third-person. Do not use bullet points.\n\n${transcript.slice(0, 12000)}`,
-          }],
+          content: `Summarize this coaching conversation in 3–4 sentences. Capture: the main topics discussed, any key decisions or action items, and the artist's current focus. Be concise and write in third-person. Do not use bullet points.\n\n${transcript.slice(0, 12000)}`,
         }],
-        config: { temperature: 0.3 },
+        temperature: 0.3,
       });
 
-      const summary = response.text?.trim() ?? null;
+      const summary = response.choices[0]?.message?.content?.trim() ?? null;
       res.json({ summary });
     } catch (err: any) {
-      console.error('[coach/summarize] Gemini error:', err.message);
+      console.error('[coach/summarize] OpenAI error:', err.message);
       res.status(500).json({ error: 'Summarization failed' });
     }
   });
 
   // ── Global Assistant chat ──────────────────────────────────────────────────
   app.post('/api/assistant/chat', async (req: Request, res: Response) => {
-    if (!GEMINI_API_KEY) {
+    if (!OPENAI_API_KEY) {
       return res.status(503).json({ error: 'AI service not configured on server.' });
     }
     const { message, pageContext } = req.body as { message?: string; pageContext?: string };
@@ -623,8 +817,8 @@ async function startServer() {
       return res.status(400).json({ error: 'message is required' });
     }
     try {
-      const { GoogleGenAI } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+      const { default: OpenAI } = await import('openai');
+      const ai = new OpenAI({ apiKey: OPENAI_API_KEY });
       const systemPrompt = `You are an AI assistant embedded in an artist management app called Artist OS.
 The user is currently on the "${String(pageContext ?? 'dashboard')}" page.
 Today is ${new Date().toDateString()}.
@@ -632,24 +826,28 @@ Parse the user's message and respond with a JSON object:
 {"reply":"a short natural-language confirmation (1-2 sentences)","actions":[{"type":"create_task|create_calendar_event|open_content_scheduler|navigate","label":"human-readable label","payload":{"title":"...","startsAt":"ISO string","to":"/path"},"requiresConfirmation":true}]}
 Available action types: create_task, create_calendar_event, open_content_scheduler, navigate (/dashboard /releases /calendar /tasks /goals /analytics /content /coach /strategy /network).
 If nothing actionable, set actions to []. Always respond with valid JSON only — no markdown, no extra text.`;
-      const result = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        config: { systemInstruction: systemPrompt, responseMimeType: 'application/json', temperature: 0.3 },
-        contents: [{ role: 'user', parts: [{ text: String(message).slice(0, 4000) }] }],
+      const result = await ai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: String(message).slice(0, 4000) },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.3,
       });
-      const raw = result.text?.trim() ?? '{}';
+      const raw = result.choices[0]?.message?.content?.trim() ?? '{}';
       let parsed: { reply?: string; actions?: unknown[] } = {};
       try { parsed = JSON.parse(raw); } catch { parsed = { reply: raw }; }
       res.json({ reply: parsed.reply ?? 'Done.', actions: parsed.actions ?? [] });
     } catch (err: any) {
-      console.error('[assistant/chat] Gemini error:', err.message);
+      console.error('[assistant/chat] OpenAI error:', err.message);
       res.status(500).json({ error: 'AI service error. Please try again.' });
     }
   });
 
   // ── AI engine — artist state analysis ─────────────────────────────────────
   app.post('/api/ai/analyze', async (req: Request, res: Response) => {
-    if (!GEMINI_API_KEY) {
+    if (!OPENAI_API_KEY) {
       return res.status(503).json({ error: 'AI service not configured on server.' });
     }
     const { releases, content, goals, todos } = req.body;
@@ -669,50 +867,34 @@ If nothing actionable, set actions to []. Always respond with valid JSON only �
     }
 
     try {
-      const { GoogleGenAI, Type } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+      const { default: OpenAI } = await import('openai');
+      const ai = new OpenAI({ apiKey: OPENAI_API_KEY });
       const prompt = `Analyze the current state of an independent artist and generate a strategic game plan.
 Releases: ${JSON.stringify(safeReleases)}
 Content: ${JSON.stringify(safeContent)}
 Goals: ${JSON.stringify(safeGoals)}
 Todos: ${JSON.stringify(safeTodos)}
 Current Date: ${new Date().toISOString()}
-Tasks: 1) Select the Focus Track needing most attention. 2) Rationale. 3) Generate momentum/warning/opportunity/insight Signals. 4) Generate 3-5 Daily Tasks. Be specific and data-driven.`;
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              focusTrackId:   { type: Type.STRING },
-              focusRationale: { type: Type.STRING },
-              signals: {
-                type: Type.ARRAY,
-                items: { type: Type.OBJECT, properties: { type: { type: Type.STRING }, title: { type: Type.STRING }, description: { type: Type.STRING }, action: { type: Type.STRING }, impact: { type: Type.STRING }, category: { type: Type.STRING } }, required: ['type','title','description','action','impact','category'] },
-              },
-              dailyTasks: {
-                type: Type.ARRAY,
-                items: { type: Type.OBJECT, properties: { task: { type: Type.STRING }, reason: { type: Type.STRING }, priority: { type: Type.STRING }, category: { type: Type.STRING } }, required: ['task','reason','priority','category'] },
-              },
-            },
-            required: ['focusTrackId','focusRationale','signals','dailyTasks'],
-          },
-        },
+Tasks: 1) Select the Focus Track needing most attention. 2) Rationale. 3) Generate momentum/warning/opportunity/insight Signals. 4) Generate 3-5 Daily Tasks. Be specific and data-driven.
+Respond with valid JSON matching exactly: {"focusTrackId":"string","focusRationale":"string","signals":[{"type":"momentum|warning|opportunity|insight","title":"string","description":"string","action":"string","impact":"string","category":"string"}],"dailyTasks":[{"task":"string","reason":"string","priority":"high|medium|low","category":"string"}]}`;
+      const response = await ai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+        temperature: 0.3,
       });
-      const result = JSON.parse(response.text ?? '{}');
+      const result = JSON.parse(response.choices[0]?.message?.content ?? '{}');
       cacheSet(cacheKey, result, 5 * 60_000); // cache 5 min
       res.json(result);
     } catch (err: any) {
-      console.error('[ai/analyze] Gemini error:', err.message);
+      console.error('[ai/analyze] OpenAI error:', err.message);
       res.status(500).json({ error: 'AI analysis failed.' });
     }
   });
 
   // ── Email draft generation ─────────────────────────────────────────────────
   app.post('/api/email/draft', async (req: Request, res: Response) => {
-    if (!GEMINI_API_KEY) {
+    if (!OPENAI_API_KEY) {
       return res.status(503).json({ error: 'AI service not configured on server.' });
     }
     const { contact, intent, artistContext, intentContext } = req.body as {
@@ -725,8 +907,8 @@ Tasks: 1) Select the Focus Track needing most attention. 2) Rationale. 3) Genera
       return res.status(400).json({ error: 'contact and intent are required' });
     }
     try {
-      const { GoogleGenAI } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+      const { default: OpenAI } = await import('openai');
+      const ai = new OpenAI({ apiKey: OPENAI_API_KEY });
       const artistLine  = artistContext?.artistName   ? `Artist name: ${artistContext.artistName}`          : 'Artist name: (your name)';
       const releaseLine = artistContext?.recentRelease ? `Most recent release: "${artistContext.recentRelease}"` : '';
       const genreLine   = artistContext?.genre         ? `Genre / style: ${artistContext.genre}`              : '';
@@ -739,18 +921,22 @@ Email purpose: ${intentContext ?? String(intent)}
 Context:\n${artistLine}\n${releaseLine}\n${genreLine}\n${notesLine}\n${tagsLine}
 Rules: Under 180 words in the body. Warm but professional tone. No markdown — plain text paragraphs. Subject line: concise, no clickbait.
 Return valid JSON exactly like this: {"subject":"...","body":"..."}`.trim();
-      const response = await ai.models.generateContent({ model: 'gemini-2.0-flash', contents: prompt });
-      const raw = (response.text ?? '').trim().replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+      const response = await ai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+      });
+      const raw = response.choices[0]?.message?.content ?? '{}';
       res.json(JSON.parse(raw));
     } catch (err: any) {
-      console.error('[email/draft] Gemini error:', err.message);
+      console.error('[email/draft] OpenAI error:', err.message);
       res.status(500).json({ error: 'Email draft generation failed.' });
     }
   });
 
   // ── Weekly report executive summary ───────────────────────────────────────
   app.post('/api/report/summary', async (req: Request, res: Response) => {
-    if (!GEMINI_API_KEY) {
+    if (!OPENAI_API_KEY) {
       return res.status(503).json({ error: 'AI service not configured on server.' });
     }
     const { sections, artistName, start, end } = req.body as {
@@ -758,20 +944,20 @@ Return valid JSON exactly like this: {"subject":"...","body":"..."}`.trim();
     };
     if (!sections?.length) return res.json({ summary: null });
     try {
-      const { GoogleGenAI } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+      const { default: OpenAI } = await import('openai');
+      const ai = new OpenAI({ apiKey: OPENAI_API_KEY });
       const digest = (sections as any[]).map((s) => ({
         section: s.title,
         stats: s.stats,
         items: (s.items ?? []).slice(0, 3).map((i: any) => `${i.status === 'positive' ? '✓' : i.status === 'negative' ? '✗' : '·'} ${i.text}`),
       }));
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: `You are writing a 2-3 sentence executive summary for ${String(artistName ?? 'the artist')}'s weekly artist report.\nPeriod: ${start ?? ''} – ${end ?? ''}\nData: ${JSON.stringify(digest)}\nBe direct, specific, and action-oriented. Avoid fluff. Focus on the most impactful insight.`,
+      const response = await ai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: `You are writing a 2-3 sentence executive summary for ${String(artistName ?? 'the artist')}'s weekly artist report.\nPeriod: ${start ?? ''} – ${end ?? ''}\nData: ${JSON.stringify(digest)}\nBe direct, specific, and action-oriented. Avoid fluff. Focus on the most impactful insight.` }],
       });
-      res.json({ summary: response.text?.trim() ?? null });
+      res.json({ summary: response.choices[0]?.message?.content?.trim() ?? null });
     } catch (err: any) {
-      console.error('[report/summary] Gemini error:', err.message);
+      console.error('[report/summary] OpenAI error:', err.message);
       res.status(500).json({ error: 'Summary generation failed.' });
     }
   });
@@ -780,7 +966,7 @@ Return valid JSON exactly like this: {"subject":"...","body":"..."}`.trim();
   // Single Gemini call returns both per-goal statuses and a strategic insight.
   // (Previously two sequential calls — halves token round-trips and latency.)
   app.post('/api/goals/analyze', async (req: Request, res: Response) => {
-    if (!GEMINI_API_KEY) {
+    if (!OPENAI_API_KEY) {
       return res.status(503).json({ error: 'AI service not configured on server.' });
     }
     const { goals, shows, currentDate } = req.body as {
@@ -800,8 +986,8 @@ Return valid JSON exactly like this: {"subject":"...","body":"..."}`.trim();
     }
 
     try {
-      const { GoogleGenAI } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+      const { default: OpenAI } = await import('openai');
+      const ai = new OpenAI({ apiKey: OPENAI_API_KEY });
       const today = String(currentDate ?? new Date().toISOString().split('T')[0]);
 
       const goalSummary = safeGoals.map((g: any) => ({
@@ -821,14 +1007,15 @@ Return a JSON object with exactly two keys:
 
 Respond with valid JSON only.`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
-        config: { responseMimeType: 'application/json', temperature: 0.3 },
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      const response = await ai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+        temperature: 0.3,
       });
 
       let result: { statuses?: Record<string, unknown>; analysis?: string } = {};
-      try { result = JSON.parse(response.text ?? '{}'); } catch { /* ignore */ }
+      try { result = JSON.parse(response.choices[0]?.message?.content ?? '{}'); } catch { /* ignore */ }
 
       const payload = {
         statuses: result.statuses ?? {},
@@ -837,7 +1024,7 @@ Respond with valid JSON only.`;
       cacheSet(cacheKey, payload, 10 * 60_000); // cache 10 min
       res.json(payload);
     } catch (err: any) {
-      console.error('[goals/analyze] Gemini error:', err.message);
+      console.error('[goals/analyze] OpenAI error:', err.message);
       res.status(500).json({ error: 'Goals analysis failed.' });
     }
   });

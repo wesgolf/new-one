@@ -193,7 +193,9 @@ async function safeFetch<T = any>(url: string): Promise<{ ok: boolean; data?: T;
     // If Express isn't handling this path, Vite returns 200 OK with HTML.
     // Detect that early so we get a useful error instead of a JSON parse failure.
     if (ct.includes('text/html')) {
-      console.error(`[safeFetch] ${url} → HTTP ${res.status} text/html — API route not reached (Vite SPA fallback). Restart the server.`);
+      if (import.meta.env.DEV) {
+        console.error(`[safeFetch] ${url} → HTML response detected. Restart the dev server.`);
+      }
       return { ok: false, status: res.status, error: 'Server returned HTML — API proxy not matched. Restart dev server.' };
     }
     if (!res.ok) {

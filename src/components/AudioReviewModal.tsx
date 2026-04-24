@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Download, Layers, MapPin, MessageSquare, Pause, Play, Send, X } from 'lucide-react';
 import { saveIdeaComment, updateIdeaCommentTimestamp } from '../lib/supabaseData';
 import type { IdeaAsset, IdeaComment, IdeaRecord } from '../types/domain';
-import { AudioWaveform } from './AudioWaveform';
+import AudioWaveform from './AudioWaveform';
 import type { WaveformMarker } from './AudioWaveform';
 
 function fmt(value: number) {
@@ -155,6 +155,11 @@ export function AudioReviewModal({ open, idea, assets, comments, onClose, onSave
     if (!a) return;
     a.currentTime = ts;
     a.play();
+  };
+
+  const handleTranslation = (t: string) => {
+    // Ensure 't' has a string type
+    console.log(t);
   };
 
   return (

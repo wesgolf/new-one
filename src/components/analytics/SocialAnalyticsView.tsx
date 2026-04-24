@@ -22,18 +22,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import {
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip as RechartsTooltip,
-  ResponsiveContainer,
-  Legend,
-} from 'recharts';
+
 import { useZernioAnalytics } from '../../hooks/useZernioAnalytics';
 import {
   formatNumber,
@@ -517,6 +506,21 @@ function PostSortHeader({
   );
 }
 
+function SafeImage({ src, alt, fallback }: { src: string; alt: string; fallback: string }) {
+  const [imageSrc, setImageSrc] = React.useState(src);
+
+  return (
+    <img
+      src={imageSrc}
+      alt={alt}
+      className="h-9 w-9 rounded-lg object-cover"
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setImageSrc(fallback)}
+    />
+  );
+}
+
 function PostRow({ post }: { post: ZernioPost }) {
   const color = colorOf(post.platform);
   return (
@@ -524,7 +528,11 @@ function PostRow({ post }: { post: ZernioPost }) {
       <td className="px-5 py-3 max-w-xs">
         <div className="flex items-center gap-3">
           {post.thumbnailUrl ? (
-            <img src={post.thumbnailUrl} alt="" className="h-9 w-9 rounded-lg object-cover" />
+            <SafeImage
+              src={post.thumbnailUrl}
+              alt="Post thumbnail"
+              fallback="/assets/placeholder-thumbnail.jpg"
+            />
           ) : (
             <div className="h-9 w-9 rounded-lg bg-slate-100" />
           )}
@@ -537,10 +545,7 @@ function PostRow({ post }: { post: ZernioPost }) {
         <span
           className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-black"
           style={{ background: hexToRgba(color, 0.12), color }}
-        >
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-          {labelOf(post.platform)}
-        </span>
+        ></span>
       </td>
       <td className="px-3 py-3 text-right text-[11px] text-slate-500 tabular-nums">
         {timeAgo(post.publishedAt)}
@@ -587,46 +592,91 @@ function PostRow({ post }: { post: ZernioPost }) {
 
 // ── Daily Metrics Chart ───────────────────────────────────────────────────────
 
+import * as d3 from 'd3';
+
+const SERIES = [
+  { key: 'views'       as const, label: 'Views',       color: '#6366F1' },
+  { key: 'impressions' as const, label: 'Impressions', color: '#22D3EE' },
+  { key: 'likes'       as const, label: 'Likes',       color: '#F43F5E' },
+] satisfies Array<{ key: keyof ZernioDailyMetricsDay['metrics']; label: string; color: string }>;
+
 function DailyMetricsChart({ data }: { data: ZernioDailyMetricsDay[] }) {
-  const chartData = data.map(d => ({
-    date: d.date.slice(5),
-    Views: d.metrics.views,
-    Impressions: d.metrics.impressions,
-    Likes: d.metrics.likes,
-  }));
+  const ref = React.useRef<SVGSVGElement | null>(null);
+  const wrapRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    if (!ref.current || data.length < 2) return;
+
+    const containerWidth = wrapRef.current?.clientWidth ?? 480;
+    const width  = containerWidth;
+    const height = 200;
+    const margin = { top: 16, right: 16, bottom: 28, left: 40 };
+
+    const svg = d3.select(ref.current);
+    svg.selectAll('*').remove();
+    svg.attr('viewBox', `0 0 ${width} ${height}`);
+
+    const dates = data.map((d) => new Date(d.date));
+    const x = d3.scaleTime()
+      .domain([dates[0], dates[dates.length - 1]])
+      .range([margin.left, width - margin.right]);
+
+    const allValues = SERIES.flatMap((s) => data.map((d) => d.metrics[s.key]));
+    const y = d3.scaleLinear()
+      .domain([0, d3.max(allValues) ?? 1])
+      .nice()
+      .range([height - margin.bottom, margin.top]);
+
+    // Grid
+    svg.append('g')
+      .attr('transform', `translate(${margin.left},0)`)
+      .call(d3.axisLeft(y).ticks(4).tickSize(-(width - margin.left - margin.right)))
+      .call((g) => {
+        g.select('.domain').remove();
+        g.selectAll('line').attr('stroke', '#F1F5F9').attr('stroke-dasharray', '3 2');
+        g.selectAll('text').attr('fill', '#94A3B8').attr('font-size', 9);
+      });
+
+    // X axis
+    svg.append('g')
+      .attr('transform', `translate(0,${height - margin.bottom})`)
+      .call(d3.axisBottom(x).ticks(Math.min(data.length, 6)).tickSizeOuter(0))
+      .call((g) => {
+        g.select('.domain').attr('stroke', '#E2E8F0');
+        g.selectAll('text').attr('fill', '#94A3B8').attr('font-size', 9);
+        g.selectAll('line').attr('stroke', '#E2E8F0');
+      });
+
+    // Lines
+    const lineGen = d3.line<ZernioDailyMetricsDay>()
+      .x((d) => x(new Date(d.date)))
+      .curve(d3.curveMonotoneX);
+
+    for (const s of SERIES) {
+      svg.append('path')
+        .datum(data)
+        .attr('fill', 'none')
+        .attr('stroke', s.color)
+        .attr('stroke-width', 2)
+        .attr('d', lineGen.y((d) => y(d.metrics[s.key])));
+    }
+  }, [data]);
+
+  const legendItems = SERIES.map((s) => (
+    <span key={s.key} className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500">
+      <span className="inline-block h-2 w-4 rounded-full" style={{ background: s.color }} />
+      {s.label}
+    </span>
+  ));
+
   return (
     <section className="overflow-hidden rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
-      <p className="text-sm font-black text-slate-900 mb-4">Daily Performance</p>
-      <div style={{ minWidth: 0 }}>
-      <ResponsiveContainer width="100%" height={200}>
-        <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
-          <defs>
-            <linearGradient id="gViews" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#FF0000" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#FF0000" stopOpacity={0} />
-            </linearGradient>
-            <linearGradient id="gLikes" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#E1306C" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#E1306C" stopOpacity={0} />
-            </linearGradient>
-            <linearGradient id="gImpr" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#1877F2" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#1877F2" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-          <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-          <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={(v) => formatNumber(v)} width={45} />
-          <RechartsTooltip
-            contentStyle={{ fontSize: 11, borderRadius: 12, border: '1px solid #E2E8F0' }}
-            formatter={(value: any) => formatNumber(value)}
-          />
-          <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 10 }} />
-          <Area type="monotone" dataKey="Views" stroke="#FF0000" fill="url(#gViews)" strokeWidth={2} dot={false} />
-          <Area type="monotone" dataKey="Impressions" stroke="#1877F2" fill="url(#gImpr)" strokeWidth={2} dot={false} />
-          <Area type="monotone" dataKey="Likes" stroke="#E1306C" fill="url(#gLikes)" strokeWidth={2} dot={false} />
-        </AreaChart>
-      </ResponsiveContainer>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm font-black text-slate-900">Daily Performance</p>
+        <div className="flex items-center gap-3">{legendItems}</div>
+      </div>
+      <div ref={wrapRef} className="w-full">
+        <svg ref={ref} width="100%" height="200" />
       </div>
     </section>
   );
@@ -774,31 +824,94 @@ function BestTimeHeatmap({ slots }: { slots: ZernioBestTimeSlot[] }) {
 // ── Content Decay Chart ───────────────────────────────────────────────────────
 
 function ContentDecayChart({ buckets }: { buckets: ZernioContentDecayBucket[] }) {
-  const chartData = [...buckets]
-    .sort((a, b) => a.bucket_order - b.bucket_order)
-    .map(b => ({
-      label: b.bucket_label,
-      'Eng %': Math.round(b.avg_pct_of_final * 100),
-    }));
+  const ref = React.useRef<SVGSVGElement | null>(null);
+  const wrapRef = React.useRef<HTMLDivElement | null>(null);
+
+  const sorted = [...buckets].sort((a, b) => a.bucket_order - b.bucket_order);
+
+  React.useEffect(() => {
+    if (!ref.current || sorted.length === 0) return;
+
+    const containerWidth = wrapRef.current?.clientWidth ?? 320;
+    const width  = containerWidth;
+    const height = 180;
+    const margin = { top: 12, right: 8, bottom: 28, left: 36 };
+
+    const svg = d3.select(ref.current);
+    svg.selectAll('*').remove();
+    svg.attr('viewBox', `0 0 ${width} ${height}`);
+
+    const x = d3.scaleBand()
+      .domain(sorted.map((b) => b.bucket_label))
+      .range([margin.left, width - margin.right])
+      .padding(0.28);
+
+    const y = d3.scaleLinear()
+      .domain([0, 100])
+      .range([height - margin.bottom, margin.top]);
+
+    // Grid
+    svg.append('g')
+      .attr('transform', `translate(${margin.left},0)`)
+      .call(d3.axisLeft(y).ticks(4).tickSize(-(width - margin.left - margin.right)).tickFormat((v) => `${v}%`))
+      .call((g) => {
+        g.select('.domain').remove();
+        g.selectAll('line').attr('stroke', '#F1F5F9').attr('stroke-dasharray', '3 2');
+        g.selectAll('text').attr('fill', '#94A3B8').attr('font-size', 9);
+      });
+
+    // X axis
+    svg.append('g')
+      .attr('transform', `translate(0,${height - margin.bottom})`)
+      .call(d3.axisBottom(x).tickSizeOuter(0))
+      .call((g) => {
+        g.select('.domain').remove();
+        g.selectAll('line').remove();
+        g.selectAll('text').attr('fill', '#94A3B8').attr('font-size', 9);
+      });
+
+    // Bars
+    const barGroup = svg.append('g');
+    const tip = svg.append('g').style('pointer-events', 'none');
+
+    barGroup.selectAll('rect')
+      .data(sorted)
+      .join('rect')
+        .attr('x', (d) => x(d.bucket_label) ?? 0)
+        .attr('y', (d) => y(Math.round(d.avg_pct_of_final * 100)))
+        .attr('width', x.bandwidth())
+        .attr('height', (d) => y(0) - y(Math.round(d.avg_pct_of_final * 100)))
+        .attr('fill', '#6366F1')
+        .attr('rx', 4)
+        .on('mouseover', function (event, d) {
+          d3.select(this).attr('fill', '#4F46E5');
+          const val = Math.round(d.avg_pct_of_final * 100);
+          const bx = (x(d.bucket_label) ?? 0) + x.bandwidth() / 2;
+          const by = y(val) - 6;
+          tip.selectAll('*').remove();
+          const rect = tip.append('rect').attr('rx', 6).attr('fill', '#1E293B').attr('opacity', 0.88);
+          const text = tip.append('text')
+            .attr('fill', '#F8FAFC').attr('font-size', 10).attr('font-weight', 700)
+            .text(`${val}% engagement`);
+          const bbox = (text.node() as SVGTextElement).getBBox();
+          rect.attr('x', bx - bbox.width / 2 - 6).attr('y', by - bbox.height - 4)
+              .attr('width', bbox.width + 12).attr('height', bbox.height + 8);
+          text.attr('x', bx - bbox.width / 2).attr('y', by - 2);
+        })
+        .on('mouseout', function () {
+          d3.select(this).attr('fill', '#6366F1');
+          tip.selectAll('*').remove();
+        });
+  }, [sorted]);
+
   return (
     <section className="overflow-hidden rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
       <div className="mb-4">
         <p className="text-sm font-black text-slate-900">Content Decay</p>
         <p className="text-[10px] text-slate-400 mt-0.5">% of final engagement reached per time window</p>
       </div>
-      <div style={{ minWidth: 0 }}>
-      <ResponsiveContainer width="100%" height={180}>
-        <BarChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-          <XAxis dataKey="label" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} />
-          <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false} unit="%" domain={[0, 100]} width={32} />
-          <RechartsTooltip
-            contentStyle={{ fontSize: 11, borderRadius: 12, border: '1px solid #E2E8F0' }}
-            formatter={(value: any) => [`${value}%`, 'Engagement']}
-          />
-          <Bar dataKey="Eng %" fill="#6366F1" radius={[4, 4, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
+      <div ref={wrapRef} className="w-full">
+        <svg ref={ref} width="100%" height="180" />
       </div>
     </section>
   );
@@ -860,3 +973,4 @@ function PostingFrequencyTable({ rows }: { rows: ZernioPostingFrequencyRow[] }) 
     </section>
   );
 }
+

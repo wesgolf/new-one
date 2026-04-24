@@ -2,16 +2,12 @@ import { ContentItem, ZernioPostResponse, ContentAnalytics, Platform, ContentSta
 import { supabase } from '../../lib/supabase';
 import { createApiFetcher } from '../../lib/api';
 
-const ZERNIO_API_BASE = 'https://zernio.com/api/v1';
+// Route all Zernio calls through the server-side proxy so the API key is
+// never bundled into the browser build or visible in DevTools network requests.
+const ZERNIO_PROXY_BASE = '/api/zernio';
 
-// Bound fetcher — shares Accept/Authorization headers across all Zernio requests.
-// Content-Type is added automatically by fetchJson when a body is present.
-// import.meta.env values are static at build time so this is safe to create at module level.
-const zernioFetch = createApiFetcher(ZERNIO_API_BASE, {
-  headers: {
-    Authorization: `Bearer ${import.meta.env.VITE_ZERNIO_API_KEY || ''}`,
-  },
-});
+// No Authorization header here — the proxy adds it server-side using ZERNIO_API_KEY.
+const zernioFetch = createApiFetcher(ZERNIO_PROXY_BASE, {});
 
 function buildZernioPayload(item: ContentItem, accountId: string, isScheduling: boolean, scheduledAt?: string) {
   const platformKey = item.platform.toLowerCase();

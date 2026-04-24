@@ -1,54 +1,27 @@
 @import "tailwindcss";
 
+/* Tailwind v4: @theme registers color tokens as utility classes (bg-*, text-*, border-*, ring-*) */
 @theme {
-  /* ── WES · ARTIST OS — Design Tokens ────────────────────────────────────── */
+  --color-background: #f5f7fb;
+  --color-brand: #2563eb;
+  --color-brand-hover: #1d4ed8;
+  --color-brand-light: #dbeafe;
+  --color-surface-raised: #ffffff;
+  --color-text-primary: #1e293b;
+  --color-text-secondary: #64748b;
+  --color-text-muted: #94a3b8;
+  --color-border: #e2e8f0;
+}
 
-  /* Brand — muted blue, not harsh */
-  --color-brand:        #2563eb;
-  --color-brand-hover:  #1d4ed8;
-  --color-brand-light:  #dbeafe;
-  --color-brand-dim:    rgba(37 99 235 / 0.08);
-  --color-brand-ring:   rgba(37 99 235 / 0.18);
-
-  /* Page background — cool blue-tinted near-white (premium vs warm beige) */
-  --color-background:       #eef0f8;
-  --color-background-subtle:#f5f6fb;
-
-  /* Surfaces */
-  --color-surface:        #ffffff;
-  --color-surface-raised: #f4f6ff;
-  --color-surface-glass:  rgba(255, 255, 255, 0.82);
-
-  /* Borders — cool-toned, not warm */
-  --color-border:       #dde1ee;
-  --color-border-light: rgba(221, 225, 238, 0.6);
-  --color-card:         #ffffff;
-
-  /* Text hierarchy */
-  --color-text-primary:   #0d0e1a;
-  --color-text-secondary: #3a3b4e;
-  --color-text-tertiary:  #8a8ba0;
-  --color-text-muted:     #a0a1b5;
-
-  /* Light surface variants */
-  --color-light-surface:           #ffffff;
-  --color-light-surface-secondary: #f0f2fa;
-
-  /* Legacy compat aliases */
-  --color-accent:             #2563eb;
-  --color-muted:              #a0a1b5;
-  --color-neon-purple:        #60a5fa;
-  --color-accent-foreground:  #ffffff;
-
-  /* Semantic status */
-  --color-success:  #059669;
-  --color-warning:  #d97706;
-  --color-error:    #dc2626;
-
-  /* Elevation / shadows (as CSS vars for use in arbitrary box-shadow values) */
-  --shadow-card:    0 1px 3px rgba(13, 14, 26, 0.04), 0 4px 12px rgba(13, 14, 26, 0.04);
-  --shadow-lifted:  0 2px 6px rgba(13, 14, 26, 0.05), 0 8px 24px rgba(13, 14, 26, 0.07);
-  --shadow-modal:   0 8px 32px rgba(13, 14, 26, 0.14), 0 2px 8px rgba(13, 14, 26, 0.08);
+:root {
+  /* rgba / shadow values for var() usage in component styles */
+  --color-brand-dim: rgba(37, 99, 235, 0.08);
+  --color-brand-ring: rgba(37, 99, 235, 0.18);
+  --color-surface-glass: rgba(255, 255, 255, 0.75);
+  --color-border-light: #f1f5f9;
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-lifted: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.12), 0 8px 24px rgba(0, 0, 0, 0.08);
 }
 
 @layer base {

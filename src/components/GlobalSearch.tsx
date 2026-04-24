@@ -1,9 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Music, FileText, Users, Target, Calendar, ArrowRight, Loader2 } from 'lucide-react';
+import { Search, X, Music, FileText, Users, Target, Calendar, ArrowRight, Loader2, Lightbulb, StickyNote } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
+import { searchRecords, SearchResult, SearchRecordType } from '../services/searchService';
+
+type DisplayResult = SearchResult & { icon: React.ElementType; path: string; label: string };
+
+const TYPE_META: Record<SearchRecordType, { icon: React.ElementType; path: string; label: string }> = {
+  release:     { icon: Music,      path: '/ideas',   label: 'Release' },
+  idea:        { icon: Lightbulb,  path: '/ideas',   label: 'Idea' },
+  content:     { icon: Calendar,   path: '/content', label: 'Content' },
+  goal:        { icon: Target,     path: '/goals',   label: 'Goal' },
+  opportunity: { icon: Users,      path: '/network', label: 'Contact' },
+  note:        { icon: StickyNote, path: '/ideas',   label: 'Note' },
+  resource:    { icon: FileText,   path: '/coach',   label: 'Resource' },
+};
 
 interface GlobalSearchProps {
   compact?: boolean;
@@ -12,7 +24,7 @@ interface GlobalSearchProps {
 export function GlobalSearch({ compact = false }: GlobalSearchProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<DisplayResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
@@ -38,34 +50,14 @@ export function GlobalSearch({ compact = false }: GlobalSearchProps) {
     const delayDebounceFn = setTimeout(async () => {
       setIsLoading(true);
       try {
-        const [
-          releases,
-          content,
-          opportunities,
-          goals,
-          shows,
-          kb
-        ] = await Promise.all([
-          supabase.from('releases').select('id, title, status').ilike('title', `%${query}%`).limit(3),
-          supabase.from('content_items').select('id, title, platform').ilike('title', `%${query}%`).limit(3),
-          supabase.from('opportunities').select('id, name, category').ilike('name', `%${query}%`).limit(3),
-          supabase.from('goals').select('id, title, category').ilike('title', `%${query}%`).limit(3),
-          supabase.from('shows').select('id, venue, date').ilike('venue', `%${query}%`).limit(3),
-          supabase.from('bot_resources').select('id, title, type').ilike('title', `%${query}%`).limit(3)
-        ]);
-
-        const combined = [
-          ...(releases.data || []).map(r => ({ ...r, type: 'track', icon: Music, path: '/ideas' })),
-          ...(content.data || []).map(c => ({ ...c, title: c.title, type: 'content', icon: Calendar, path: '/content' })),
-          ...(opportunities.data || []).map(o => ({ ...o, title: o.name, type: 'contact', icon: Users, path: '/network' })),
-          ...(goals.data || []).map(g => ({ ...g, type: 'goal', icon: Target, path: '/goals' })),
-          ...(shows.data || []).map(s => ({ ...s, title: s.venue, type: 'show', icon: Calendar, path: '/calendar' })),
-          ...(kb.data || []).map(k => ({ ...k, type: 'resource', icon: FileText, path: '/coach' }))
-        ];
-
+        const raw = await searchRecords(query);
+        const combined: DisplayResult[] = raw.map(r => ({
+          ...r,
+          ...(TYPE_META[r.record_type] ?? { icon: FileText, path: '/', label: r.record_type }),
+        }));
         setResults(combined);
       } catch (err) {
-        console.error('Search error:', err);
+        console.error('[GlobalSearch] search error:', err);
       } finally {
         setIsLoading(false);
       }
@@ -74,7 +66,7 @@ export function GlobalSearch({ compact = false }: GlobalSearchProps) {
     return () => clearTimeout(delayDebounceFn);
   }, [query]);
 
-  const handleSelect = (item: any) => {
+  const handleSelect = (item: DisplayResult) => {
     navigate(item.path);
     setIsOpen(false);
     setQuery('');
@@ -139,22 +131,28 @@ export function GlobalSearch({ compact = false }: GlobalSearchProps) {
                   </div>
                 ) : results.length > 0 ? (
                   <div className="space-y-1">
-                    {results.map((item, i) => (
-                      <button
-                        key={i}
-                        onClick={() => handleSelect(item)}
-                        className="w-full flex items-center gap-4 p-3 hover:bg-slate-50 rounded-2xl transition-all group text-left"
-                      >
-                        <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center group-hover:bg-white group-hover:shadow-sm transition-all">
-                          <item.icon className="w-5 h-5 text-slate-500" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-slate-900 truncate">{item.title}</p>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{item.type}</p>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all" />
-                      </button>
-                    ))}
+                    {results.map((item) => {
+                      const IconComp = item.icon;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => handleSelect(item)}
+                          className="w-full flex items-center gap-4 p-3 hover:bg-slate-50 rounded-2xl transition-all group text-left"
+                        >
+                          <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center group-hover:bg-white group-hover:shadow-sm transition-all">
+                            <IconComp className="w-5 h-5 text-slate-500" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-slate-900 truncate">{item.title}</p>
+                            {item.snippet && (
+                              <p className="text-[11px] text-slate-500 truncate mt-0.5">{item.snippet}</p>
+                            )}
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{item.label}</p>
+                          </div>
+                          <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all" />
+                        </button>
+                      );
+                    })}
                   </div>
                 ) : query ? (
                   <div className="py-12 text-center">
@@ -190,7 +188,7 @@ export function GlobalSearch({ compact = false }: GlobalSearchProps) {
                     <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Select</span>
                   </div>
                 </div>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Artist OS Search v1.0</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Postgres FTS · Artist OS</p>
               </div>
             </motion.div>
           </div>
