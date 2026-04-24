@@ -1,98 +1,105 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Check, ArrowRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
+type Status = 'idle' | 'loading' | 'success';
+
 export default function EmailCapture() {
-  const [email,    setEmail]    = useState('');
-  const [loading,  setLoading]  = useState(false);
-  const [success,  setSuccess]  = useState(false);
-  const [error,    setError]    = useState<string | null>(null);
+  const [email,  setEmail]  = useState('');
+  const [status, setStatus] = useState<Status>('idle');
+  const [error,  setError]  = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) return;
-    setLoading(true);
+    setStatus('loading');
     setError(null);
     try {
       const { error: dbErr } = await supabase
         .from('email_subscribers')
         .insert({ email: email.trim().toLowerCase() });
-      if (dbErr && dbErr.code !== '23505') throw dbErr; // ignore duplicate key
-      setSuccess(true);
+      if (dbErr && dbErr.code !== '23505') throw dbErr;
+      setStatus('success');
+      setEmail('');
     } catch {
+      setStatus('idle');
       setError('Something went wrong. Please try again.');
-    } finally {
-      setLoading(false);
     }
   };
 
   return (
-    <motion.div
-      className="relative overflow-hidden rounded-2xl border border-white/8 p-7 sm:p-10 text-center"
-      style={{ background: '#111111' }}
-      initial={{ opacity: 0, y: 16 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-    >
-      {/* Decorative glow */}
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-px"
-        style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%)' }}
-      />
+    <section id="contact" className="py-20 px-4">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+        className="max-w-xl mx-auto bg-surface-container-low p-12 rounded-[2.5rem] border border-outline/5 text-center space-y-10 relative overflow-hidden shadow-2xl"
+      >
+        {/* Glow blurs */}
+        <div className="absolute -top-24 -right-24 w-64 h-64 bg-primary/5 blur-[100px] rounded-full pointer-events-none" />
+        <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-secondary/5 blur-[100px] rounded-full pointer-events-none" />
 
-      <AnimatePresence mode="wait">
-        {!success ? (
-          <motion.div key="form" exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.25 }}>
-            <p className="text-[10px] font-bold uppercase tracking-[0.32em] text-white/25 mb-2">
-              Stay Connected
-            </p>
-            <h3 className="text-2xl font-black tracking-tight text-white mb-2">
-              Join the Inner Circle
-            </h3>
-            <p className="text-sm text-white/35 mb-7 max-w-xs mx-auto">
-              First access to new music, exclusive mixes, show announcements, and behind-the-scenes content.
-            </p>
+        <div className="space-y-3 relative z-10">
+          <h2 className="font-headline text-4xl font-black text-on-surface tracking-tighter">
+            Join the Inner Circle
+          </h2>
+          <p className="text-on-surface/40 text-[10px] uppercase tracking-[0.3em] font-bold">
+            Exclusive drops, early access &amp; tour updates
+          </p>
+        </div>
 
-            <form onSubmit={handleSubmit} className="flex gap-2 max-w-sm mx-auto">
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="your@email.com"
-                required
-                className="flex-1 min-w-0 rounded-full border border-white/12 bg-white/5 px-5 py-3 text-sm text-white placeholder:text-white/25 focus:border-white/30 focus:outline-none transition-colors"
-              />
-              <button
+        <AnimatePresence mode="wait">
+          {status === 'success' ? (
+            <motion.div
+              key="success"
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="flex flex-col items-center gap-4 text-primary py-4 relative z-10"
+            >
+              <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
+                <svg className="w-8 h-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <p className="font-bold uppercase tracking-[0.2em] text-[10px]">Welcome to the journey</p>
+            </motion.div>
+          ) : (
+            <motion.form
+              key="form"
+              onSubmit={handleSubmit}
+              className="space-y-4 relative z-10"
+              exit={{ opacity: 0 }}
+            >
+              <div className="relative">
+                <input
+                  type="email"
+                  placeholder="EMAIL ADDRESS"
+                  required
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  className="w-full bg-surface-container-highest/20 border border-outline/10 rounded-2xl px-8 py-5 focus:outline-none focus:border-primary/50 transition-all text-center uppercase tracking-[0.2em] text-[10px] font-bold placeholder:text-on-surface/20 text-on-surface"
+                />
+              </div>
+              {error && (
+                <p className="text-[11px] text-red-400/70">{error}</p>
+              )}
+              <motion.button
                 type="submit"
-                disabled={loading}
-                className="flex shrink-0 items-center justify-center gap-1.5 rounded-full bg-white px-5 py-3 text-xs font-black uppercase tracking-widest text-black hover:scale-105 transition-transform disabled:opacity-50 shadow-[0_0_20px_rgba(255,255,255,0.2)] hover:shadow-[0_0_28px_rgba(255,255,255,0.35)]"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                disabled={status === 'loading'}
+                className="w-full bg-primary text-on-primary font-black uppercase tracking-[0.3em] text-[10px] px-8 py-5 rounded-2xl shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all disabled:opacity-50"
               >
-                <span className="hidden sm:inline">{loading ? 'Joining…' : 'Join'}</span>
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
-            </form>
+                {status === 'loading' ? 'Processing...' : 'Subscribe'}
+              </motion.button>
+            </motion.form>
+          )}
+        </AnimatePresence>
 
-            {error && (
-              <p className="mt-3 text-xs text-red-400/70">{error}</p>
-            )}
-          </motion.div>
-        ) : (
-          <motion.div
-            key="success"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35 }}
-          >
-            <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-white/10 mb-4">
-              <Check className="h-5 w-5 text-white" />
-            </div>
-            <h3 className="text-xl font-black text-white">You're in.</h3>
-            <p className="mt-1 text-sm text-white/35">Watch your inbox.</p>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
+        <p className="text-[9px] text-on-surface/20 uppercase tracking-widest relative z-10">
+          By subscribing, you agree to our privacy policy
+        </p>
+      </motion.div>
+    </section>
   );
 }

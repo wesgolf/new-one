@@ -1,112 +1,74 @@
 import { motion } from 'motion/react';
-import { Play, Radio } from 'lucide-react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faPlay, faPodcast } from '@fortawesome/free-solid-svg-icons';
+
+const RADIO_IMAGE = 'https://lh3.googleusercontent.com/aida-public/AB6AXuAqdWzLSx6CLpmKgbzaFfy-WZnFMQiyL_X7YmHx8wnM6Z2cEpuqz1aFI0MA1Wsh_v4Qjamu28Iamh0b0G6z_ChK_8Z-L0xIWSLjT8zQ_uT3IB4uEBTzQMPvn9gomE2TRH2dttEt-VnDhnQ4IkKTbEyf9KTNds7tQOC_011jwHbl1LuHgtiXGaVYYW7ctpoBFVT2hqgv6U53Vcg59MgzaCGUg9lyfNLuVDIfb9oQCD5gsKYaNFPR1jn1hWO4jdxSNuRGcMFyAPRHieU';
 
 interface RadioShowProps {
   soundcloudUrl: string;
-  artistName: string;
 }
 
-const MIXES = [
-  { id: '1', title: 'Late Night Session Vol. 1',  duration: '1h 02m', genre: 'Electronic / House'      },
-  { id: '2', title: 'Festival Warmup Mix 2024',    duration: '47m',    genre: 'Progressive / Trance'   },
-  { id: '3', title: 'Underground Frequencies',     duration: '55m',    genre: 'Tech House / Minimal'   },
-];
-
-export default function RadioShow({ soundcloudUrl, artistName }: RadioShowProps) {
+export default function RadioShow({ soundcloudUrl }: RadioShowProps) {
   return (
-    <div>
-      <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.36em] text-white/25">
-        Radio
-      </p>
-      <h2 className="mb-6 text-3xl font-black tracking-tight text-white">
-        {artistName.split(' ')[0]} Radio
-      </h2>
+    <section className="space-y-8">
+      <div className="flex items-center justify-between px-2">
+        <h2 className="font-headline text-2xl font-black tracking-tight text-on-surface">
+          Radio Mixes
+        </h2>
+        <motion.a
+          href={soundcloudUrl || 'https://soundcloud.com/wesmusic1'}
+          target="_blank"
+          rel="noopener noreferrer"
+          whileHover={{ scale: 1.05 }}
+          className="text-[10px] font-bold uppercase tracking-widest text-secondary flex items-center gap-2"
+        >
+          <FontAwesomeIcon icon={faPodcast} />
+          All Episodes
+        </motion.a>
+      </div>
 
-      {/* Show card */}
       <motion.div
-        className="relative overflow-hidden rounded-2xl border border-white/8 p-6 sm:p-7"
-        style={{ background: 'linear-gradient(135deg, #111111 0%, #0d0d0d 100%)' }}
-        initial={{ opacity: 0, y: 16 }}
+        initial={{ opacity: 0, y: 20 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true }}
-        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+        className="relative group h-80 rounded-[2rem] overflow-hidden border border-outline/5 shadow-2xl"
       >
-        {/* Decorative glow */}
-        <div
-          className="absolute -right-16 -top-16 h-48 w-48 rounded-full opacity-5 blur-3xl"
-          style={{ background: '#ffffff' }}
+        <img
+          alt="Radio Show"
+          className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
+          src={RADIO_IMAGE}
+          referrerPolicy="no-referrer"
         />
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
 
-        <div className="relative flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <Radio className="h-4 w-4 text-white/40" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-white/30">
-                Mix Series
+        <div className="absolute inset-0 p-10 flex flex-col justify-end space-y-4">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 bg-secondary rounded-full animate-pulse" />
+              <span className="text-secondary text-[10px] font-black uppercase tracking-[0.3em]">
+                Latest Episode
               </span>
             </div>
-            <h3 className="text-xl font-black text-white">
-              {artistName.split(' ')[0]} Radio
+            <h3 className="font-headline text-4xl font-black text-on-surface leading-none tracking-tighter">
+              Beyond the Void<br />Radio #042
             </h3>
-            <p className="mt-1 text-xs text-white/35">
-              Monthly mixes &amp; live sets
+            <p className="text-on-surface/60 text-xs font-medium max-w-[280px] leading-relaxed">
+              Deep hypnotic techno and underground house curated by WES.
             </p>
           </div>
-          {soundcloudUrl && (
-            <a
-              href={soundcloudUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-black hover:scale-105 transition-transform duration-200 shadow-[0_0_20px_rgba(255,255,255,0.2)]"
-            >
-              <Play className="h-4 w-4 ml-0.5" />
-            </a>
-          )}
-        </div>
 
-        {/* Recent mixes */}
-        <div className="mt-6 space-y-2.5">
-          {MIXES.map((mix, i) => (
-            <motion.a
-              key={mix.id}
-              href={soundcloudUrl || '#'}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors hover:bg-white/5 group"
-              initial={{ opacity: 0, x: -8 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.3, delay: i * 0.07 }}
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/8 text-white/25 group-hover:text-white/60 transition-colors">
-                  <Play className="h-3 w-3 ml-0.5" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-white/70 group-hover:text-white transition-colors">
-                    {mix.title}
-                  </p>
-                  <p className="text-[10px] text-white/25">{mix.genre}</p>
-                </div>
-              </div>
-              <span className="text-[10px] tabular-nums text-white/25 shrink-0">{mix.duration}</span>
-            </motion.a>
-          ))}
+          <motion.a
+            href={soundcloudUrl || 'https://soundcloud.com/wesmusic1'}
+            target="_blank"
+            rel="noopener noreferrer"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="w-14 h-14 flex items-center justify-center bg-secondary text-on-secondary rounded-full shadow-xl shadow-secondary/20"
+          >
+            <FontAwesomeIcon icon={faPlay} className="text-lg ml-1" />
+          </motion.a>
         </div>
-
-        {soundcloudUrl && (
-          <div className="mt-5 pt-5 border-t border-white/8">
-            <a
-              href={soundcloudUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-white/30 hover:text-white/70 transition-colors"
-            >
-              All Mixes on SoundCloud →
-            </a>
-          </div>
-        )}
       </motion.div>
-    </div>
+    </section>
   );
 }

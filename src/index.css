@@ -2,6 +2,7 @@
 
 /* Tailwind v4: @theme registers color tokens as utility classes (bg-*, text-*, border-*, ring-*) */
 @theme {
+  /* ── Authenticated app (light) ─────────────────────────── */
   --color-background: #f5f7fb;
   --color-brand: #2563eb;
   --color-brand-hover: #1d4ed8;
@@ -11,6 +12,21 @@
   --color-text-secondary: #64748b;
   --color-text-muted: #94a3b8;
   --color-border: #e2e8f0;
+
+  /* ── Public landing page (dark) ────────────────────────── */
+  --font-headline: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-surface: #0a0a0a;
+  --color-surface-container-low: #111111;
+  --color-surface-container: #141414;
+  --color-surface-container-high: #1a1a1a;
+  --color-surface-container-highest: #222222;
+  --color-on-surface: #ffffff;
+  --color-primary: #ffffff;
+  --color-on-primary: #000000;
+  --color-secondary: #818cf8;
+  --color-on-secondary: #ffffff;
+  --color-outline: #ffffff;
 }
 
 :root {
@@ -122,6 +138,25 @@
   .neon-glow {
     box-shadow: 0 0 20px rgba(37, 99, 235, 0.10), 0 0 48px rgba(37, 99, 235, 0.04);
   }
+}
+
+/* ── Public landing page: scoped dark theme overrides ──────────────────────────
+ * bg-background, text-on-surface, bg-surface-container-low etc. all resolve to
+ * dark values inside .pub-dark, keeping the authenticated app unaffected.
+ * ─────────────────────────────────────────────────────────────────────────── */
+.pub-dark {
+  --color-background: #050505;
+  --color-surface: #0a0a0a;
+  --color-surface-container-low: #111111;
+  --color-surface-container: #141414;
+  --color-surface-container-high: #1a1a1a;
+  --color-surface-container-highest: #222222;
+  --color-on-surface: #ffffff;
+  --color-primary: #ffffff;
+  --color-on-primary: #000000;
+  --color-secondary: #818cf8;
+  --color-on-secondary: #ffffff;
+  --color-outline: #ffffff;
 }
 
 
