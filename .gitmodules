@@ -3,3 +3,15 @@
 	url = https://github.com/replit/agent-skills
 	update = none
 	ignore = all
+
+[submodule "bencium-claude-code-design-skill"]
+	path = bencium-claude-code-design-skill
+	url = https://github.com/replit/bencium-claude-code-design-skill
+	update = none
+	ignore = all
+
+[submodule "ui-ux-pro-max-skill"]
+	path = ui-ux-pro-max-skill
+	url = https://github.com/replit/ui-ux-pro-max-skill
+	update = none
+	ignore = all
