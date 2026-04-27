@@ -1,0 +1,5 @@
+[submodule "agent-skills"]
+	path = agent-skills
+	url = https://github.com/replit/agent-skills
+	update = none
+	ignore = all
