@@ -36,7 +36,7 @@ async function get<T>(path: string, params?: Record<string, string>): Promise<T>
   const res = await fetch(url.toString(), {
     headers: { Accept: 'application/json' },
   });
-  if (!res.ok) {
+  if (res.status >= 400) {
     throw new Error(`Songstats ${path} → HTTP ${res.status}`);
   }
   return res.json() as Promise<T>;
@@ -266,9 +266,12 @@ export interface ArtistCatalogResponse {
 
 export function fetchArtistCatalog(
   songstatsArtistId: string,
-  options?: { limit?: number; offset?: number },
+  options?: { limit?: number; offset?: number; sourceIds?: string },
 ): Promise<ArtistCatalogResponse> {
-  const params: Record<string, string> = { songstats_artist_id: songstatsArtistId };
+  const params: Record<string, string> = {
+    songstats_artist_id: songstatsArtistId,
+    source_ids: options?.sourceIds ?? 'all',
+  };
   if (options?.limit != null) params.limit = String(options.limit);
   if (options?.offset != null) params.offset = String(options.offset);
   return get<ArtistCatalogResponse>('/artists/catalog', params);

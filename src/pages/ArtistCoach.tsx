@@ -23,6 +23,7 @@ import {
 import { cn } from '../lib/utils';
 import { supabase } from '../lib/supabase';
 import { requestCache } from '../lib/requestCache';
+import { getCurrentAuthUser } from '../lib/auth';
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -51,6 +52,23 @@ interface Resource {
   type: 'text' | 'image' | 'webpage' | 'pdf';
   url?: string;
   category: string;
+}
+
+interface CoachSessionRow {
+  id: string;
+  user_id: string;
+  title: string;
+  summary: string | null;
+  conversation_json: {
+    id?: string;
+    title?: string;
+    summary?: string | null;
+    createdAt?: number;
+    updatedAt?: number;
+    messages?: Message[];
+  } | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -99,6 +117,29 @@ function loadSessions(): ChatSession[] {
 
 function saveSessions(sessions: ChatSession[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+}
+
+function serializeSession(session: ChatSession) {
+  return {
+    id: session.id,
+    title: session.title,
+    summary: session.summary,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    messages: session.messages,
+  };
+}
+
+function deserializeSession(row: CoachSessionRow): ChatSession {
+  const payload = row.conversation_json ?? {};
+  return {
+    id: row.id,
+    title: payload.title ?? row.title ?? 'New chat',
+    messages: Array.isArray(payload.messages) ? payload.messages : [],
+    summary: row.summary ?? payload.summary ?? null,
+    createdAt: typeof payload.createdAt === 'number' ? payload.createdAt : Date.parse(row.created_at),
+    updatedAt: typeof payload.updatedAt === 'number' ? payload.updatedAt : Date.parse(row.updated_at),
+  };
 }
 
 function newSession(): ChatSession {
@@ -199,13 +240,92 @@ export function ArtistCoach() {
   const [activeTab, setActiveTab] = useState<'chat' | 'knowledge'>('chat');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [coachUserId, setCoachUserId] = useState<string | null>(null);
+  const [sessionsHydrated, setSessionsHydrated] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastSyncedPayloadRef = useRef<string>('');
 
   useEffect(() => { fetchResources(); }, []);
 
   useEffect(() => {
     saveSessions(sessions);
   }, [sessions]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const hydrateSessions = async () => {
+      try {
+        const user = await getCurrentAuthUser();
+        if (cancelled) return;
+
+        if (!user) {
+          setCoachUserId(null);
+          setSessionsHydrated(true);
+          return;
+        }
+
+        setCoachUserId(user.id);
+
+        const { data, error } = await supabase
+          .from('coach_sessions')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('updated_at', { ascending: false });
+
+        if (error) {
+          console.error('[CoachSessions] Failed to load sessions from Supabase:', {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code,
+          });
+          setSessionsHydrated(true);
+          return;
+        }
+
+        const remoteSessions = (data ?? []).map((row) => deserializeSession(row as CoachSessionRow));
+        const localSessions = loadSessions();
+
+        if (!cancelled && remoteSessions.length > 0) {
+          setSessions(remoteSessions);
+          setActiveSessionId((currentId) => {
+            if (remoteSessions.some((session) => session.id === currentId)) return currentId;
+            return remoteSessions[0].id;
+          });
+        } else if (!cancelled && localSessions.length > 0) {
+          await upsertSessionsToSupabase(localSessions, user.id);
+        }
+      } finally {
+        if (!cancelled) setSessionsHydrated(true);
+      }
+    };
+
+    hydrateSessions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionsHydrated || !coachUserId) return;
+
+    const serialized = JSON.stringify(
+      sessions.map((session) => ({
+        id: session.id,
+        title: session.title,
+        summary: session.summary,
+        updatedAt: session.updatedAt,
+        messageCount: session.messages.length,
+      })),
+    );
+
+    if (serialized === lastSyncedPayloadRef.current) return;
+    lastSyncedPayloadRef.current = serialized;
+
+    void upsertSessionsToSupabase(sessions, coachUserId);
+  }, [sessions, sessionsHydrated, coachUserId]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -216,6 +336,60 @@ export function ArtistCoach() {
 
   const updateSession = (id: string, update: Partial<ChatSession>) => {
     setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, ...update } : s)));
+  };
+
+  const upsertSessionsToSupabase = async (nextSessions: ChatSession[], userId: string) => {
+    if (!nextSessions.length) return;
+
+    const payload = nextSessions.map((session) => ({
+      id: session.id,
+      user_id: userId,
+      title: session.title,
+      summary: session.summary,
+      conversation_json: serializeSession(session),
+      created_at: new Date(session.createdAt).toISOString(),
+      updated_at: new Date(session.updatedAt).toISOString(),
+    }));
+
+    const { error } = await supabase.from('coach_sessions').upsert(payload, {
+      onConflict: 'id',
+    });
+
+    if (error) {
+      console.error('[CoachSessions] Failed to upsert sessions:', {
+        count: payload.length,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
+      return;
+    }
+
+    console.log('[CoachSessions] Synced sessions to Supabase:', payload.length);
+  };
+
+  const deleteSessionFromSupabase = async (sessionId: string) => {
+    if (!coachUserId) return;
+
+    const { error } = await supabase
+      .from('coach_sessions')
+      .delete()
+      .eq('id', sessionId)
+      .eq('user_id', coachUserId);
+
+    if (error) {
+      console.error('[CoachSessions] Failed to delete session from Supabase:', {
+        sessionId,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
+      return;
+    }
+
+    console.log('[CoachSessions] Deleted session from Supabase:', sessionId);
   };
 
   const createNewSession = () => {
@@ -234,6 +408,7 @@ export function ArtistCoach() {
 
   const deleteSession = (id: string) => {
     setDeletingId(null);
+    void deleteSessionFromSupabase(id);
     setSessions((prev) => {
       const filtered = prev.filter((s) => s.id !== id);
       if (filtered.length === 0) {

@@ -1,56 +1,85 @@
 /**
- * PublicHub — public-facing artist landing page.
- *
- * Structure (from attached design):
- *   Animated sticky logo → Hero → Nav tabs →
- *   Featured | Music | Radio | Shows | Email Capture → Footer
- *
- * Data: Supabase (releases, shows) + usePublicHubSettings
+ * PublicHub — public-facing artist landing page driven by release data.
  */
-import React, { useCallback, useEffect, useState } from 'react';
-import { motion, useScroll, useTransform, AnimatePresence } from 'motion/react';
-import { X, Send, Check } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion, useScroll, useTransform } from 'motion/react';
+import { Check, Send, X } from 'lucide-react';
 import { ARTIST_INFO } from '../constants';
-import { fetchReleases } from '../lib/supabaseData';
+import { fetchPublicHubReleases } from '../lib/supabaseData';
 import { supabase } from '../lib/supabase';
 import { usePublicHubSettings } from '../hooks/usePublicHubSettings';
 import type { ReleaseRecord } from '../types/domain';
 import Hero from './public/Hero';
 import FeaturedSection from './public/FeaturedSection';
-import PopularTracks from './public/PopularTracks';
+import PopularTracks, { type PublicTrack } from './public/PopularTracks';
 import RadioShow from './public/RadioShow';
-import UpcomingShows, { type Show } from './public/UpcomingShows';
-import EmailCapture from './public/EmailCapture';
 import Footer from './public/Footer';
-
-// ─── Hero image default ───────────────────────────────────────────────────────
 
 const HERO_IMAGE = 'https://image2url.com/r2/default/images/1774985821245-8821b2c4-f571-4c19-a33c-6fb9e05835f7.jpg';
 
-// ─── Nav tabs ─────────────────────────────────────────────────────────────────
-
 const TABS = [
   { label: 'Featured', href: 'featured' },
-  { label: 'Music',    href: 'tracks'   },
-  { label: 'Radio',    href: 'radio'    },
-  { label: 'Shows',    href: 'shows'    },
+  { label: 'Tracks', href: 'tracks' },
+  { label: 'Radio Mix', href: 'radio' },
 ];
 
-// ─── Contact modal ─────────────────────────────────────────────────────────────
+const HERO_COLUMN_CLASS = 'mx-auto w-full max-w-[24rem] sm:max-w-[28rem]';
+
+function spotifyTrackUrl(release: ReleaseRecord | null | undefined) {
+  if (!release) return null;
+  return release.distribution?.spotify_url || (release.spotify_track_id ? `https://open.spotify.com/track/${release.spotify_track_id}` : null);
+}
+
+function appleTrackUrl(release: ReleaseRecord | null | undefined) {
+  return release?.distribution?.apple_music_url || null;
+}
+
+function youtubeTrackUrl(release: ReleaseRecord | null | undefined) {
+  return release?.distribution?.youtube_url || null;
+}
+
+function soundcloudTrackUrl(release: ReleaseRecord | null | undefined) {
+  if (!release?.soundcloud_track_id && !release?.distribution?.soundcloud_url) return null;
+  if (release.distribution?.soundcloud_url) return release.distribution.soundcloud_url;
+  if (release.soundcloud_track_id?.startsWith('http')) return release.soundcloud_track_id;
+  const base = (ARTIST_INFO.soundcloud_url || '').replace(/\/$/, '');
+  return release.soundcloud_track_id ? `${base}/${release.soundcloud_track_id.replace(/^\//, '')}` : null;
+}
+
+function streamTotal(release: ReleaseRecord) {
+  return (
+    Number(release.performance?.streams?.spotify ?? 0) +
+    Number(release.performance?.streams?.apple ?? 0) +
+    Number(release.performance?.streams?.soundcloud ?? 0) +
+    Number(release.performance?.streams?.youtube ?? 0)
+  );
+}
+
+function isRadioMix(release: ReleaseRecord) {
+  const type = String(release.type ?? '').toLowerCase();
+  const title = String(release.title ?? '').toLowerCase();
+  return (
+    type.includes('mix') ||
+    type.includes('episode') ||
+    title.includes('radio') ||
+    title.includes('mix')
+  );
+}
 
 function ContactModal({ onClose, contactEmail }: { onClose: () => void; contactEmail: string }) {
-  const [name,    setName]    = useState('');
-  const [email,   setEmail]   = useState('');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
-  const [sent,    setSent]    = useState(false);
-  const [error,   setError]   = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !email.trim() || !message.trim()) return;
-    setSending(true); setError(null);
+    setSending(true);
+    setError(null);
     try {
       const { error: dbErr } = await supabase
         .from('contact_submissions')
@@ -66,8 +95,10 @@ function ContactModal({ onClose, contactEmail }: { onClose: () => void; contactE
 
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
     >
       <motion.div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
       <motion.div
@@ -77,31 +108,26 @@ function ContactModal({ onClose, contactEmail }: { onClose: () => void; contactE
         exit={{ opacity: 0, y: 24 }}
         transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
       >
-        <button onClick={onClose} className="absolute top-5 right-5 text-white/30 hover:text-white transition-colors">
+        <button onClick={onClose} className="absolute right-5 top-5 text-white/30 transition-colors hover:text-white">
           <X className="h-4 w-4" />
         </button>
         {!sent ? (
           <>
-            <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-white/30 mb-2">Get in Touch</p>
-            <h2 className="text-2xl font-black text-white mb-6">Contact</h2>
-            {error && <p className="mb-4 text-xs text-red-400/80 border border-red-500/20 rounded-xl px-3 py-2">{error}</p>}
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.28em] text-white/30">Get in Touch</p>
+            <h2 className="mb-6 text-2xl font-black text-white">Contact</h2>
+            {error && <p className="mb-4 rounded-xl border border-red-500/20 px-3 py-2 text-xs text-red-400/80">{error}</p>}
             <form onSubmit={handleSubmit} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <input value={name} onChange={e => setName(e.target.value)} placeholder="Name" required
-                  className="w-full border-b border-white/12 bg-transparent py-2.5 text-sm text-white placeholder:text-white/25 focus:border-white/40 focus:outline-none transition-colors" />
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" required
-                  className="w-full border-b border-white/12 bg-transparent py-2.5 text-sm text-white placeholder:text-white/25 focus:border-white/40 focus:outline-none transition-colors" />
+                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" required className="w-full border-b border-white/12 bg-transparent py-2.5 text-sm text-white placeholder:text-white/25 focus:border-white/40 focus:outline-none transition-colors" />
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required className="w-full border-b border-white/12 bg-transparent py-2.5 text-sm text-white placeholder:text-white/25 focus:border-white/40 focus:outline-none transition-colors" />
               </div>
-              <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject"
-                className="w-full border-b border-white/12 bg-transparent py-2.5 text-sm text-white placeholder:text-white/25 focus:border-white/40 focus:outline-none transition-colors" />
-              <textarea value={message} onChange={e => setMessage(e.target.value)} placeholder="Message" required rows={4}
-                className="w-full border-b border-white/12 bg-transparent py-2.5 text-sm text-white placeholder:text-white/25 focus:border-white/40 focus:outline-none transition-colors resize-none" />
+              <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" className="w-full border-b border-white/12 bg-transparent py-2.5 text-sm text-white placeholder:text-white/25 focus:border-white/40 focus:outline-none transition-colors" />
+              <textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Message" required rows={4} className="w-full resize-none border-b border-white/12 bg-transparent py-2.5 text-sm text-white placeholder:text-white/25 focus:border-white/40 focus:outline-none transition-colors" />
               <div className="flex items-center justify-between pt-2">
                 {contactEmail && (
-                  <a href={`mailto:${contactEmail}`} className="text-[11px] text-white/25 hover:text-white/50 transition-colors">{contactEmail}</a>
+                  <a href={`mailto:${contactEmail}`} className="text-[11px] text-white/25 transition-colors hover:text-white/50">{contactEmail}</a>
                 )}
-                <button type="submit" disabled={sending}
-                  className="ml-auto inline-flex items-center gap-2 rounded-full border border-white/20 px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest text-white/70 hover:border-white/50 hover:text-white transition-all disabled:opacity-40">
+                <button type="submit" disabled={sending} className="ml-auto inline-flex items-center gap-2 rounded-full border border-white/20 px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest text-white/70 transition-all hover:border-white/50 hover:text-white disabled:opacity-40">
                   <Send className="h-3 w-3" />
                   {sending ? 'Sending…' : 'Send'}
                 </button>
@@ -110,10 +136,10 @@ function ContactModal({ onClose, contactEmail }: { onClose: () => void; contactE
           </>
         ) : (
           <div className="py-8 text-center">
-            <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-white/8 mb-5">
+            <div className="mb-5 inline-flex h-12 w-12 items-center justify-center rounded-full bg-white/8">
               <Check className="h-5 w-5 text-white/70" />
             </div>
-            <h2 className="text-xl font-black text-white mb-2">Message received</h2>
+            <h2 className="mb-2 text-xl font-black text-white">Message received</h2>
             <p className="text-sm text-white/35">We'll be in touch.</p>
           </div>
         )}
@@ -122,38 +148,31 @@ function ContactModal({ onClose, contactEmail }: { onClose: () => void; contactE
   );
 }
 
-// ─── Main component ─────────────────────────────────────────────────────────────
-
 export function PublicHub() {
-  const [releases,    setReleases]    = useState<ReleaseRecord[]>([]);
-  const [shows,       setShows]       = useState<Show[]>([]);
-  const [activeTab,   setActiveTab]   = useState('Featured');
+  const [releases, setReleases] = useState<ReleaseRecord[]>([]);
+  const [releasesLoading, setReleasesLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('Featured');
   const [contactOpen, setContactOpen] = useState(false);
-
   const { settings } = usePublicHubSettings();
+  const { scrollY } = useScroll();
 
-  // Fetch data
   useEffect(() => {
-    fetchReleases().then(setReleases).catch(() => {});
-    void (async () => {
-      try {
-        const { data } = await supabase
-          .from('shows')
-          .select('id, venue, date, time, status, city, ticket_url')
-          .eq('status', 'upcoming')
-          .order('date', { ascending: true });
-        if (data) setShows(data as Show[]);
-      } catch {}
-    })();
+    setReleasesLoading(true);
+    fetchPublicHubReleases()
+      .then(setReleases)
+      .catch(() => {})
+      .finally(() => setReleasesLoading(false));
   }, []);
 
-  // Track active section on scroll
   useEffect(() => {
     const handler = () => {
-      const pos = window.scrollY + 200;
+      const pos = window.scrollY + 180;
       for (let i = TABS.length - 1; i >= 0; i--) {
         const el = document.getElementById(TABS[i].href);
-        if (el && el.offsetTop <= pos) { setActiveTab(TABS[i].label); return; }
+        if (el && el.offsetTop <= pos) {
+          setActiveTab(TABS[i].label);
+          return;
+        }
       }
       setActiveTab('Featured');
     };
@@ -163,140 +182,152 @@ export function PublicHub() {
 
   const scrollTo = (id: string) => {
     const el = document.getElementById(id);
-    if (el) window.scrollTo({ top: el.offsetTop - 140, behavior: 'smooth' });
+    if (el) window.scrollTo({ top: el.offsetTop - 110, behavior: 'smooth' });
   };
 
-  // Scroll-driven logo (per attached App.tsx)
-  const { scrollY } = useScroll();
-  const logoScale   = useTransform(scrollY, [0, 400], [6, 1]);
-  const logoY       = useTransform(scrollY, [0, 400], [320, 0]);
+  const releasedReleases = useMemo(
+    () => releases.filter((release) => String(release.status ?? '').toLowerCase() === 'released'),
+    [releases],
+  );
 
-  // Derived data
-  const artistName     = settings.heroTitle    || ARTIST_INFO.name;
-  const heroImage      = settings.heroImage    || HERO_IMAGE;
-  const featuredRelease = releases.find(r => r.status === 'released') ?? releases[0] ?? null;
+  const latestRelease = useMemo(
+    () => releasedReleases[0] ?? releases[0] ?? null,
+    [releasedReleases, releases],
+  );
 
-  const sp = settings.spotifyUrl    || '';
-  const am = settings.appleMusicUrl || '';
-  const sc = settings.soundcloudUrl || ARTIST_INFO.soundcloud_url;
-  const ig = settings.instagramUrl  || `https://instagram.com/${(ARTIST_INFO.instagram_handle ?? '').replace('@', '')}`;
-  const tt = settings.tiktokUrl     || '';
-  const yt = settings.youtubeUrl    || '';
+  const featuredRelease = useMemo(() => {
+    if (!settings.featuredReleaseId) return latestRelease;
+    return releases.find((release) => release.id === settings.featuredReleaseId) ?? latestRelease;
+  }, [settings.featuredReleaseId, releases, latestRelease]);
+
+  const popularTracks = useMemo<PublicTrack[]>(() => {
+    const pool = releasedReleases.length > 0 ? releasedReleases : releases;
+    return [...pool]
+      .map((release) => ({
+        id: release.id,
+        title: release.title,
+        totalStreams: streamTotal(release),
+        spotifyUrl: spotifyTrackUrl(release),
+        appleMusicUrl: appleTrackUrl(release),
+        soundcloudUrl: soundcloudTrackUrl(release),
+        youtubeUrl: youtubeTrackUrl(release),
+      }))
+      .sort((a, b) => b.totalStreams - a.totalStreams || a.title.localeCompare(b.title))
+      .slice(0, 8);
+  }, [releasedReleases, releases]);
+
+  const latestRadioMix = useMemo(() => {
+    return releases.find((release) => isRadioMix(release)) ?? null;
+  }, [releases]);
+
+  const logoScale = useTransform(scrollY, [0, 320], [4.75, 1]);
+  const logoY = useTransform(scrollY, [0, 220], [314, -10]);
+  const logoOpacity = useTransform(scrollY, [0, 40], [1, 1]);
+
+  const heroImage = settings.heroImage || HERO_IMAGE;
+  const spotifyProfileUrl = ARTIST_INFO.spotify_url || (ARTIST_INFO.spotify_ids?.[0] ? `https://open.spotify.com/artist/${ARTIST_INFO.spotify_ids[0]}` : '');
+  const appleArtistUrl = ARTIST_INFO.apple_music_url || '';
+  const soundcloudProfileUrl = ARTIST_INFO.soundcloud_url || '';
+  const instagramUrl = ARTIST_INFO.instagram_url || (ARTIST_INFO.instagram_handle ? `https://instagram.com/${ARTIST_INFO.instagram_handle.replace('@', '')}` : '');
+  const tiktokUrl = ARTIST_INFO.tiktok_url || '';
+  const youtubeUrl = ARTIST_INFO.youtube_url || '';
+  const pressKitUrl = settings.pressKitUrl || ARTIST_INFO.press_kit_url || ARTIST_INFO.dropbox_url || '';
+  const contactEmail = settings.contactEmail || ARTIST_INFO.email || '';
 
   return (
     <div
       className="pub-dark relative min-h-screen selection:bg-white/20 selection:text-white"
       style={{ background: '#050505', color: '#ffffff', fontFamily: "'Inter', system-ui, sans-serif" }}
     >
-      {/* ── Animated sticky logo ── */}
       <motion.div
-        style={{ scale: logoScale, y: logoY }}
-        className="fixed top-0 left-0 w-full z-50 flex flex-col items-center py-8 pointer-events-none"
+        style={{ scale: logoScale, y: logoY, opacity: logoOpacity }}
+        className="pointer-events-none fixed left-0 top-2 z-[9999] flex w-full justify-center"
       >
         <button
+          type="button"
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="font-headline font-black text-4xl tracking-tighter text-on-surface drop-shadow-[0_0_30px_rgba(0,0,0,0.5)] pointer-events-auto cursor-pointer hover:opacity-80 transition-opacity"
+          className="pointer-events-auto text-[2.25rem] font-black uppercase leading-none tracking-[0.18em] text-white drop-shadow-[0_0_30px_rgba(0,0,0,0.5)] transition-opacity hover:opacity-80"
         >
           WES.
         </button>
       </motion.div>
 
-      {/* ── Page content ── */}
-      <main className="relative z-10 pb-32 max-w-2xl mx-auto px-4 pt-10">
-
-        {/* Hero */}
+      <main className="relative isolate mx-auto max-w-4xl px-4 pb-32 pt-5 sm:px-6 sm:pt-8">
         <Hero
           imageUrl={heroImage}
-          spotifyUrl={sp}
-          appleMusicUrl={am}
-          soundcloudUrl={sc}
-          instagramUrl={ig}
-          tiktokUrl={tt}
-          youtubeUrl={yt}
+          spotifyUrl={spotifyProfileUrl}
+          appleMusicUrl={appleArtistUrl}
+          soundcloudUrl={soundcloudProfileUrl}
+          instagramUrl={instagramUrl}
+          tiktokUrl={tiktokUrl}
+          youtubeUrl={youtubeUrl}
         />
 
-        {/* Artist name (rendered by animated logo, but keep static fallback below the fold) */}
-        <div className="text-center -mt-4 mb-6">
-          <h1 className="font-headline text-5xl font-black tracking-tighter text-on-surface">
-            {artistName.split(' ')[0].toUpperCase()}.
-          </h1>
-          <p className="text-[10px] font-bold uppercase tracking-[0.32em] text-on-surface/30 mt-2">
-            {settings.heroSubtitle || 'Artist & Producer'}
-          </p>
-        </div>
-
-        {/* ── Sticky Nav Tabs ── */}
-        <div className="sticky top-24 z-40 py-4 mb-12">
-          <div
-            className="backdrop-blur-xl border border-outline/10 p-1 rounded-full flex gap-1 shadow-2xl max-w-fit mx-auto"
-            style={{ background: 'rgba(17,17,17,0.8)' }}
-          >
-            {TABS.map(tab => (
-              <button
-                key={tab.label}
-                type="button"
-                onClick={() => { setActiveTab(tab.label); scrollTo(tab.href); }}
-                className={`relative px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-colors duration-300 ${
-                  activeTab === tab.label ? 'text-on-primary' : 'text-on-surface/40 hover:text-on-surface'
-                }`}
-              >
-                {activeTab === tab.label && (
-                  <motion.div
-                    layoutId="activeTab"
-                    className="absolute inset-0 bg-primary rounded-full -z-10"
-                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                  />
-                )}
-                {tab.label}
-              </button>
-            ))}
+        <div className={HERO_COLUMN_CLASS}>
+          <div className="sticky top-28 z-[60] mb-12 py-2 sm:top-32">
+            <div className="mx-auto flex max-w-fit gap-1 rounded-full border border-white/10 bg-[rgba(22,22,22,0.97)] p-1 shadow-2xl">
+              {TABS.map((tab) => (
+                <button
+                  key={tab.label}
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(tab.label);
+                    scrollTo(tab.href);
+                  }}
+                  className={`relative rounded-full px-5 py-2 text-[10px] font-black uppercase tracking-widest transition-colors duration-300 ${
+                    activeTab === tab.label ? 'text-black' : 'text-white/45 hover:text-white'
+                  }`}
+                >
+                  {activeTab === tab.label && (
+                    <motion.div
+                      layoutId="publicHubActiveTab"
+                      className="absolute inset-0 -z-10 rounded-full bg-white"
+                      transition={{ type: 'spring', bounce: 0.18, duration: 0.5 }}
+                    />
+                  )}
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* ── Sections ── */}
-        <div className="space-y-32">
-          <section id="featured">
-            <FeaturedSection
-              release={featuredRelease}
-              spotifyUrl={sp}
-              appleMusicUrl={am}
-              soundcloudUrl={sc}
-              instagramUrl={ig}
-            />
-          </section>
+          <div className="space-y-28">
+            <section id="featured">
+              <FeaturedSection
+                release={featuredRelease}
+                spotifyUrl={spotifyTrackUrl(featuredRelease)}
+                appleMusicUrl={appleTrackUrl(featuredRelease)}
+                youtubeUrl={youtubeTrackUrl(featuredRelease)}
+                soundcloudUrl={soundcloudTrackUrl(featuredRelease)}
+              />
+            </section>
 
-          <section id="tracks">
-            <PopularTracks
-              featuredTracks={settings.featuredTracks}
-              spotifyUrl={sp}
-            />
-          </section>
+            <section id="tracks">
+              <PopularTracks tracks={popularTracks} loading={releasesLoading} />
+            </section>
 
-          <section id="radio">
-            <RadioShow soundcloudUrl={sc} />
-          </section>
-
-          <section id="shows">
-            <UpcomingShows shows={shows} />
-          </section>
-
-          <EmailCapture />
+            <section id="radio">
+              <RadioShow
+                release={latestRadioMix}
+                soundcloudUrl={soundcloudTrackUrl(latestRadioMix)}
+                youtubeUrl={youtubeTrackUrl(latestRadioMix)}
+              />
+            </section>
+          </div>
         </div>
       </main>
 
-      {/* ── Footer ── */}
       <Footer
-        contactEmail={settings.contactEmail}
-        pressKitUrl={settings.pressKitUrl}
+        contactEmail={contactEmail}
+        pressKitUrl={pressKitUrl}
         onContact={() => setContactOpen(true)}
       />
 
-      {/* ── Contact modal ── */}
       <AnimatePresence>
         {contactOpen && (
           <ContactModal
             onClose={() => setContactOpen(false)}
-            contactEmail={settings.contactEmail}
+            contactEmail={contactEmail}
           />
         )}
       </AnimatePresence>

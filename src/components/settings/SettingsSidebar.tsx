@@ -1,8 +1,8 @@
 import React from 'react';
-import { Globe, Plug2, Shield, SlidersHorizontal } from 'lucide-react';
+import { Globe, Plug2, Radio, SlidersHorizontal } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
-export type SettingsSection = 'general' | 'integrations' | 'unauthorized_page';
+export type SettingsSection = 'general' | 'integrations' | 'public_hub';
 
 interface NavItem {
   id: SettingsSection;
@@ -25,10 +25,10 @@ const NAV_ITEMS: NavItem[] = [
     Icon:        Plug2,
   },
   {
-    id:          'unauthorized_page',
-    label:       'Unauthorized Page',
-    description: 'Login / access denied page',
-    Icon:        Shield,
+    id:          'public_hub',
+    label:       'Public Hub',
+    description: 'Public-facing artist page',
+    Icon:        Radio,
   },
 ];
 

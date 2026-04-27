@@ -16,30 +16,11 @@ export default function Footer({ contactEmail, pressKitUrl, onContact }: FooterP
       </div>
 
       <div className="flex flex-wrap justify-center gap-x-12 gap-y-6">
-        <a
-          href="#"
-          className="text-[10px] text-on-surface/30 tracking-[0.3em] uppercase font-bold hover:text-primary transition-colors"
-        >
-          Privacy
-        </a>
-        <a
-          href="#"
-          className="text-[10px] text-on-surface/30 tracking-[0.3em] uppercase font-bold hover:text-primary transition-colors"
-        >
-          Terms
-        </a>
-        {pressKitUrl ? (
+        {pressKitUrl && (
           <a
             href={pressKitUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[10px] text-on-surface/30 tracking-[0.3em] uppercase font-bold hover:text-primary transition-colors"
-          >
-            Press Kit
-          </a>
-        ) : (
-          <a
-            href="#"
             className="text-[10px] text-on-surface/30 tracking-[0.3em] uppercase font-bold hover:text-primary transition-colors"
           >
             Press Kit
@@ -58,6 +39,14 @@ export default function Footer({ contactEmail, pressKitUrl, onContact }: FooterP
         >
           Artist Login
         </Link>
+        {contactEmail && (
+          <a
+            href={`mailto:${contactEmail}`}
+            className="text-[10px] text-on-surface/30 tracking-[0.3em] uppercase font-bold hover:text-primary transition-colors"
+          >
+            Email
+          </a>
+        )}
       </div>
 
       <div className="space-y-4">

@@ -138,17 +138,41 @@ export const signOut = async () => {
  * Get the current authenticated user
  */
 export const getCurrentAuthUser = async () => {
+  console.groupCollapsed('[Auth] getCurrentAuthUser');
   // Use getSession first — it reads from local storage without a network call
   // and never throws when no session exists.
   const { data: sessionData } = await supabase.auth.getSession();
-  if (!sessionData?.session) return null;
+  const sessionUser = sessionData?.session?.user ?? null;
+  console.log('[Auth] Session present:', Boolean(sessionData?.session));
+  console.log('[Auth] Session user id:', sessionUser?.id ?? null);
+  if (!sessionUser) {
+    console.warn('[Auth] No session user found. Returning null.');
+    console.groupEnd();
+    return null;
+  }
 
   try {
     const { data, error } = await supabase.auth.getUser();
-    if (error) return null; // no session or invalid token — treat as unauthenticated
-    return data?.user ?? null;
-  } catch {
-    return null;
+    if (error) {
+      console.warn('[Auth] supabase.auth.getUser failed. Falling back to session user.', {
+        message: error.message,
+        status: (error as any)?.status ?? null,
+        code: (error as any)?.code ?? null,
+      });
+      console.groupEnd();
+      return sessionUser;
+    }
+    const resolvedUser = data?.user ?? sessionUser;
+    console.log('[Auth] getUser resolved user id:', resolvedUser?.id ?? null);
+    console.groupEnd();
+    return resolvedUser;
+  } catch (error: any) {
+    console.warn('[Auth] getUser threw unexpectedly. Falling back to session user.', {
+      name: error?.name ?? null,
+      message: error?.message ?? null,
+    });
+    console.groupEnd();
+    return sessionUser;
   }
 };
 

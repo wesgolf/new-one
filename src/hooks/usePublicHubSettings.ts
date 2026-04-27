@@ -24,10 +24,11 @@ export interface HubSettings {
   youtubeUrl:    string;
   contactEmail:  string;
   pressKitUrl:   string;
+  featuredReleaseId?: string | null;
   featuredTracks: Array<{ title: string; url: string; streams: string }>;
 }
 
-const DEFAULTS: HubSettings = {
+export const DEFAULT_PUBLIC_HUB_SETTINGS: HubSettings = {
   heroTitle:     ARTIST_INFO.name,
   heroSubtitle:  'Artist & Producer',
   heroImage:     '',
@@ -36,16 +37,17 @@ const DEFAULTS: HubSettings = {
   spotifyUrl:    '',
   appleMusicUrl: '',
   soundcloudUrl: ARTIST_INFO.soundcloud_url ?? '',
-  instagramUrl:  `https://instagram.com/${(ARTIST_INFO.instagram_handle ?? '').replace('@', '')}`,
+  instagramUrl:  ARTIST_INFO.instagram_url || `https://instagram.com/${(ARTIST_INFO.instagram_handle ?? '').replace('@', '')}`,
   tiktokUrl:     '',
   youtubeUrl:    '',
   contactEmail:  ARTIST_INFO.email ?? '',
-  pressKitUrl:   '',
+  pressKitUrl:   ARTIST_INFO.press_kit_url ?? '',
+  featuredReleaseId: null,
   featuredTracks: [],
 };
 
 export function usePublicHubSettings(): { settings: HubSettings; loading: boolean } {
-  const [settings, setSettings] = useState<HubSettings>(DEFAULTS);
+  const [settings, setSettings] = useState<HubSettings>(DEFAULT_PUBLIC_HUB_SETTINGS);
   const [loading,  setLoading]  = useState(true);
 
   useEffect(() => {
@@ -60,7 +62,7 @@ export function usePublicHubSettings(): { settings: HubSettings; loading: boolea
           .maybeSingle();
         if (cancelled) return;
         if (data?.value && typeof data.value === 'object') {
-          setSettings({ ...DEFAULTS, ...(data.value as Partial<HubSettings>) });
+          setSettings({ ...DEFAULT_PUBLIC_HUB_SETTINGS, ...(data.value as Partial<HubSettings>) });
         }
       } catch {
         // fall through to setLoading

@@ -10,12 +10,13 @@ export interface UseSongstatsTrackStatsResult {
 }
 
 /**
- * Resolves the Songstats track ID for a release (via ISRC → catalog fallback)
+ * Resolves the Songstats track ID for a release (via stored ID → ISRC → catalog fallback)
  * and fetches per-platform track stats.
  */
 export function useSongstatsTrackStats(
   title: string,
   isrc?: string | null,
+  storedSongstatsTrackId?: string | null,
 ): UseSongstatsTrackStatsResult {
   const [stats, setStats] = useState<TrackStatsResponse | null>(null);
   const [songstatsTrackId, setTrackId] = useState<string | null>(null);
@@ -36,7 +37,8 @@ export function useSongstatsTrackStats(
 
     (async () => {
       try {
-        const trackId = await resolveSongstatsTrackId(isrc, title);
+        // Use stored ID directly if available — skips catalog fetch
+        const trackId = storedSongstatsTrackId ?? await resolveSongstatsTrackId(isrc, title);
         if (cancelled) return;
 
         if (!trackId) {
@@ -57,7 +59,7 @@ export function useSongstatsTrackStats(
     })();
 
     return () => { cancelled = true; };
-  }, [title, isrc]);
+  }, [title, isrc, storedSongstatsTrackId]);
 
   return { stats, songstatsTrackId, loading, error };
 }

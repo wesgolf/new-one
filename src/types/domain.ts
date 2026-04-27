@@ -171,6 +171,7 @@ export interface ReleaseRecord {
   id: string;
   title: string;
   artist_name?: string | null;
+  type?: string | null;
   release_date?: string | null;
   cover_art_url?: string | null;
   bpm?: number | null;
@@ -178,6 +179,13 @@ export interface ReleaseRecord {
   isrc?: string | null;
   spotify_track_id?: string | null;
   soundcloud_track_id?: string | null;
+  songstats_track_id?: string | null;
+  soundcloud_stats?: {
+    plays?: number | null;
+    likes?: number | null;
+    reposts?: number | null;
+    comments?: number | null;
+  } | null;
   notes?: string | null;
   status?: string | null;
   created_at?: string;
@@ -186,6 +194,20 @@ export interface ReleaseRecord {
   notable_playlists?: string[] | null;
   recent_playlist_adds?: number | null;
   playlist_source_provider?: string | null;
+  distribution?: {
+    spotify_url?: string | null;
+    apple_music_url?: string | null;
+    soundcloud_url?: string | null;
+    youtube_url?: string | null;
+  } | null;
+  performance?: {
+    streams?: {
+      spotify?: number | null;
+      apple?: number | null;
+      soundcloud?: number | null;
+      youtube?: number | null;
+    } | null;
+  } | null;
 }
 
 export interface PublicHubLink {
@@ -334,7 +356,7 @@ export type SettingCategory =
 export type AppTheme = 'light' | 'dark' | 'system';
 
 export interface NotificationPrefs {
-  email: boolean;
+  sms: boolean;
   push: boolean;
   inApp: boolean;
 }
@@ -343,6 +365,7 @@ export interface GeneralSettings {
   theme: AppTheme;
   language: string;           // BCP-47 tag, e.g. "en", "es"
   timezone: string;           // IANA zone or "auto"
+  sms_phone: string;
   notifications: NotificationPrefs;
   dashboard_layout: 'default' | 'compact' | 'expanded';
 }
@@ -351,7 +374,8 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   theme:            'system',
   language:         'en',
   timezone:         'auto',
-  notifications:    { email: true, push: false, inApp: true },
+  sms_phone:        '',
+  notifications:    { sms: true, push: false, inApp: true },
   dashboard_layout: 'default',
 };
 
@@ -371,7 +395,7 @@ export const DEFAULT_UNAUTHORIZED_PAGE_SETTINGS: UnauthorizedPageSettings = {
 
 // ── integrations ──────────────────────────────────────────────────────────────
 
-export type IntegrationPlatformKey = 'spotify' | 'soundcloud' | 'youtube' | 'tiktok' | 'instagram';
+export type IntegrationPlatformKey = 'zernio' | 'songstats' | 'soundcloud';
 
 export interface IntegrationsSettings {
   auto_sync:          boolean;
@@ -382,7 +406,7 @@ export interface IntegrationsSettings {
 export const DEFAULT_INTEGRATIONS_SETTINGS: IntegrationsSettings = {
   auto_sync:         true,
   sync_interval:     3600,
-  enabled_platforms: ['spotify', 'soundcloud'],
+  enabled_platforms: ['zernio', 'songstats', 'soundcloud'],
 };
 
 /** Convenience map from category → typed value */
@@ -392,4 +416,3 @@ export interface SettingsMap {
   integrations:       IntegrationsSettings;
   [category: string]: unknown;
 }
-

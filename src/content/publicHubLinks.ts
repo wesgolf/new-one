@@ -16,7 +16,7 @@ export const ARTIST_SOCIAL_LINKS: SocialLink[] = [
   {
     id: 'instagram',
     label: 'Instagram',
-    href: `https://instagram.com/${import.meta.env.VITE_INSTAGRAM_HANDLE?.replace('@', '') ?? 'wesleyrob'}`,
+    href: import.meta.env.VITE_INSTAGRAM_ACCOUNT || `https://instagram.com/${import.meta.env.VITE_INSTAGRAM_HANDLE?.replace('@', '') ?? 'wesleyrob'}`,
     icon: 'Instagram',
   },
   {
@@ -28,7 +28,7 @@ export const ARTIST_SOCIAL_LINKS: SocialLink[] = [
   {
     id: 'soundcloud',
     label: 'SoundCloud',
-    href: `${import.meta.env.VITE_SOUNDCLOUD_URL ?? 'https://soundcloud.com/wesmusic1'}`,
+    href: `${import.meta.env.VITE_SOUNDCLOUD_ARTIST_URL ?? import.meta.env.VITE_SOUNDCLOUD_URL ?? 'https://soundcloud.com/wesmusic1'}`,
     icon: 'Radio',
   },
 ];
@@ -53,7 +53,7 @@ export const publicHubLinks: PublicHubLink[] = [
   {
     id: 'soundcloud',
     label: 'SoundCloud',
-    href: `${import.meta.env.VITE_SOUNDCLOUD_URL ?? 'https://soundcloud.com/wesmusic1'}`,
+    href: `${import.meta.env.VITE_SOUNDCLOUD_ARTIST_URL ?? import.meta.env.VITE_SOUNDCLOUD_URL ?? 'https://soundcloud.com/wesmusic1'}`,
     description: 'Demos, edits and live versions',
     icon: 'Radio',
     category: 'music',
@@ -86,7 +86,7 @@ export const publicHubLinks: PublicHubLink[] = [
   {
     id: 'instagram',
     label: 'Instagram',
-    href: `https://instagram.com/${import.meta.env.VITE_INSTAGRAM_HANDLE?.replace('@', '') ?? 'wesleyrob'}`,
+    href: import.meta.env.VITE_INSTAGRAM_ACCOUNT || `https://instagram.com/${import.meta.env.VITE_INSTAGRAM_HANDLE?.replace('@', '') ?? 'wesleyrob'}`,
     description: 'Studio process and daily content',
     icon: 'Camera',
     category: 'social',

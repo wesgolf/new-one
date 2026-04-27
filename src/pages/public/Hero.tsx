@@ -29,23 +29,23 @@ export default function Hero({
   youtubeUrl,
 }: HeroProps) {
   const socialLinks = [
-    { icon: faInstagram, url: instagramUrl  || 'https://instagram.com/musicbywes_',                                          label: 'Instagram'   },
-    { icon: faSpotify,   url: spotifyUrl    || 'https://open.spotify.com/artist/2tMGlOELT6IvxS5xZItMk3',                    label: 'Spotify'     },
-    { icon: faApple,     url: appleMusicUrl || 'https://music.apple.com/ca/artist/wesley-robertson/1680235876',              label: 'Apple Music' },
-    { icon: faSoundcloud,url: soundcloudUrl || 'https://soundcloud.com/wesmusic1',                                           label: 'SoundCloud'  },
-    { icon: faTiktok,    url: tiktokUrl     || 'https://www.tiktok.com/@musicbywes_',                                        label: 'TikTok'      },
-    { icon: faYoutube,   url: youtubeUrl    || 'https://youtube.com/@wesmusic1',                                             label: 'YouTube'     },
-  ];
+    { icon: faInstagram, url: instagramUrl, label: 'Instagram' },
+    { icon: faSpotify, url: spotifyUrl, label: 'Spotify' },
+    { icon: faApple, url: appleMusicUrl, label: 'Apple Music' },
+    { icon: faSoundcloud, url: soundcloudUrl, label: 'SoundCloud' },
+    { icon: faTiktok, url: tiktokUrl, label: 'TikTok' },
+    { icon: faYoutube, url: youtubeUrl, label: 'YouTube' },
+  ].filter((link) => Boolean(link.url));
 
   return (
-    <header className="relative text-center space-y-12 pt-20 pb-10">
+    <header className="relative space-y-10 pt-8 pb-8 text-center sm:pt-10">
       {/* Portrait with radial fade mask */}
-      <div className="flex justify-center mb-8 relative">
+      <div className="relative mb-6 flex justify-center">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
-          className="w-[80%] aspect-square relative"
+          className="relative aspect-square w-full max-w-[24rem] sm:max-w-[28rem]"
         >
           <div
             className="absolute inset-0 z-0"
@@ -65,8 +65,8 @@ export default function Hero({
       </div>
 
       {/* Social links */}
-      <div className="flex flex-col items-center space-y-8">
-        <div className="flex justify-center gap-8 py-4 flex-wrap">
+      <div className="flex flex-col items-center space-y-6">
+        <div className="flex flex-wrap justify-center gap-6 py-2">
           {socialLinks.map((link, index) => (
             <motion.a
               key={link.label}
@@ -79,7 +79,7 @@ export default function Hero({
               target="_blank"
               rel="noopener noreferrer"
               aria-label={link.label}
-              className="text-on-surface/40 hover:text-primary transition-colors"
+              className="text-white/45 transition-colors hover:text-white"
             >
               <FontAwesomeIcon icon={link.icon} className="text-xl" />
             </motion.a>

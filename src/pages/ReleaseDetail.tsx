@@ -201,8 +201,23 @@ function fmt(n: number | undefined): string {
   return String(n);
 }
 
-function TrackStatsPanel({ title, isrc }: { title: string; isrc?: string | null }) {
-  const { stats, songstatsTrackId, loading, error } = useSongstatsTrackStats(title, isrc);
+function TrackStatsPanel({ release }: { release: ReleaseRecord }) {
+  const { stats, songstatsTrackId: resolvedId, loading, error } = useSongstatsTrackStats(
+    release.title,
+    release.isrc,
+    release.songstats_track_id,
+  );
+
+  // SoundCloud data: prefer Songstats stats, fall back to stored soundcloud_stats
+  const scFromSongstats = stats?.stats?.find(s => s.source.toLowerCase() === 'soundcloud')?.data;
+  const scStored = release.soundcloud_stats;
+  const scData = {
+    plays:    scFromSongstats?.plays_total    ?? scStored?.plays    ?? null,
+    likes:    scFromSongstats?.likes_total    ?? scStored?.likes    ?? null,
+    reposts:  scFromSongstats?.reposts_total  ?? scStored?.reposts  ?? null,
+    comments: scFromSongstats?.comment_count  ?? scStored?.comments ?? null,
+  };
+  const hasStoredSC = Object.values(scData).some(v => v != null && v > 0);
 
   if (loading) {
     return (
@@ -221,7 +236,37 @@ function TrackStatsPanel({ title, isrc }: { title: string; isrc?: string | null 
     );
   }
 
-  if (!songstatsTrackId || !stats?.stats?.length) {
+  if (!resolvedId || !stats?.stats?.length) {
+    // Even without Songstats match, show stored SoundCloud direct data
+    if (hasStoredSC) {
+      return (
+        <div className="mt-4 space-y-4">
+          <div className="rounded-2xl bg-[#FF5500]/8 p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest mb-3 text-[#FF5500]">
+              🔊 SoundCloud
+            </p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {([
+                { key: 'plays',    label: 'Plays' },
+                { key: 'likes',    label: 'Likes' },
+                { key: 'reposts',  label: 'Reposts' },
+                { key: 'comments', label: 'Comments' },
+              ] as const).filter(f => (scData[f.key] ?? 0) > 0).map(f => (
+                <div key={f.key}>
+                  <p className="text-lg font-bold text-slate-900 tabular-nums">{fmt(scData[f.key]!)}</p>
+                  <p className="text-[10px] font-medium text-slate-500 mt-0.5">{f.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          {!resolvedId && (
+            <p className="text-[11px] text-slate-400">
+              Songstats not yet matched — run a manual pull from Settings → Integrations to unlock Spotify &amp; Apple Music data.
+            </p>
+          )}
+        </div>
+      );
+    }
     return (
       <div className="mt-4">
         <div className="grid grid-cols-2 gap-3">
@@ -236,8 +281,8 @@ function TrackStatsPanel({ title, isrc }: { title: string; isrc?: string | null 
             ))}
         </div>
         <p className="mt-4 text-xs text-slate-400">
-          {!songstatsTrackId
-            ? 'Track not yet matched in Songstats — add its ISRC or title to the mapping table in songstatsTrackMap.ts.'
+          {!resolvedId
+            ? 'Track not yet matched in Songstats — run a manual pull from Settings → Integrations.'
             : 'No data returned for this track yet.'}
         </p>
       </div>
@@ -251,13 +296,15 @@ function TrackStatsPanel({ title, isrc }: { title: string; isrc?: string | null 
   }
 
   // Only show platforms that have at least one non-zero value
+  // Exclude soundcloud from Songstats list — we render it separately with merged data below
   const activePlatforms = Object.entries(PLATFORM_CONFIG).filter(([src, cfg]) => {
+    if (src === 'soundcloud') return false; // handled separately
     const d = bySource[src];
     if (!d) return false;
     return cfg.fields.some(f => (d[f.key] ?? 0) > 0);
   });
 
-  if (activePlatforms.length === 0) {
+  if (activePlatforms.length === 0 && !hasStoredSC) {
     return (
       <p className="mt-4 text-xs text-slate-400">
         Songstats returned data but all values are zero. Check back once the track has been streamed.
@@ -267,6 +314,29 @@ function TrackStatsPanel({ title, isrc }: { title: string; isrc?: string | null 
 
   return (
     <div className="mt-4 space-y-4">
+      {/* SoundCloud — merged Songstats + direct stored data */}
+      {hasStoredSC && (
+        <div className="rounded-2xl bg-[#FF5500]/8 p-4">
+          <p className="text-[10px] font-black uppercase tracking-widest mb-3 text-[#FF5500]">
+            🔊 SoundCloud
+          </p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {([
+              { key: 'plays',    label: 'Plays' },
+              { key: 'likes',    label: 'Likes' },
+              { key: 'reposts',  label: 'Reposts' },
+              { key: 'comments', label: 'Comments' },
+            ] as const).filter(f => (scData[f.key] ?? 0) > 0).map(f => (
+              <div key={f.key}>
+                <p className="text-lg font-bold text-slate-900 tabular-nums">{fmt(scData[f.key]!)}</p>
+                <p className="text-[10px] font-medium text-slate-500 mt-0.5">{f.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* All other platforms from Songstats */}
       {activePlatforms.map(([src, cfg]) => {
         const d = bySource[src];
         const nonEmpty = cfg.fields.filter(f => (d[f.key] ?? 0) > 0);
@@ -287,9 +357,9 @@ function TrackStatsPanel({ title, isrc }: { title: string; isrc?: string | null 
         );
       })}
 
-      {songstatsTrackId && (
+      {resolvedId && (
         <a
-          href={stats.track_info?.site_url ?? `https://songstats.com/track/${songstatsTrackId}`}
+          href={stats.track_info?.site_url ?? `https://songstats.com/track/${resolvedId}`}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-blue-500 transition-colors"
@@ -636,7 +706,7 @@ export function ReleaseDetail({ publicMode = false }: ReleaseDetailProps) {
             </span>
           </div>
 
-          <TrackStatsPanel title={release.title} isrc={release.isrc} />
+          {release && <TrackStatsPanel release={release} />}
         </section>
       </div>
 

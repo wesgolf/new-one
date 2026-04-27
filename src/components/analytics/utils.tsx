@@ -18,7 +18,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  ResponsiveContainer,
   Tooltip as RechartsTooltip,
 } from 'recharts';
 import { cn } from '../../lib/utils';
@@ -361,42 +360,42 @@ export function AudienceDonut({
           : 'Hover or click slices to drill in'}
       </p>
 
-      <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row">
-        <div className="relative h-44 w-44 shrink-0">
-          <ResponsiveContainer>
-            <PieChart>
-              <Pie
-                data={data}
-                dataKey="value"
-                nameKey="name"
-                innerRadius={55}
-                outerRadius={78}
-                paddingAngle={2}
-                stroke="none"
-                onMouseEnter={(_, i) => onHighlight(data[i]?.id ?? null)}
-                onMouseLeave={() => onHighlight(null)}
-                onClick={(_, i) => onSelect(data[i]?.id)}
-              >
-                {data.map(d => (
-                  <Cell
-                    key={d.id}
-                    fill={d.color}
-                    fillOpacity={highlightedId == null || highlightedId === d.id ? 1 : 0.3}
-                    style={{ cursor: 'pointer', transition: 'fill-opacity 150ms' }}
-                  />
-                ))}
-              </Pie>
-              <RechartsTooltip
-                formatter={(v: number) => formatNumber(v)}
-                contentStyle={{
-                  borderRadius: 12,
-                  border: '1px solid #e2e8f0',
-                  fontSize: 12,
-                  fontWeight: 700,
-                }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
+      <div className="mt-4 flex min-w-0 flex-col items-center gap-4 sm:flex-row">
+        <div className="relative h-44 w-44 shrink-0 min-w-[11rem] min-h-[11rem]">
+          <PieChart width={176} height={176}>
+            <Pie
+              data={data}
+              dataKey="value"
+              nameKey="name"
+              cx={88}
+              cy={88}
+              innerRadius={55}
+              outerRadius={78}
+              paddingAngle={2}
+              stroke="none"
+              onMouseEnter={(_, i) => onHighlight(data[i]?.id ?? null)}
+              onMouseLeave={() => onHighlight(null)}
+              onClick={(_, i) => onSelect(data[i]?.id)}
+            >
+              {data.map(d => (
+                <Cell
+                  key={d.id}
+                  fill={d.color}
+                  fillOpacity={highlightedId == null || highlightedId === d.id ? 1 : 0.3}
+                  style={{ cursor: 'pointer', transition: 'fill-opacity 150ms' }}
+                />
+              ))}
+            </Pie>
+            <RechartsTooltip
+              formatter={(v: number) => formatNumber(v)}
+              contentStyle={{
+                borderRadius: 12,
+                border: '1px solid #e2e8f0',
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+            />
+          </PieChart>
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
             <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Total</p>
             <p className="text-xl font-black tabular-nums text-slate-900">{formatNumber(total)}</p>

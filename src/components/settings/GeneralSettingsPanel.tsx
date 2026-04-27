@@ -1,9 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Bell,
-  Globe,
-  LayoutDashboard,
-  Loader2,
   Moon,
   RefreshCw,
   SlidersHorizontal,
@@ -12,8 +8,8 @@ import {
 } from 'lucide-react';
 import { settingsService } from '../../services/settingsService';
 import type { GeneralSettings } from '../../types/domain';
-import { DEFAULT_GENERAL_SETTINGS } from '../../types/domain';
 import { cn } from '../../lib/utils';
+import { applyGeneralSettings, loadCachedGeneralSettings, normalizeGeneralSettings } from '../../lib/generalSettingsRuntime';
 import { SettingsCard, SettingsFieldRow, SettingsLoadingSkeleton, SettingsSectionHeader } from './SettingsPrimitives';
 
 // ─── Theme badge ──────────────────────────────────────────────────────────────
@@ -33,17 +29,18 @@ const LAYOUT_OPTIONS: { value: GeneralSettings['dashboard_layout']; label: strin
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function GeneralSettingsPanel() {
-  const [settings, setSettings] = useState<GeneralSettings>(DEFAULT_GENERAL_SETTINGS);
-  const [loading,  setLoading]  = useState(true);
+  const [settings, setSettings] = useState<GeneralSettings>(loadCachedGeneralSettings());
+  const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState<string | null>(null);
   const [saving,   setSaving]   = useState<string | null>(null); // key currently saving
 
   const load = useCallback(async () => {
-    setLoading(true);
     setError(null);
     try {
       const data = await settingsService.general.get();
-      setSettings(data);
+      const normalized = normalizeGeneralSettings(data);
+      setSettings(normalized);
+      applyGeneralSettings(normalized);
     } catch (err: any) {
       setError(err?.message ?? 'Failed to load general settings');
     } finally {
@@ -57,13 +54,16 @@ export function GeneralSettingsPanel() {
     key: K,
     value: GeneralSettings[K],
   ) => {
+    const nextSettings = { ...settings, [key]: value };
     setSaving(key);
-    setSettings(prev => ({ ...prev, [key]: value }));
+    setSettings(nextSettings);
+    applyGeneralSettings(nextSettings);
     try {
       await settingsService.general.update(key, value);
     } catch {
       // revert on failure
-      setSettings(prev => ({ ...prev, [key]: settings[key] }));
+      setSettings(settings);
+      applyGeneralSettings(settings);
     } finally {
       setSaving(null);
     }
@@ -146,32 +146,11 @@ export function GeneralSettingsPanel() {
         </SettingsFieldRow>
       </SettingsCard>
 
-      {/* ── Locale ───────────────────────────────────────── */}
-      <SettingsCard title="Locale">
-        <SettingsFieldRow
-          label="Language"
-          description="Interface language (full i18n coming soon)."
-        >
-          <span className="px-3 py-1.5 rounded-lg border border-border bg-surface-raised text-xs font-semibold text-text-secondary">
-            {settings.language.toUpperCase()}
-          </span>
-        </SettingsFieldRow>
-
-        <SettingsFieldRow
-          label="Timezone"
-          description="Used for calendar and release scheduling."
-        >
-          <span className="px-3 py-1.5 rounded-lg border border-border bg-surface-raised text-xs font-semibold text-text-secondary">
-            {settings.timezone === 'auto' ? 'Auto-detect' : settings.timezone}
-          </span>
-        </SettingsFieldRow>
-      </SettingsCard>
-
       {/* ── Notifications ────────────────────────────────── */}
       <SettingsCard title="Notifications">
         {(
           [
-            { key: 'email',  label: 'Email notifications',    description: 'Receive weekly summary digests'         },
+            { key: 'sms',    label: 'Text notifications',     description: 'Send weekly summary digests to the user phone on file'  },
             { key: 'push',   label: 'Push notifications',     description: 'Browser push for reminders & alerts'    },
             { key: 'inApp',  label: 'In-app notifications',   description: 'Banners inside the dashboard'           },
           ] as const

@@ -46,6 +46,44 @@ export async function safeSelect<T = any>(
   return (data || []) as T[];
 }
 
+function mapReleaseRecord(row: any): ReleaseRecord {
+  return {
+    id: row.id,
+    title: row.title,
+    artist_name: row.artist_name ?? row.artist ?? null,
+    type: row.type ?? null,
+    release_date: row.release_date ?? row.distribution?.release_date ?? null,
+    cover_art_url: row.cover_art_url ?? row.assets?.cover_art_url ?? null,
+    bpm: row.bpm ?? row.production?.bpm ?? null,
+    musical_key: row.musical_key ?? row.production?.key ?? null,
+    isrc: row.isrc ?? row.distribution?.isrc ?? null,
+    spotify_track_id: row.spotify_track_id ?? row.spotify_data?.track_id ?? null,
+    soundcloud_track_id: row.soundcloud_track_id ?? row.distribution?.soundcloud_url ?? null,
+    notes: row.notes ?? row.rationale ?? null,
+    status: row.status ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at ?? row.created_at,
+    playlist_count: row.playlist_count ?? 0,
+    notable_playlists: row.notable_playlists ?? [],
+    recent_playlist_adds: row.recent_playlist_adds ?? 0,
+    playlist_source_provider: row.playlist_source_provider ?? null,
+    distribution: {
+      spotify_url: row.distribution?.spotify_url ?? null,
+      apple_music_url: row.distribution?.apple_music_url ?? null,
+      soundcloud_url: row.distribution?.soundcloud_url ?? null,
+      youtube_url: row.distribution?.youtube_url ?? null,
+    },
+    performance: {
+      streams: {
+        spotify: Number(row.performance?.streams?.spotify ?? 0),
+        apple: Number(row.performance?.streams?.apple ?? 0),
+        soundcloud: Number(row.performance?.streams?.soundcloud ?? 0),
+        youtube: Number(row.performance?.streams?.youtube ?? 0),
+      },
+    },
+  } as ReleaseRecord;
+}
+
 export async function safeProfiles(): Promise<ProfileSummary[]> {
   try {
     const { data, error } = await supabase
@@ -406,27 +444,28 @@ export async function fetchSyncJobs(limit = 12) {
 }
 
 export async function fetchReleases() {
+  console.groupCollapsed('[Releases] fetchReleases');
   const rows = await safeSelect<any>('releases', 'release_date', false);
-  return rows.map((release) => ({
-    id: release.id,
-    title: release.title,
-    artist_name: release.artist_name ?? release.artist ?? null,
-    release_date: release.release_date ?? release.distribution?.release_date ?? null,
-    cover_art_url: release.cover_art_url ?? release.assets?.cover_art_url ?? null,
-    bpm: release.bpm ?? release.production?.bpm ?? null,
-    musical_key: release.musical_key ?? release.production?.key ?? null,
-    isrc: release.isrc ?? release.distribution?.isrc ?? null,
-    spotify_track_id: release.spotify_track_id ?? release.spotify_data?.track_id ?? null,
-    soundcloud_track_id: release.soundcloud_track_id ?? release.distribution?.soundcloud_url ?? null,
-    notes: release.notes ?? release.rationale ?? null,
-    status: release.status ?? null,
-    created_at: release.created_at,
-    updated_at: release.updated_at ?? release.created_at,
-    playlist_count: release.playlist_count ?? 0,
-    notable_playlists: release.notable_playlists ?? [],
-    recent_playlist_adds: release.recent_playlist_adds ?? 0,
-    playlist_source_provider: release.playlist_source_provider ?? null,
-  })) as ReleaseRecord[];
+  console.log('[Releases] Raw row count:', rows.length);
+  const mapped = rows.map(mapReleaseRecord);
+  console.log('[Releases] Mapped release ids:', mapped.map((release) => release.id));
+  console.groupEnd();
+  return mapped;
+}
+
+export async function fetchPublicHubReleases() {
+  const { data, error } = await supabase
+    .from('releases')
+    .select('id,title,artist_name,artist,type,release_date,cover_art_url,spotify_track_id,soundcloud_track_id,status,created_at,updated_at,distribution,performance')
+    .order('release_date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    if (isMissingTableError(error)) return [] as ReleaseRecord[];
+    throw error;
+  }
+
+  return (data || []).map(mapReleaseRecord);
 }
 
 export async function fetchReleaseById(releaseId: string) {
@@ -438,26 +477,7 @@ export async function fetchReleaseById(releaseId: string) {
 
   if (!data) return null;
 
-  return {
-    id: data.id,
-    title: data.title,
-    artist_name: data.artist_name ?? data.artist ?? null,
-    release_date: data.release_date ?? data.distribution?.release_date ?? null,
-    cover_art_url: data.cover_art_url ?? data.assets?.cover_art_url ?? null,
-    bpm: data.bpm ?? data.production?.bpm ?? null,
-    musical_key: data.musical_key ?? data.production?.key ?? null,
-    isrc: data.isrc ?? data.distribution?.isrc ?? null,
-    spotify_track_id: data.spotify_track_id ?? data.spotify_data?.track_id ?? null,
-    soundcloud_track_id: data.soundcloud_track_id ?? data.distribution?.soundcloud_url ?? null,
-    notes: data.notes ?? data.rationale ?? null,
-    status: data.status ?? null,
-    created_at: data.created_at,
-    updated_at: data.updated_at ?? data.created_at,
-    playlist_count: data.playlist_count ?? 0,
-    notable_playlists: data.notable_playlists ?? [],
-    recent_playlist_adds: data.recent_playlist_adds ?? 0,
-    playlist_source_provider: data.playlist_source_provider ?? null,
-  } as ReleaseRecord;
+  return mapReleaseRecord(data);
 }
 
 export async function uploadReleaseArtwork(releaseId: string, file: File) {
@@ -482,20 +502,72 @@ export async function uploadReleaseArtwork(releaseId: string, file: File) {
 }
 
 export async function saveRelease(data: Partial<ReleaseRecord> & { id?: string }) {
+  console.groupCollapsed('[Releases] saveRelease');
+  console.log('[Releases] Incoming payload summary:', {
+    id: data.id ?? null,
+    title: data.title ?? null,
+    status: data.status ?? null,
+    release_date: data.release_date ?? null,
+    soundcloud_track_id: data.soundcloud_track_id ?? null,
+    spotify_track_id: data.spotify_track_id ?? null,
+    hasDistribution: Boolean(data.distribution),
+    hasPerformance: Boolean(data.performance),
+  });
   const user = await getCurrentAuthUser();
+  console.log('[Releases] Resolved auth user id:', user?.id ?? null);
   if (data.id) {
     const { id, ...rest } = data;
+    console.log('[Releases] Mode: update existing release', { id });
     const { error } = await supabase
       .from('releases')
       .update({ ...rest, updated_at: new Date().toISOString() })
       .eq('id', id);
-    if (error) throw error;
+    if (error) {
+      console.error('[Releases] Update failed:', {
+        id,
+        message: error.message,
+        details: (error as any)?.details ?? null,
+        hint: (error as any)?.hint ?? null,
+        code: (error as any)?.code ?? null,
+        status: (error as any)?.status ?? null,
+      });
+      console.groupEnd();
+      throw error;
+    }
+    console.log('[Releases] Update succeeded:', { id });
   } else {
-    const { error } = await supabase.from('releases').insert([
-      { ...data, user_id: user?.id ?? null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-    ]);
-    if (error) throw error;
+    const insertPayload = {
+      ...data,
+      user_id: user?.id ?? null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    console.log('[Releases] Mode: insert new release', {
+      title: insertPayload.title ?? null,
+      user_id: insertPayload.user_id ?? null,
+      release_date: insertPayload.release_date ?? null,
+      soundcloud_track_id: insertPayload.soundcloud_track_id ?? null,
+    });
+    const { error } = await supabase.from('releases').insert([insertPayload]);
+    if (error) {
+      console.error('[Releases] Insert failed:', {
+        title: insertPayload.title ?? null,
+        user_id: insertPayload.user_id ?? null,
+        message: error.message,
+        details: (error as any)?.details ?? null,
+        hint: (error as any)?.hint ?? null,
+        code: (error as any)?.code ?? null,
+        status: (error as any)?.status ?? null,
+      });
+      console.groupEnd();
+      throw error;
+    }
+    console.log('[Releases] Insert succeeded:', {
+      title: insertPayload.title ?? null,
+      user_id: insertPayload.user_id ?? null,
+    });
   }
+  console.groupEnd();
 }
 
 export async function deleteRelease(id: string) {

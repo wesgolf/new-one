@@ -23,6 +23,8 @@ import { GlobalSearch } from './GlobalSearch';
 import { GlobalAssistantDrawer } from './GlobalAssistantDrawer';
 import { AssistantProvider, useAssistantContext } from '../context/AssistantContext';
 import { useCurrentUserRole } from '../hooks/useCurrentUserRole';
+import { applyGeneralSettings, applyTheme, loadCachedGeneralSettings } from '../lib/generalSettingsRuntime';
+import { settingsService } from '../services/settingsService';
 
 type DropdownChild = {
   label: string;
@@ -148,6 +150,28 @@ function LayoutInner() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { roleDisplayName, isArtist, isManager } = useCurrentUserRole();
 
+  useEffect(() => {
+    const cached = loadCachedGeneralSettings();
+    applyGeneralSettings(cached);
+
+    settingsService.ensureDefaultSettings().catch(() => {});
+
+    settingsService.general.get()
+      .then((settings) => applyGeneralSettings(settings))
+      .catch(() => {});
+
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleThemeChange = () => {
+      const current = loadCachedGeneralSettings();
+      if (current.theme === 'system') {
+        applyTheme('system');
+      }
+    };
+
+    media.addEventListener?.('change', handleThemeChange);
+    return () => media.removeEventListener?.('change', handleThemeChange);
+  }, []);
+
   const handleLogout = () => {
     localStorage.removeItem('artist_os_authorized');
     window.location.reload();
@@ -157,7 +181,7 @@ function LayoutInner() {
     <div className="min-h-screen bg-background text-text-secondary flex flex-col pb-16 md:pb-0">
       {/* Navbar */}
       <header className="sticky top-0 z-50 border-b border-border/50"
-        style={{ background: 'rgba(255,255,255,0.82)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
+        style={{ background: 'var(--shell-backdrop)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
         <div className="max-w-7xl mx-auto px-4 md:px-6 h-14 flex items-center gap-2">
 
           {/* Mobile: hamburger */}
@@ -261,7 +285,7 @@ function LayoutInner() {
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 28, stiffness: 220 }}
               className="absolute left-0 top-0 bottom-0 w-72 flex flex-col border-r border-border/50"
-              style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' }}
+              style={{ background: 'var(--shell-panel)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' }}
             >
               <div className="h-14 px-4 flex items-center justify-between border-b border-border/50">
                 <span className="text-[13px] font-bold tracking-[0.18em] text-text-primary uppercase">WES</span>
@@ -352,7 +376,7 @@ function LayoutInner() {
 
       {/* Mobile bottom nav */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 lg:hidden border-t border-border/50 px-4 h-16 flex items-center justify-around"
-        style={{ background: 'rgba(255,255,255,0.90)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
+        style={{ background: 'var(--shell-panel)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
         {MOBILE_NAV.map((item) => (
           <NavLink
             key={item.path}

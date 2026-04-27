@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Eye, EyeOff, Lock, Mail, ShieldOff } from 'lucide-react';
+import { Eye, EyeOff, Lock, Mail, ShieldOff } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { signInWithEmail, LoginError } from '../lib/auth';
@@ -18,19 +18,21 @@ import { useCurrentUser } from '../hooks/useCurrentUser';
 function Background() {
   return (
     <>
-      {/* Base gradient */}
       <div
         aria-hidden
         className="pointer-events-none fixed inset-0 -z-10"
-        style={{ background: 'linear-gradient(160deg, #090d1a 0%, #06090f 55%, #090d1a 100%)' }}
+        style={{ background: 'linear-gradient(180deg, #f8fbff 0%, #f5f7fb 48%, #eef4ff 100%)' }}
       />
-      {/* Ambient blue radial at top */}
       <div
         aria-hidden
-        className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[60vh]"
-        style={{ background: 'radial-gradient(ellipse 70% 50% at 50% -10%, rgba(37,99,235,0.18), transparent)' }}
+        className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[50vh]"
+        style={{ background: 'radial-gradient(ellipse 65% 55% at 50% 0%, rgba(37,99,235,0.14), transparent 72%)' }}
       />
-      {/* Subtle noise texture via SVG filter */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-y-0 left-0 -z-10 w-[32rem]"
+        style={{ background: 'radial-gradient(circle at 0% 20%, rgba(148,163,184,0.10), transparent 58%)' }}
+      />
       <svg aria-hidden className="pointer-events-none fixed inset-0 -z-10 h-full w-full opacity-[0.025]">
         <filter id="noise">
           <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
@@ -49,10 +51,9 @@ function LogoMark({ size = 'md' }: { size?: 'sm' | 'md' }) {
   const text = size === 'md' ? 'text-[15px]' : 'text-[12px]';
   return (
     <div
-      className={`${sz} flex items-center justify-center rounded-2xl ring-[1.5px] ring-white/10`}
-      style={{ background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)' }}
+      className={`${sz} flex items-center justify-center rounded-2xl border border-border bg-white shadow-[var(--shadow-card)]`}
     >
-      <span className={`${text} font-black tracking-tight text-white`}>WES</span>
+      <span className={`${text} font-black tracking-[0.18em] text-text-primary`}>WES</span>
     </div>
   );
 }
@@ -62,24 +63,22 @@ function LogoMark({ size = 'md' }: { size?: 'sm' | 'md' }) {
 function AccessDeniedView() {
   return (
     <motion.div
-      className="flex flex-col items-center text-center gap-6"
+      className="glass-modal flex w-full max-w-[480px] flex-col items-center gap-6 p-8 text-center"
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
     >
       <LogoMark />
 
-      {/* Icon */}
       <div
-        className="flex h-16 w-16 items-center justify-center rounded-full ring-[1.5px] ring-white/10"
-        style={{ background: 'rgba(239,68,68,0.1)' }}
+        className="flex h-16 w-16 items-center justify-center rounded-full border border-red-200 bg-red-50"
       >
-        <ShieldOff className="h-7 w-7 text-red-400" aria-hidden />
+        <ShieldOff className="h-7 w-7 text-red-500" aria-hidden />
       </div>
 
       <div className="space-y-2">
-        <h1 className="text-2xl font-bold tracking-tight text-white">Access restricted</h1>
-        <p className="max-w-xs text-[14px] leading-relaxed text-white/45">
+        <h1 className="text-2xl font-bold tracking-tight text-text-primary">Access restricted</h1>
+        <p className="max-w-xs text-[14px] leading-relaxed text-text-secondary">
           Your account doesn't have permission to view this page. Contact your administrator to request access.
         </p>
       </div>
@@ -87,14 +86,13 @@ function AccessDeniedView() {
       <div className="flex flex-col gap-3 w-full max-w-[260px]">
         <Link
           to="/dashboard"
-          className="w-full rounded-xl py-3 text-[14px] font-bold text-white text-center transition-all hover:opacity-90 active:scale-[0.98]"
-          style={{ background: 'linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%)' }}
+          className="btn-primary w-full"
         >
           Back to dashboard
         </Link>
         <Link
           to="/"
-          className="w-full rounded-xl border border-white/10 py-3 text-[14px] font-semibold text-white/60 text-center transition-colors hover:text-white/80 hover:border-white/20"
+          className="btn-secondary w-full"
         >
           Go to homepage
         </Link>
@@ -154,42 +152,35 @@ function LoginForm({ onLoginSuccess }: LoginFormProps) {
 
   return (
     <motion.div
-      className="relative w-full max-w-[380px]"
+      className="relative w-full max-w-[430px]"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
     >
-      {/* Header */}
       <div className="mb-8 flex flex-col items-center text-center gap-4">
         <LogoMark />
         <div>
-          <h1 className="text-[22px] font-bold tracking-tight text-white">Artist OS</h1>
-          <p className="mt-1 text-[13px] text-white/40">Sign in to your management suite</p>
+          <h1 className="text-[24px] font-bold tracking-tight text-text-primary">Artist OS</h1>
+          <p className="mt-1 text-[13px] text-text-secondary">Sign in to your management suite</p>
         </div>
       </div>
 
-      {/* Card */}
-      <div
-        className="overflow-hidden rounded-2xl border border-white/[0.07]"
-        style={{ background: 'rgba(255,255,255,0.035)', backdropFilter: 'blur(24px)' }}
-      >
-        {/* Card cap */}
-        <div className="flex items-center gap-2 border-b border-white/[0.06] px-6 py-4">
-          <Lock className="h-3.5 w-3.5 text-white/25" aria-hidden />
-          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/25">
+      <div className="glass-modal overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-border/70 px-6 py-4">
+          <Lock className="h-3.5 w-3.5 text-text-muted" aria-hidden />
+          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-text-muted">
             Secure Access
           </p>
         </div>
 
         <div className="px-6 py-6 space-y-4">
-          {/* Error banner */}
           <AnimatePresence>
             {error && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
-                className="rounded-xl border border-red-500/20 bg-red-500/[0.08] px-4 py-3 text-[13px] text-red-400"
+                className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-600"
               >
                 {error}
               </motion.div>
@@ -197,16 +188,15 @@ function LoginForm({ onLoginSuccess }: LoginFormProps) {
           </AnimatePresence>
 
           <form className="space-y-4" onSubmit={handleSubmit} noValidate>
-            {/* Email */}
             <div>
               <label
                 htmlFor="login-email"
-                className="mb-2 block text-[10px] font-bold uppercase tracking-[0.18em] text-white/30"
+                className="mb-2 block text-[10px] font-bold uppercase tracking-[0.18em] text-text-muted"
               >
                 Email
               </label>
               <div className="relative">
-                <Mail className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/20" aria-hidden />
+                <Mail className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" aria-hidden />
                 <input
                   id="login-email"
                   type="email"
@@ -215,21 +205,20 @@ function LoginForm({ onLoginSuccess }: LoginFormProps) {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   placeholder="you@example.com"
-                  className="w-full rounded-xl border border-white/[0.07] bg-white/[0.04] py-3 pl-11 pr-4 text-[14px] text-white placeholder:text-white/20 outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all"
+                  className="input-base py-3 pl-11 pr-4"
                 />
               </div>
             </div>
 
-            {/* Password */}
             <div>
               <label
                 htmlFor="login-password"
-                className="mb-2 block text-[10px] font-bold uppercase tracking-[0.18em] text-white/30"
+                className="mb-2 block text-[10px] font-bold uppercase tracking-[0.18em] text-text-muted"
               >
                 Password
               </label>
               <div className="relative">
-                <Lock className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/20" aria-hidden />
+                <Lock className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" aria-hidden />
                 <input
                   id="login-password"
                   type={showPassword ? 'text' : 'password'}
@@ -238,13 +227,13 @@ function LoginForm({ onLoginSuccess }: LoginFormProps) {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   placeholder="••••••••"
-                  className="w-full rounded-xl border border-white/[0.07] bg-white/[0.04] py-3 pl-11 pr-12 text-[14px] text-white placeholder:text-white/20 outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all"
+                  className="input-base py-3 pl-11 pr-12"
                 />
                 <button
                   type="button"
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                   onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-white/25 hover:text-white/50 transition-colors cursor-pointer"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 cursor-pointer text-text-muted transition-colors hover:text-text-primary"
                 >
                   {showPassword
                     ? <EyeOff className="h-4 w-4" aria-hidden />
@@ -254,14 +243,10 @@ function LoginForm({ onLoginSuccess }: LoginFormProps) {
               </div>
             </div>
 
-            {/* Submit */}
             <button
               type="submit"
               disabled={loading || !email || !password}
-              className="mt-2 w-full rounded-xl py-3 text-[14px] font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-              style={{
-                background: 'linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%)',
-              }}
+              className="btn-primary mt-2 w-full py-3 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
@@ -277,10 +262,6 @@ function LoginForm({ onLoginSuccess }: LoginFormProps) {
         </div>
       </div>
 
-      {/* Footer note */}
-      <p className="mt-6 text-center text-[11px] text-white/15">
-        Access is invite-only. Contact your administrator for an account.
-      </p>
     </motion.div>
   );
 }
@@ -309,32 +290,21 @@ export function Unauthorized() {
   const isRestricted = isAuthenticated && !role && !isLoading;
 
   return (
-    <div className="relative min-h-dvh flex items-center justify-center px-4 py-12">
+    <div className="relative min-h-dvh bg-background px-4 py-24">
       <Background />
-
-      {/* Back to homepage (top-left) */}
-      <Link
-        to="/"
-        aria-label="Back to homepage"
-        className="fixed top-5 left-5 z-50 inline-flex items-center gap-1.5 text-[12px] font-semibold text-white/35 transition-colors hover:text-white/60"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-        <span>Home</span>
-      </Link>
-
-      {/* Main content — fade between modes */}
-      <AnimatePresence mode="wait">
-        {isRestricted ? (
-          <motion.div key="denied" className="w-full max-w-[380px] flex justify-center">
-            <AccessDeniedView />
-          </motion.div>
-        ) : (
-          <motion.div key="login" className="w-full max-w-[380px]">
-            <LoginForm onLoginSuccess={() => {/* redirect handled by useEffect above */}} />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <div className="mx-auto flex min-h-[calc(100dvh-12rem)] max-w-[430px] items-center justify-center">
+        <AnimatePresence mode="wait">
+          {isRestricted ? (
+            <motion.div key="denied" className="w-full">
+              <AccessDeniedView />
+            </motion.div>
+          ) : (
+            <motion.div key="login" className="w-full">
+              <LoginForm onLoginSuccess={() => {/* redirect handled by useEffect above */}} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
-

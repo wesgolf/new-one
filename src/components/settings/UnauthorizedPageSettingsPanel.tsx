@@ -7,14 +7,15 @@ import { cn } from '../../lib/utils';
 import { SettingsCard, SettingsFieldRow, SettingsLoadingSkeleton, SettingsSectionHeader } from './SettingsPrimitives';
 
 export function UnauthorizedPageSettingsPanel() {
-  const [settings, setSettings] = useState<UnauthorizedPageSettings>(DEFAULT_UNAUTHORIZED_PAGE_SETTINGS);
-  const [loading,  setLoading]  = useState(true);
+  const [settings, setSettings] = useState<UnauthorizedPageSettings>(
+    () => settingsService.getCachedSettingsByCategory('unauthorized_page') ?? DEFAULT_UNAUTHORIZED_PAGE_SETTINGS,
+  );
+  const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState<string | null>(null);
   const [saving,   setSaving]   = useState(false);
   const [saved,    setSaved]    = useState(false);
 
   const load = useCallback(async () => {
-    setLoading(true);
     setError(null);
     try {
       const data = await settingsService.unauthorizedPage.get();

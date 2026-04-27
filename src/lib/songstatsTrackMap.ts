@@ -40,6 +40,16 @@ const TITLE_MAP: Record<string, string> = {
 let catalogCache: ArtistCatalogTrack[] | null = null;
 let catalogFetching: Promise<ArtistCatalogTrack[]> | null = null;
 
+/** Normalize a track title for fuzzy matching: lowercase, strip brackets, collapse spaces */
+function normalizeTitle(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\(.*?\)|\[.*?\]/g, '') // strip "(Remix)" / "[Edit]" etc.
+    .replace(/[-–—]+/g, ' ')         // dashes → spaces so "A - B" == "A B"
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 async function getCatalog(): Promise<ArtistCatalogTrack[]> {
   if (catalogCache) return catalogCache;
   if (catalogFetching) return catalogFetching;
@@ -63,28 +73,23 @@ async function getCatalog(): Promise<ArtistCatalogTrack[]> {
 /**
  * Resolve a Songstats track ID for a release.
  * Returns null if no match is found (unconfigured artist ID, or track not in catalog yet).
+ *
+ * Matches by title only — normalizing both the release title and catalog title
+ * the same way (lowercase, strip parentheses/brackets, collapse non-alphanumeric to spaces).
  */
 export async function resolveSongstatsTrackId(
-  isrc: string | null | undefined,
+  _isrc: string | null | undefined,
   title: string,
 ): Promise<string | null> {
-  // 1. ISRC static map
-  if (isrc && ISRC_MAP[isrc]) return ISRC_MAP[isrc];
-
-  // 2. Title static map
-  const normalizedTitle = title.toLowerCase().trim();
+  // 1. Title static map (manually configured overrides)
+  const normalizedTitle = normalizeTitle(title);
   if (TITLE_MAP[normalizedTitle]) return TITLE_MAP[normalizedTitle];
 
-  // 3. Auto-resolve from artist catalog
+  // 2. Auto-resolve from artist catalog — title-only, both sides normalized
   const catalog = await getCatalog();
 
-  if (isrc) {
-    const byIsrc = catalog.find(t => t.isrcs?.includes(isrc));
-    if (byIsrc) return byIsrc.songstats_track_id;
-  }
-
   const byTitle = catalog.find(
-    t => t.title.toLowerCase().trim() === normalizedTitle,
+    t => normalizeTitle(t.title) === normalizedTitle,
   );
   if (byTitle) return byTitle.songstats_track_id;
 

@@ -22,6 +22,8 @@ import { MyTasksWidget } from '../components/dashboard/MyTasksWidget';
 import { useAssistantContext } from '../context/AssistantContext';
 import { syncService } from '../services/syncService';
 import type { SinceLastLoginDelta } from '../hooks/useDashboard';
+import { loadCachedGeneralSettings, subscribeToGeneralSettings } from '../lib/generalSettingsRuntime';
+import { cn } from '../lib/utils';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -96,6 +98,7 @@ export function CommandCenter() {
   const { data, loading, error, refetch } = useDashboard();
   const { isManager } = useCurrentUserRole();
   const { setOpen: setAssistantOpen } = useAssistantContext();
+  const [dashboardLayout, setDashboardLayout] = useState(loadCachedGeneralSettings().dashboard_layout);
 
   const [syncing,     setSyncing]     = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
@@ -133,8 +136,21 @@ export function CommandCenter() {
   const upcomingItems = data?.upcomingItems   ?? [];
   const campaigns     = data?.activeCampaigns ?? [];
 
+  React.useEffect(() => {
+    return subscribeToGeneralSettings((settings) => {
+      setDashboardLayout(settings.dashboard_layout);
+    });
+  }, []);
+
+  const shellClass =
+    dashboardLayout === 'compact'
+      ? 'mx-auto max-w-5xl gap-5'
+      : dashboardLayout === 'expanded'
+      ? 'mx-auto max-w-none gap-7'
+      : 'mx-auto max-w-6xl gap-6';
+
   return (
-    <div className="flex flex-col gap-6">
+    <div className={cn('flex flex-col', shellClass)}>
       {/* Action bar */}
       <ActionBar
         onSyncNow={handleSyncNow}

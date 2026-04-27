@@ -5,6 +5,7 @@ import express, { type Request, type Response } from "express";
 import http from "http";
 import path from "path";
 import axios from "axios";
+import postgres from "postgres";
 
 // Global error handlers for better production logging
 process.on('uncaughtException', (err) => {
@@ -18,6 +19,8 @@ process.on('unhandledRejection', (reason, promise) => {
 async function startServer() {
   console.log('Initializing server...');
   const app = express();
+  app.disable('x-powered-by');
+  app.set('trust proxy', true);
   
   // Cloud Run provides PORT env var. Default to 8080 for production, 3000 for dev.
   const PORT = Number(process.env.PORT) || 3000;
@@ -27,7 +30,69 @@ async function startServer() {
   console.log(`Current directory: ${process.cwd()}`);
 
   // Middleware
-  app.use(express.json());
+  app.use(express.json({ limit: '1mb' }));
+
+  function readDatabaseUrlFromEnv(): string | null {
+    const raw =
+      process.env.DATABASE_URL ||
+      process.env.SUPABASE_POSTGRES_URL ||
+      process.env.VITE_SUPABASE_POSTGRES_URL ||
+      process.env.VITE_SUPABASE_DB_URL ||
+      '';
+    const cleaned = String(raw || '').trim();
+    if (!cleaned) return null;
+    // People often paste "DATABASE_URL=postgresql://..." into env var values.
+    return cleaned.replace(/^(DATABASE_URL=)+/i, '');
+  }
+
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+    next();
+  });
+
+  type RateBucket = { count: number; resetAt: number };
+  const rateBuckets = new Map<string, RateBucket>();
+
+  function createRateLimiter(namespace: string, max: number, windowMs: number) {
+    return (req: Request, res: Response, next: () => void) => {
+      const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',')[0]?.trim();
+      const ip = forwarded || req.ip || req.socket.remoteAddress || 'unknown';
+      const key = `${namespace}:${ip}`;
+      const now = Date.now();
+      const current = rateBuckets.get(key);
+
+      if (!current || now >= current.resetAt) {
+        rateBuckets.set(key, { count: 1, resetAt: now + windowMs });
+        return next();
+      }
+
+      if (current.count >= max) {
+        const retryAfterSeconds = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
+        res.setHeader('Retry-After', String(retryAfterSeconds));
+        return res.status(429).json({
+          error: 'Rate limit exceeded',
+          message: `Too many requests to ${namespace}. Try again in ${retryAfterSeconds}s.`,
+        });
+      }
+
+      current.count += 1;
+      next();
+    };
+  }
+
+  app.use('/api/coach', createRateLimiter('coach', 30, 60_000));
+  app.use('/api/assistant', createRateLimiter('assistant', 30, 60_000));
+  app.use('/api/ai', createRateLimiter('ai', 20, 60_000));
+  app.use('/api/goals/analyze', createRateLimiter('goals-analyze', 20, 60_000));
+  app.use('/api/report/summary', createRateLimiter('report-summary', 12, 60_000));
+  app.use('/api/email/send', createRateLimiter('email-send', 10, 15 * 60_000));
+  app.use('/api/notifications/sms/send', createRateLimiter('sms-send', 10, 15 * 60_000));
+  app.use('/api/soundcloud/public-tracks', createRateLimiter('soundcloud-public', 40, 60_000));
+  app.use('/api/soundcloud/scrape-tracks', createRateLimiter('soundcloud-scrape', 10, 15 * 60_000));
 
   // ── API usage logger ───────────────────────────────────────────────────────
   // Logs every /api/* request with endpoint + response time. Helps track which
@@ -50,13 +115,14 @@ async function startServer() {
     next();
   });
 
-  // Expose stats at /api/usage (dev only — remove or auth-gate in production)
-  app.get('/api/usage', (_req, res) => {
-    const rows = Object.entries(apiStats)
-      .map(([key, s]) => ({ endpoint: key, calls: s.count, avgMs: Math.round(s.totalMs / s.count), lastAt: s.lastAt }))
-      .sort((a, b) => b.calls - a.calls);
-    res.json(rows);
-  });
+  if (process.env.NODE_ENV !== 'production') {
+    app.get('/api/usage', (_req, res) => {
+      const rows = Object.entries(apiStats)
+        .map(([key, s]) => ({ endpoint: key, calls: s.count, avgMs: Math.round(s.totalMs / s.count), lastAt: s.lastAt }))
+        .sort((a, b) => b.calls - a.calls);
+      res.json(rows);
+    });
+  }
 
   // ── Server-side response cache (in-memory, TTL-based) ─────────────────────
   // Caches AI responses keyed on a hash of the input payload. Identical
@@ -136,18 +202,79 @@ async function startServer() {
   });
 
   // SoundCloud API Config
-  const SOUNDCLOUD_CLIENT_ID = process.env.SOUNDCLOUD_CLIENT_ID;
-  const SOUNDCLOUD_CLIENT_SECRET = process.env.SOUNDCLOUD_CLIENT_SECRET;
-  const SOUNDCLOUD_REDIRECT_URI = 'https://ais-dev-cvasv4enruoz3oi4xjg4rs-486722240196.us-east1.run.app/soundcloud-callback';
+  const SOUNDCLOUD_CLIENT_ID =
+    process.env.SOUNDCLOUD_CLIENT_ID ??
+    process.env.VITE_SOUNDCLOUD_CLIENT_ID;
+  const SOUNDCLOUD_CLIENT_SECRET =
+    process.env.SOUNDCLOUD_CLIENT_SECRET ??
+    process.env.VITE_SOUNDCLOUD_CLIENT_SECRET;
+  const SOUNDCLOUD_REDIRECT_URI =
+    process.env.SOUNDCLOUD_REDIRECT_URI ??
+    process.env.VITE_SOUNDCLOUD_REDIRECT_URI;
+
+  function stripHtml(value: string) {
+    return value.replace(/<[^>]+>/g, '');
+  }
+
+  function decodeHtmlEntities(value: string) {
+    return value
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+  }
+
+  async function fetchPublicSoundCloudTracks(profileUrl: string, limit = 200) {
+    const response = await axios.get(profileUrl, {
+      timeout: 15000,
+      headers: {
+        Accept: 'text/html,application/xhtml+xml',
+        'User-Agent': 'Artist-OS/1.0',
+      },
+    });
+    const html = String(response.data || '');
+    return Array.from(
+      html.matchAll(
+        /<article[^>]*itemtype="http:\/\/schema\.org\/MusicRecording"[^>]*>[\s\S]*?<a itemprop="url" href="([^"]+)">([\s\S]*?)<\/a>[\s\S]*?<time pubdate>([^<]+)<\/time>/gi,
+      ),
+    )
+      .map((match) => {
+        const href = match[1]?.trim();
+        const title = decodeHtmlEntities(stripHtml(match[2] ?? '').trim());
+        const publishedAt = match[3]?.trim() || null;
+        if (!href || !title) return null;
+        return {
+          title,
+          permalink_url: new URL(href, profileUrl).toString(),
+          created_at: publishedAt,
+          playback_count: 0,
+        };
+      })
+      .filter(Boolean)
+      .slice(0, limit);
+  }
+
+  function getSoundCloudRedirectUri(req: Request) {
+    if (SOUNDCLOUD_REDIRECT_URI) {
+      return SOUNDCLOUD_REDIRECT_URI;
+    }
+    const appUrl =
+      process.env.APP_URL ||
+      `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host'] || req.headers.host}`;
+    return `${appUrl.replace(/\/$/, '')}/soundcloud-callback`;
+  }
 
   // SoundCloud Auth Routes
   app.get('/api/soundcloud/login', (req, res) => {
     if (!SOUNDCLOUD_CLIENT_ID) {
-      return res.status(503).json({ error: 'SoundCloud is not configured. Please add SOUNDCLOUD_CLIENT_ID to your secrets.' });
+      return res.status(503).json({
+        error: 'SoundCloud is not configured. Add SOUNDCLOUD_CLIENT_ID or VITE_SOUNDCLOUD_CLIENT_ID to your env.',
+      });
     }
     const { code_challenge, state } = req.query;
-    const appUrl = process.env.APP_URL || `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host'] || req.headers.host}`;
-    const redirectUri = `${appUrl.replace(/\/$/, '')}/soundcloud-callback`;
+    const redirectUri = getSoundCloudRedirectUri(req);
     
     const authUrl = `https://secure.soundcloud.com/authorize?client_id=${SOUNDCLOUD_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&code_challenge=${code_challenge}&code_challenge_method=S256&state=${state}`;
     res.json({ url: authUrl });
@@ -155,11 +282,12 @@ async function startServer() {
 
   app.post('/api/soundcloud/token', async (req, res) => {
     if (!SOUNDCLOUD_CLIENT_ID || !SOUNDCLOUD_CLIENT_SECRET) {
-      return res.status(503).json({ error: 'SoundCloud is not configured. Please add SOUNDCLOUD_CLIENT_ID and SOUNDCLOUD_CLIENT_SECRET to your secrets.' });
+      return res.status(503).json({
+        error: 'SoundCloud is not configured. Add SOUNDCLOUD_CLIENT_ID/VITE_SOUNDCLOUD_CLIENT_ID and SOUNDCLOUD_CLIENT_SECRET/VITE_SOUNDCLOUD_CLIENT_SECRET to your env.',
+      });
     }
     const { code, code_verifier } = req.body;
-    const appUrl = process.env.APP_URL || `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host'] || req.headers.host}`;
-    const redirectUri = `${appUrl.replace(/\/$/, '')}/soundcloud-callback`;
+    const redirectUri = getSoundCloudRedirectUri(req);
     
     try {
       const response = await axios.post('https://secure.soundcloud.com/oauth/token', 
@@ -235,8 +363,164 @@ async function startServer() {
   app.get('/api/soundcloud/me/tracks', (req, res) => soundcloudProxy(req, res, '/me/tracks'));
   app.get('/api/soundcloud/tracks', (req, res) => soundcloudProxy(req, res, '/tracks'));
 
+  app.post('/api/integrations/soundcloud/sync-releases', async (req: Request, res: Response) => {
+    const authHeader = String(req.headers['authorization'] ?? '');
+    if (!authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing Authorization header' });
+    }
+    const token = authHeader.slice(7);
+
+    const databaseUrl = readDatabaseUrlFromEnv();
+    if (!databaseUrl) {
+      return res.status(503).json({ error: 'DATABASE_URL is not configured on the server.' });
+    }
+
+    const SUPABASE_URL_SERVER  = process.env.SUPABASE_URL  ?? process.env.VITE_SUPABASE_URL  ?? '';
+    const SUPABASE_ANON_SERVER = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON ?? process.env.VITE_SUPABASE_PK ?? '';
+    if (!SUPABASE_URL_SERVER || !SUPABASE_ANON_SERVER) {
+      return res.status(500).json({ error: 'Supabase server client is not configured.' });
+    }
+
+    const tracks = (req.body as any)?.tracks;
+    if (!Array.isArray(tracks) || tracks.length === 0) {
+      return res.status(400).json({ error: 'Body must include tracks: []' });
+    }
+
+    const { createClient: createSbClient } = await import('@supabase/supabase-js');
+    const sb = createSbClient(SUPABASE_URL_SERVER, SUPABASE_ANON_SERVER, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+      auth: { persistSession: false },
+    });
+
+    const { data: { user }, error: authErr } = await sb.auth.getUser(token);
+    if (authErr || !user) return res.status(401).json({ error: 'Invalid or expired token' });
+
+    const sql = postgres(databaseUrl, { ssl: 'require', max: 1 });
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    const errors: Array<{ title: string | null; permalink_url: string | null; error: string }> = [];
+
+    function toDateString(value: unknown): string | null {
+      if (!value) return null;
+      const raw = String(value);
+      const idx = raw.indexOf('T');
+      const day = idx >= 0 ? raw.slice(0, idx) : raw;
+      return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
+    }
+
+    try {
+      for (const t of tracks.slice(0, 250)) {
+        const title = (t?.title != null ? String(t.title) : '').trim();
+        const permalinkUrl = (t?.permalink_url != null ? String(t.permalink_url) : '').trim();
+        if (!title || !permalinkUrl) {
+          skipped += 1;
+          continue;
+        }
+
+        const releaseDate = toDateString(t?.created_at) ?? null;
+        const distribution = sql.json({ soundcloud_url: permalinkUrl });
+        const performance = sql.json({ streams: { soundcloud: Number(t?.playback_count ?? 0) || 0 } });
+        const soundcloudStats = sql.json({
+          plays:    Number(t?.playback_count ?? 0) || 0,
+          likes:    Number(t?.likes_count ?? t?.favoritings_count ?? 0) || 0,
+          reposts:  Number(t?.reposts_count ?? 0) || 0,
+          comments: Number(t?.comment_count ?? 0) || 0,
+        });
+
+        try {
+          const existing = await sql`
+            SELECT id
+            FROM releases
+            WHERE user_id = ${user.id}::uuid
+              AND (
+                (soundcloud_track_id IS NOT NULL AND soundcloud_track_id = ${permalinkUrl})
+                OR (distribution->>'soundcloud_url' = ${permalinkUrl})
+                OR (title = ${title})
+              )
+            LIMIT 1
+          `;
+
+          if (existing.length > 0) {
+            const id = existing[0].id as string;
+            await sql`
+              UPDATE releases
+              SET
+                soundcloud_track_id = ${permalinkUrl},
+                distribution    = COALESCE(distribution, '{}'::jsonb) || ${distribution},
+                performance     = COALESCE(performance,  '{}'::jsonb) || ${performance},
+                soundcloud_stats = ${soundcloudStats},
+                release_date    = COALESCE(release_date, ${releaseDate}::date),
+                status          = COALESCE(status, 'released'),
+                updated_at      = NOW()
+              WHERE id = ${id}::uuid
+            `;
+            updated += 1;
+          } else {
+            await sql`
+              INSERT INTO releases (user_id, title, status, release_date, soundcloud_track_id, distribution, performance, soundcloud_stats, created_at, updated_at)
+              VALUES (
+                ${user.id}::uuid,
+                ${title},
+                'released',
+                ${releaseDate}::date,
+                ${permalinkUrl},
+                ${distribution},
+                ${performance},
+                ${soundcloudStats},
+                NOW(),
+                NOW()
+              )
+            `;
+            created += 1;
+          }
+        } catch (e: any) {
+          skipped += 1;
+          errors.push({
+            title,
+            permalink_url: permalinkUrl,
+            error: String(e?.message ?? e),
+          });
+        }
+      }
+    } finally {
+      await sql.end();
+    }
+
+    console.log(`[soundcloud/sync] uid=${user.id.slice(0, 8)}… created=${created} updated=${updated} skipped=${skipped} errors=${errors.length}`);
+    res.json({ created, updated, skipped, errors: errors.slice(0, 20) });
+  });
+
+  app.get('/api/soundcloud/public-tracks', async (req, res) => {
+    const url = String(req.query.url || '').trim();
+    if (!url) {
+      return res.status(400).json({ error: 'Missing SoundCloud profile URL.' });
+    }
+
+    try {
+      const tracks = await fetchPublicSoundCloudTracks(url, Number(req.query.limit || 200));
+      if (!tracks.length) {
+        return res.status(404).json({ error: 'No public SoundCloud tracks found on the profile page.' });
+      }
+
+      res.json({ tracks });
+    } catch (err: any) {
+      const status = err.response?.status || 500;
+      const data = err.response?.data || { error: err.message };
+      console.error('[soundcloud/public-tracks] failed:', data);
+      res.status(status).json({ error: 'Failed to fetch public SoundCloud tracks', details: data });
+    }
+  });
+
   // SoundCloud OAuth Callback for Popups
-  app.get(['/soundcloud-callback', '/soundcloud-callback/'], (req, res) => {
+  app.get(
+    [
+      '/soundcloud-callback',
+      '/soundcloud-callback/',
+      '/api/auth/soundcloud/callback',
+      '/api/auth/soundcloud/callback/',
+    ],
+    (req, res) => {
     const { code, state, error, error_description } = req.query;
     
     if (error) {
@@ -272,7 +556,8 @@ async function startServer() {
         </body>
       </html>
     `);
-  });
+    },
+  );
 
   // SoundCloud Scraper API
   app.post("/api/soundcloud/scrape-tracks", async (req, res) => {
@@ -321,6 +606,584 @@ async function startServer() {
     }
   });
 
+  type IntegrationApiProvider = 'zernio' | 'songstats' | 'soundcloud';
+  type IntegrationTrigger = 'startup' | 'poll';
+  type IntegrationSettingsRecord = {
+    userId: string;
+    autoSync: boolean;
+    syncInterval: number;
+    enabledPlatforms: IntegrationApiProvider[];
+  };
+  type ProviderRunResult = {
+    provider: IntegrationApiProvider;
+    success: boolean;
+    message: string;
+    created?: number;
+    updated?: number;
+    skipped?: number;
+  };
+  type SyncTableShape = {
+    providerColumn: 'provider' | 'platform';
+    errorColumn: 'error_message' | 'error';
+    hasJobType: boolean;
+    hasMetadata: boolean;
+    hasIntegrationAccounts: boolean;
+  };
+
+  const DATABASE_URL = readDatabaseUrlFromEnv();
+  const SONGSTATS_ARTIST_ID = process.env.SONGSTATS_ARTIST_ID || process.env.VITE_SONGSTATS_ARTIST_ID;
+  const SOUNDCLOUD_ARTIST_URL =
+    process.env.SOUNDCLOUD_ARTIST_URL ||
+    process.env.VITE_SOUNDCLOUD_ARTIST_URL ||
+    process.env.VITE_SOUNDCLOUD_URL ||
+    process.env.SOUNDCLOUD_URL;
+  const INTEGRATION_API_RUNS_KEY = 'integration_api_runs';
+  const INTEGRATION_PROVIDERS: IntegrationApiProvider[] = ['zernio', 'songstats', 'soundcloud'];
+  const INTEGRATION_SYNC_INTERVALS = new Set([900, 1800, 3600, 21600, 86400]);
+  let integrationPullRunning = false;
+
+  function normalizeReleaseTitle(value: string | null | undefined) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/\(.*?\)|\[.*?\]/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  function soundCloudSlug(value: string | null | undefined) {
+    if (!value) return null;
+    try {
+      const url = new URL(value);
+      return url.pathname.split('/').filter(Boolean).slice(1).join('/').toLowerCase();
+    } catch {
+      return String(value).trim().replace(/^\/+/, '').toLowerCase();
+    }
+  }
+
+  function songstatsSourceValue(stats: Array<{ source: string; data: Record<string, number> }>, source: string, key: string) {
+    return Number(stats.find((entry) => entry.source === source)?.data?.[key] ?? 0);
+  }
+
+  function sanitizeEnabledPlatforms(value: unknown): IntegrationApiProvider[] {
+    if (!Array.isArray(value)) return [];
+    return value.filter((entry): entry is IntegrationApiProvider =>
+      typeof entry === 'string' && INTEGRATION_PROVIDERS.includes(entry as IntegrationApiProvider),
+    );
+  }
+
+  async function persistIntegrationRun(provider: IntegrationApiProvider, ranAt: string) {
+    if (!DATABASE_URL) {
+      console.warn(`[integration scheduler] DATABASE_URL missing; cannot persist ${provider} run time.`);
+      return;
+    }
+
+    const sql = postgres(DATABASE_URL, {
+      ssl: 'require',
+      max: 1,
+    });
+
+    try {
+      await sql`
+          INSERT INTO app_settings (key, value, updated_at)
+          VALUES (${INTEGRATION_API_RUNS_KEY}, ${sql.json({ [provider]: ranAt })}, NOW())
+          ON CONFLICT (key) DO UPDATE
+          SET value = COALESCE(app_settings.value, '{}'::jsonb) || EXCLUDED.value,
+              updated_at = NOW()
+      `;
+    } finally {
+      await sql.end();
+    }
+  }
+
+  async function fetchIntegrationSettings(sql: postgres.Sql<any>): Promise<IntegrationSettingsRecord[]> {
+    const rows = await sql`
+      SELECT user_id, key, value_json
+      FROM user_settings
+      WHERE category = 'integrations'
+        AND key IN ('auto_sync', 'sync_interval', 'enabled_platforms')
+    `;
+
+    const grouped = new Map<string, Partial<IntegrationSettingsRecord>>();
+    for (const row of rows) {
+      const userId = String(row.user_id);
+      const current = grouped.get(userId) ?? { userId };
+      if (row.key === 'auto_sync') current.autoSync = Boolean(row.value_json);
+      if (row.key === 'sync_interval') {
+        const parsed = Number(row.value_json);
+        current.syncInterval = INTEGRATION_SYNC_INTERVALS.has(parsed) ? parsed : 3600;
+      }
+      if (row.key === 'enabled_platforms') {
+        current.enabledPlatforms = sanitizeEnabledPlatforms(row.value_json);
+      }
+      grouped.set(userId, current);
+    }
+
+    return [...grouped.values()]
+      .map((entry) => ({
+        userId: entry.userId!,
+        autoSync: entry.autoSync ?? true,
+        syncInterval: entry.syncInterval ?? 3600,
+        enabledPlatforms: entry.enabledPlatforms?.length ? entry.enabledPlatforms : INTEGRATION_PROVIDERS,
+      }))
+      .filter((entry) => entry.autoSync && entry.enabledPlatforms.length > 0);
+  }
+
+  async function detectSyncTableShape(sql: postgres.Sql<any>): Promise<SyncTableShape> {
+    const syncJobColumns = await sql`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'sync_jobs'
+    `;
+    const integrationAccountRows = await sql`
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = 'integration_accounts'
+      ) AS exists
+    `;
+
+    const columnSet = new Set(syncJobColumns.map((row) => String(row.column_name)));
+    return {
+      providerColumn: columnSet.has('provider') ? 'provider' : 'platform',
+      errorColumn: columnSet.has('error_message') ? 'error_message' : 'error',
+      hasJobType: columnSet.has('job_type'),
+      hasMetadata: columnSet.has('metadata'),
+      hasIntegrationAccounts: Boolean(integrationAccountRows[0]?.exists),
+    };
+  }
+
+  async function getLastSuccessfulRunAt(
+    sql: postgres.Sql<any>,
+    shape: SyncTableShape,
+    userId: string,
+    provider: IntegrationApiProvider,
+  ) {
+    const rows = await sql.unsafe(
+      `
+        SELECT completed_at, created_at
+        FROM sync_jobs
+        WHERE user_id = $1::uuid
+          AND ${shape.providerColumn} = $2
+          AND status = 'success'
+        ORDER BY COALESCE(completed_at, created_at) DESC
+        LIMIT 1
+      `,
+      [userId, provider],
+    );
+    if (!rows.length) return null;
+    const raw = rows[0].completed_at ?? rows[0].created_at ?? null;
+    return raw ? new Date(String(raw)) : null;
+  }
+
+  async function createSyncJob(
+    sql: postgres.Sql<any>,
+    shape: SyncTableShape,
+    userId: string,
+    provider: IntegrationApiProvider,
+  ) {
+    const columns = ['user_id', shape.providerColumn, 'status', 'started_at'];
+    const values: any[] = [userId, provider, 'running'];
+
+    if (shape.hasJobType) {
+      columns.push('job_type');
+      values.push('auto_sync');
+    }
+
+    if (shape.hasMetadata) {
+      columns.push('metadata');
+      values.push({});
+    }
+
+    const placeholders = columns.map((_, index) => {
+      const paramIndex = index + 1;
+      if (columns[index] === 'user_id') return `$${paramIndex}::uuid`;
+      if (columns[index] === 'started_at') return 'NOW()';
+      if (columns[index] === 'metadata') return `$${paramIndex}::jsonb`;
+      return `$${paramIndex}`;
+    });
+
+    const rows = await sql.unsafe(
+      `
+        INSERT INTO sync_jobs (${columns.join(', ')})
+        VALUES (${placeholders.join(', ')})
+        RETURNING id
+      `,
+      values,
+    );
+    return String(rows[0].id);
+  }
+
+  async function finishSyncJob(
+    sql: postgres.Sql<any>,
+    shape: SyncTableShape,
+    jobId: string,
+    provider: IntegrationApiProvider,
+    result: ProviderRunResult,
+  ) {
+    const metadata = {
+      provider,
+      success: result.success,
+      message: result.message,
+      created: result.created ?? 0,
+      updated: result.updated ?? 0,
+      skipped: result.skipped ?? 0,
+    };
+
+    const setParts = [
+      `status = $2`,
+      `completed_at = NOW()`,
+      `${shape.errorColumn} = $3`,
+    ];
+    const values: any[] = [jobId, result.success ? 'success' : 'failed', result.success ? null : result.message];
+
+    if (shape.hasMetadata) {
+      setParts.push(`metadata = $4::jsonb`);
+      values.push(metadata);
+    }
+
+    await sql.unsafe(
+      `
+        UPDATE sync_jobs
+        SET ${setParts.join(', ')}
+        WHERE id = $1::uuid
+      `,
+      values,
+    );
+
+    if (!shape.hasIntegrationAccounts) {
+      return;
+    }
+
+    await sql`
+      INSERT INTO integration_accounts (
+        user_id,
+        provider,
+        connection_status,
+        last_synced_at,
+        last_sync_status,
+        last_error,
+        metadata,
+        created_at,
+        updated_at
+      )
+      SELECT
+        user_id,
+        ${provider},
+        ${result.success ? 'connected' : 'error'},
+        NOW(),
+        ${result.success ? 'success' : 'failed'},
+        ${result.success ? null : result.message},
+        ${sql.json(metadata)},
+        NOW(),
+        NOW()
+      FROM sync_jobs
+      WHERE id = ${jobId}::uuid
+      ON CONFLICT (user_id, provider) DO UPDATE
+      SET
+        connection_status = EXCLUDED.connection_status,
+        last_synced_at = EXCLUDED.last_synced_at,
+        last_sync_status = EXCLUDED.last_sync_status,
+        last_error = EXCLUDED.last_error,
+        metadata = COALESCE(integration_accounts.metadata, '{}'::jsonb) || EXCLUDED.metadata,
+        updated_at = NOW()
+    `;
+  }
+
+  async function runZernioProviderPull(): Promise<ProviderRunResult> {
+    if (!ZERNIO_API_KEY) {
+      console.log('[integration scheduler] zernio skipped: missing API key');
+      return { provider: 'zernio', success: false, message: 'Zernio API key missing.' };
+    }
+    const response = await axios.get(`${ZERNIO_API_BASE}/accounts`, {
+      headers: {
+        Authorization: `Bearer ${ZERNIO_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 15000,
+    });
+    const count = Array.isArray(response.data)
+      ? response.data.length
+      : Array.isArray(response.data?.accounts)
+      ? response.data.accounts.length
+      : 0;
+    console.log(`[integration scheduler] zernio pulled ${count} account${count === 1 ? '' : 's'}`);
+    return {
+      provider: 'zernio',
+      success: true,
+      message: `Fetched ${count} Zernio account${count === 1 ? '' : 's'}.`,
+      updated: count,
+      skipped: 0,
+    };
+  }
+
+  async function runSongstatsProviderPullForUser(sql: postgres.Sql<any>, userId: string): Promise<ProviderRunResult> {
+    if (!SONGSTATS_API_KEY || !SONGSTATS_ARTIST_ID) {
+      console.log('[integration scheduler] songstats skipped: missing API key or artist id');
+      return { provider: 'songstats', success: false, message: 'Songstats API key or artist id missing.' };
+    }
+
+    const fetchSongstats = async <T>(path: string, params: Record<string, string>) => {
+      const response = await axios.get(`${SONGSTATS_API_BASE}${path}`, {
+        headers: {
+          Accept: 'application/json',
+          apikey: SONGSTATS_API_KEY,
+        },
+        params,
+        timeout: 15000,
+      });
+      return response.data as T;
+    };
+
+    const releases = await sql`
+      SELECT id, title, isrc, spotify_track_id, distribution, performance
+      FROM releases
+      WHERE user_id = ${userId}::uuid
+      ORDER BY updated_at DESC
+    `;
+
+    const catalogResponse = await fetchSongstats<{
+      catalog?: Array<{ songstats_track_id: string; title: string; isrcs?: string[] }>;
+    }>('/artists/catalog', {
+      songstats_artist_id: SONGSTATS_ARTIST_ID,
+      source_ids: 'all',
+      limit: '200',
+    });
+
+    const catalog = Array.isArray(catalogResponse.catalog) ? catalogResponse.catalog : [];
+    const catalogByTitle = new Map(catalog.map((track) => [normalizeReleaseTitle(track.title), track]));
+    const catalogByIsrc = new Map(
+      catalog.flatMap((track) => (track.isrcs ?? []).map((isrc) => [String(isrc).trim(), track] as const)),
+    );
+
+    let updated = 0;
+    let skipped = 0;
+
+    for (const release of releases) {
+      const matched =
+        (release.isrc ? catalogByIsrc.get(String(release.isrc).trim()) : null) ??
+        catalogByTitle.get(normalizeReleaseTitle(release.title));
+      if (!matched) {
+        skipped += 1;
+        continue;
+      }
+
+      const [trackStats, trackInfo] = await Promise.all([
+        fetchSongstats<{ stats?: Array<{ source: string; data: Record<string, number> }> }>(
+          '/tracks/stats',
+          { songstats_track_id: matched.songstats_track_id, source_ids: 'all' },
+        ).catch(() => null),
+        fetchSongstats<{ track_info?: { links?: Array<{ source: string; external_id: string; url: string }> } }>(
+          '/tracks/info',
+          { songstats_track_id: matched.songstats_track_id },
+        ).catch(() => null),
+      ]);
+
+      if (!trackStats && !trackInfo) {
+        skipped += 1;
+        continue;
+      }
+
+      const releaseDistribution = (release.distribution ?? {}) as Record<string, unknown>;
+      const releasePerformance = (release.performance ?? {}) as Record<string, any>;
+      const existingStreams = (releasePerformance.streams ?? {}) as Record<string, number>;
+      const links = trackInfo?.track_info?.links ?? [];
+      const distribution = {
+        spotify_url: links.find((link) => link.source === 'spotify')?.url ?? releaseDistribution.spotify_url ?? null,
+        apple_music_url: links.find((link) => link.source === 'apple_music')?.url ?? releaseDistribution.apple_music_url ?? null,
+        soundcloud_url: links.find((link) => link.source === 'soundcloud')?.url ?? releaseDistribution.soundcloud_url ?? null,
+        youtube_url: links.find((link) => link.source === 'youtube')?.url ?? releaseDistribution.youtube_url ?? null,
+      };
+      const stats = trackStats?.stats ?? [];
+      const performance = {
+        streams: {
+          spotify: songstatsSourceValue(stats, 'spotify', 'streams_total') || Number(existingStreams.spotify ?? 0),
+          apple: songstatsSourceValue(stats, 'apple_music', 'streams_total') || Number(existingStreams.apple ?? 0),
+          soundcloud: songstatsSourceValue(stats, 'soundcloud', 'streams_total') || Number(existingStreams.soundcloud ?? 0),
+          youtube: songstatsSourceValue(stats, 'youtube', 'video_views_total') || Number(existingStreams.youtube ?? 0),
+        },
+      };
+      const spotifyTrackId =
+        release.spotify_track_id ??
+        links.find((link) => link.source === 'spotify')?.external_id ??
+        null;
+
+      await sql`
+        UPDATE releases
+        SET
+          distribution = ${sql.json(distribution)},
+          performance = ${sql.json(performance)},
+          spotify_track_id = COALESCE(spotify_track_id, ${spotifyTrackId}),
+          updated_at = NOW()
+        WHERE id = ${release.id}::uuid
+      `;
+      updated += 1;
+    }
+
+    console.log(`[integration scheduler] songstats synced user=${userId.slice(0, 8)}… updated=${updated} skipped=${skipped}`);
+    return {
+      provider: 'songstats',
+      success: true,
+      message: `Updated ${updated} release${updated === 1 ? '' : 's'}${skipped ? `, skipped ${skipped}` : ''}.`,
+      updated,
+      skipped,
+    };
+  }
+
+  async function runSoundCloudProviderPullForUser(sql: postgres.Sql<any>, userId: string): Promise<ProviderRunResult> {
+    if (!SOUNDCLOUD_ARTIST_URL) {
+      console.log('[integration scheduler] soundcloud skipped: missing artist url');
+      return { provider: 'soundcloud', success: false, message: 'SoundCloud artist URL missing.' };
+    }
+
+    const tracks = await fetchPublicSoundCloudTracks(SOUNDCLOUD_ARTIST_URL, 200);
+    const releases = await sql`
+      SELECT id, title, release_date, soundcloud_track_id, distribution, performance
+      FROM releases
+      WHERE user_id = ${userId}::uuid
+      ORDER BY updated_at DESC
+    `;
+
+    const byTitle = new Map(releases.map((release) => [normalizeReleaseTitle(release.title), release]));
+    const bySlug = new Map(
+      releases
+        .map((release) => {
+          const distribution = (release.distribution ?? {}) as Record<string, unknown>;
+          const slug = soundCloudSlug((distribution.soundcloud_url as string | undefined) || release.soundcloud_track_id);
+          return slug ? [slug, release] as const : null;
+        })
+        .filter(Boolean) as ReadonlyArray<readonly [string, (typeof releases)[number]]>,
+    );
+
+    let updated = 0;
+    let created = 0;
+    let skipped = 0;
+
+    for (const track of tracks) {
+      const title = String(track?.title ?? '').trim();
+      const permalinkUrl = String(track?.permalink_url ?? '').trim();
+      if (!title || !permalinkUrl) {
+        skipped += 1;
+        continue;
+      }
+
+      const titleKey = normalizeReleaseTitle(title);
+      const slug = soundCloudSlug(permalinkUrl);
+      const existing = (slug ? bySlug.get(slug) : null) ?? byTitle.get(titleKey) ?? null;
+      const existingDistribution = (existing?.distribution ?? {}) as Record<string, unknown>;
+      const existingStreams = (existing?.performance?.streams ?? {}) as Record<string, number>;
+      const distribution = {
+        spotify_url: typeof existingDistribution.spotify_url === 'string' ? existingDistribution.spotify_url : null,
+        apple_music_url: typeof existingDistribution.apple_music_url === 'string' ? existingDistribution.apple_music_url : null,
+        soundcloud_url: permalinkUrl,
+        youtube_url: typeof existingDistribution.youtube_url === 'string' ? existingDistribution.youtube_url : null,
+      };
+      const performance = {
+        streams: {
+          spotify: Number(existingStreams.spotify ?? 0),
+          apple: Number(existingStreams.apple ?? 0),
+          soundcloud: Number(track?.playback_count ?? 0),
+          youtube: Number(existingStreams.youtube ?? 0),
+        },
+      };
+      const releaseDate = String(track?.created_at ?? '').split('T')[0] || new Date().toISOString().split('T')[0];
+
+      if (existing) {
+        await sql`
+          UPDATE releases
+          SET
+            soundcloud_track_id = ${permalinkUrl},
+            distribution = ${sql.json(distribution)},
+            performance = ${sql.json(performance)},
+            release_date = COALESCE(release_date, ${releaseDate}::date),
+            status = COALESCE(status, 'released'),
+            updated_at = NOW()
+          WHERE id = ${existing.id}::uuid
+        `;
+        updated += 1;
+      } else {
+        await sql`
+          INSERT INTO releases (
+            user_id, title, status, release_date, soundcloud_track_id, distribution, performance, created_at, updated_at
+          )
+          VALUES (
+            ${userId}::uuid, ${title}, 'released', ${releaseDate}::date, ${permalinkUrl},
+            ${sql.json(distribution)}, ${sql.json(performance)}, NOW(), NOW()
+          )
+        `;
+        created += 1;
+      }
+    }
+
+    console.log(`[integration scheduler] soundcloud synced user=${userId.slice(0, 8)}… created=${created} updated=${updated} skipped=${skipped}`);
+    return {
+      provider: 'soundcloud',
+      success: true,
+      message: `${created} created, ${updated} updated${skipped ? `, ${skipped} skipped` : ''}.`,
+      created,
+      updated,
+      skipped,
+    };
+  }
+
+  async function runIntegrationProviderPulls(trigger: IntegrationTrigger) {
+    if (integrationPullRunning) {
+      console.log(`[integration scheduler] skipped ${trigger} run; previous run still active`);
+      return;
+    }
+    if (!DATABASE_URL) {
+      console.warn('[integration scheduler] DATABASE_URL missing; auto-sync disabled.');
+      return;
+    }
+
+    integrationPullRunning = true;
+    const startedAt = new Date().toISOString();
+    console.log(`[integration scheduler] starting ${trigger} provider run at ${startedAt}`);
+
+    const sql = postgres(DATABASE_URL, { ssl: 'require', max: 1 });
+    try {
+      const shape = await detectSyncTableShape(sql);
+      console.log('[integration scheduler] detected sync schema:', shape);
+      const users = await fetchIntegrationSettings(sql);
+      console.log(`[integration scheduler] loaded ${users.length} user integration setting set(s)`);
+
+      for (const user of users) {
+        for (const provider of user.enabledPlatforms) {
+          const lastSuccess = await getLastSuccessfulRunAt(sql, shape, user.userId, provider);
+          const due = !lastSuccess || (Date.now() - lastSuccess.getTime()) >= user.syncInterval * 1000;
+          if (!due) continue;
+
+          const jobId = await createSyncJob(sql, shape, user.userId, provider);
+          let result: ProviderRunResult;
+          try {
+            if (provider === 'soundcloud') {
+              result = await runSoundCloudProviderPullForUser(sql, user.userId);
+            } else if (provider === 'songstats') {
+              result = await runSongstatsProviderPullForUser(sql, user.userId);
+            } else {
+              result = await runZernioProviderPull();
+            }
+          } catch (err: any) {
+            result = {
+              provider,
+              success: false,
+              message: err?.message ?? `Failed to run ${provider} sync.`,
+            };
+          }
+
+          await finishSyncJob(sql, shape, jobId, provider, result);
+          if (result.success) {
+            await persistIntegrationRun(provider, new Date().toISOString());
+          }
+        }
+      }
+    } finally {
+      integrationPullRunning = false;
+      await sql.end();
+    }
+  }
+
   // Analytics API
   app.get("/api/analytics/latest", async (req, res) => {
     try {
@@ -355,7 +1218,10 @@ async function startServer() {
     }
     // Strip the /api/songstats prefix to get the upstream path
     const upstreamPath = req.path.replace(/^\/api\/songstats/, '');
-    const query = new URLSearchParams(req.query as Record<string, string>).toString();
+    const queryParams = req.query as Record<string, string>;
+    // Ensure source_ids is always set — Songstats returns HTTP 300 without it on catalog/stats endpoints
+    if (!queryParams.source_ids) queryParams.source_ids = 'all';
+    const query = new URLSearchParams(queryParams).toString();
     const url = `${SONGSTATS_API_BASE}${upstreamPath}${query ? '?' + query : ''}`;
     try {
       const response = await axios.get(url, {
@@ -363,8 +1229,12 @@ async function startServer() {
           Accept: 'application/json',
           apikey: SONGSTATS_API_KEY,
         },
+        maxRedirects: 5,
+        validateStatus: (status) => status < 400,
       });
-      res.json(response.data);
+      // Always respond 200 — Songstats sometimes returns 300 as a redirect hint
+      // but the body contains valid JSON data. The client treats non-2xx as errors.
+      res.status(200).json(response.data);
     } catch (err: any) {
       const status = err.response?.status || 500;
       const data = err.response?.data || { message: err.message };
@@ -516,9 +1386,63 @@ async function startServer() {
     res.json({ sent: true, message: 'Email queued. Configure SMTP_HOST and SMTP_USER to enable live sending.' });
   });
 
+  // ── SMS notification endpoint ─────────────────────────────────────────────
+  // Twilio credentials are server-side only. Set:
+  //   TWILIO_ACCOUNT_SID
+  //   TWILIO_AUTH_TOKEN
+  //   TWILIO_FROM_NUMBER
+  app.post('/api/notifications/sms/send', async (req, res) => {
+    const { to, body } = req.body as { to?: string; body?: string };
+
+    if (!to) {
+      return res.status(400).json({ error: 'Missing required field: to' });
+    }
+
+    const messageBody = String(body || 'Artist OS notification').trim();
+    if (!messageBody) {
+      return res.status(400).json({ error: 'Message body cannot be empty' });
+    }
+
+    const E164_RE = /^\+[1-9]\d{7,14}$/;
+    if (!E164_RE.test(to)) {
+      return res.status(400).json({ error: 'Phone number must be in E.164 format, for example +15551234567' });
+    }
+
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const fromNumber = process.env.TWILIO_FROM_NUMBER;
+
+    if (!accountSid || !authToken || !fromNumber) {
+      return res.status(503).json({
+        error: 'Twilio is not configured. Add TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER to your server env.',
+      });
+    }
+
+    try {
+      const twilioModule = await import('twilio');
+      const createTwilioClient = (twilioModule.default ?? twilioModule) as unknown as (sid: string, token: string) => {
+        messages: {
+          create: (params: { body: string; from: string; to: string }) => Promise<{ sid: string }>;
+        };
+      };
+
+      const client = createTwilioClient(accountSid, authToken);
+      const message = await client.messages.create({
+        body: messageBody,
+        from: fromNumber,
+        to,
+      });
+
+      res.json({ sent: true, sid: message.sid, message: 'Text notification sent.' });
+    } catch (err: any) {
+      console.error('[sms/send] Twilio send failed:', err?.message || err);
+      res.status(500).json({ error: err?.message ?? 'Failed to send text notification' });
+    }
+  });
+
   // ── Coach AI Proxy ────────────────────────────────────────────────────────
   // OpenAI is called server-side only. The API key is never sent to the browser.
-  const OPENAI_API_KEY = process.env.VITE_CHATGPT_API_KEY || process.env.OPENAI_API_KEY;
+  const OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.VITE_CHATGPT_API_KEY;
 
   // Hard cap on context payload to control token spend
   const MAX_CONTEXT_CHARS = 3000;
@@ -594,9 +1518,15 @@ async function startServer() {
       ]);
 
       const profile = profileRes.data;
-      const name = profile?.full_name ?? user.email ?? 'the artist';
+      const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
+      const name =
+        profile?.full_name ||
+        (meta.full_name as string | undefined) ||
+        (meta.name as string | undefined) ||
+        user.email?.split('@')[0] ||
+        'the artist';
 
-      let block = `ARTIST PROFILE:\n- Name: ${name}\n- Role: ${profile?.role ?? 'artist'}\n`;
+      let block = `ARTIST PROFILE:\n- Name: ${name}\n- Email: ${user.email ?? ''}\n- Role: ${profile?.role ?? 'artist'}\n`;
 
       const releases = releasesRes.data ?? [];
       if (releases.length > 0) {
@@ -1039,6 +1969,20 @@ Respond with valid JSON only.`;
       console.error('Failed to initialize analytics scheduler:', err);
     }
   }, 5000);
+
+  // Start the integration scheduler lazily
+  setTimeout(async () => {
+    try {
+      const { default: cron } = await import('node-cron');
+      await runIntegrationProviderPulls('startup');
+      cron.schedule('*/15 * * * *', () => {
+        void runIntegrationProviderPulls('poll');
+      });
+      console.log('Integration API scheduler initialized.');
+    } catch (err) {
+      console.error('Failed to initialize integration API scheduler:', err);
+    }
+  }, 7000);
 
   const httpServer = http.createServer(app);
 

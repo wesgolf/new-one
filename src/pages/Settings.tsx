@@ -7,7 +7,6 @@
  * Sections:
  *   General            — theme, language, notifications
  *   Integrations       — platforms, sync config
- *   Unauthorized Page  — access-denied page copy
  */
 
 import React, { useEffect, useState } from 'react';
@@ -16,13 +15,13 @@ import { Settings as SettingsIcon } from 'lucide-react';
 import { SettingsSidebar, type SettingsSection } from '../components/settings/SettingsSidebar';
 import { GeneralSettingsPanel } from '../components/settings/GeneralSettingsPanel';
 import { IntegrationsSettingsPanel } from '../components/settings/IntegrationsSettingsPanel';
-import { UnauthorizedPageSettingsPanel } from '../components/settings/UnauthorizedPageSettingsPanel';
+import { PublicHubSettingsPanel } from '../components/settings/PublicHubSettingsPanel';
 import { settingsService } from '../services/settingsService';
 
 const PANEL_MAP: Record<SettingsSection, React.ComponentType> = {
-  general:           GeneralSettingsPanel,
-  integrations:      IntegrationsSettingsPanel,
-  unauthorized_page: UnauthorizedPageSettingsPanel,
+  general:      GeneralSettingsPanel,
+  integrations: IntegrationsSettingsPanel,
+  public_hub:   PublicHubSettingsPanel,
 };
 
 export function Settings() {
