@@ -38,9 +38,9 @@ export default function Hero({
   ].filter((link) => Boolean(link.url));
 
   return (
-    <header className="relative space-y-10 pt-8 pb-8 text-center sm:pt-10">
+    <header className="relative space-y-6 pt-4 pb-6 text-center sm:space-y-8 sm:pt-6 sm:pb-8">
       {/* Portrait with radial fade mask */}
-      <div className="relative mb-6 flex justify-center">
+      <div className="relative mb-3 flex justify-center sm:mb-6">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -66,7 +66,7 @@ export default function Hero({
 
       {/* Social links */}
       <div className="flex flex-col items-center space-y-6">
-        <div className="flex flex-wrap justify-center gap-6 py-2">
+        <div className="flex flex-wrap justify-center gap-x-5 gap-y-3 py-1 sm:gap-6">
           {socialLinks.map((link, index) => (
             <motion.a
               key={link.label}
@@ -79,9 +79,9 @@ export default function Hero({
               target="_blank"
               rel="noopener noreferrer"
               aria-label={link.label}
-              className="text-white/45 transition-colors hover:text-white"
+              className="rounded-full p-1 text-white/45 transition-colors hover:text-white"
             >
-              <FontAwesomeIcon icon={link.icon} className="text-xl" />
+              <FontAwesomeIcon icon={link.icon} className="text-[18px] sm:text-xl" />
             </motion.a>
           ))}
         </div>

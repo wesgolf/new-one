@@ -24,7 +24,7 @@ import { PostModeModal } from '../content/components/PostModeModal';
 import { zernioAdapter } from '../content/services/zernioAdapter';
 import { contentPersistence } from '../content/services/contentPersistence';
 import { contentService } from '../services/contentService';
-import { fetchReleases } from '../lib/supabaseData';
+import { fetchReleaseList } from '../lib/supabaseData';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import { usePermissions } from '../hooks/usePermissions';
 
@@ -56,7 +56,7 @@ export function ContentEngine() {
   // ── Load real data from DB ────────────────────────────────────────────────
   const loadReleases = React.useCallback(async () => {
     try {
-      const data = await fetchReleases();
+      const data = await fetchReleaseList();
       setReleases(data as any as Release[]);
     } catch {}
   }, []);

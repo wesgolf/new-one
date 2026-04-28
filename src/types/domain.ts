@@ -186,6 +186,11 @@ export interface ReleaseRecord {
     reposts?: number | null;
     comments?: number | null;
   } | null;
+  youtube_stats?: {
+    views?: number | null;
+    likes?: number | null;
+    comments?: number | null;
+  } | null;
   notes?: string | null;
   status?: string | null;
   created_at?: string;
@@ -206,6 +211,11 @@ export interface ReleaseRecord {
       apple?: number | null;
       soundcloud?: number | null;
       youtube?: number | null;
+    } | null;
+    youtube_stats?: {
+      views?: number | null;
+      likes?: number | null;
+      comments?: number | null;
     } | null;
   } | null;
 }
@@ -385,12 +395,14 @@ export interface UnauthorizedPageSettings {
   heading:           string;
   subtext:           string;
   show_contact_link: boolean;
+  contact_email:     string;
 }
 
 export const DEFAULT_UNAUTHORIZED_PAGE_SETTINGS: UnauthorizedPageSettings = {
   heading:           'Access Restricted',
   subtext:           'You do not have permission to view this page.',
   show_contact_link: true,
+  contact_email:     '',
 };
 
 // ── integrations ──────────────────────────────────────────────────────────────

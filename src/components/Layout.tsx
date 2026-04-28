@@ -411,7 +411,10 @@ function LayoutInner() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.18 }}
-            className="p-5 md:p-10 max-w-7xl mx-auto"
+            className={cn(
+              'mx-auto p-5 max-w-7xl',
+              location.pathname === '/coach' ? 'md:max-w-full md:p-2' : 'md:p-10',
+            )}
           >
             <Outlet />
           </motion.div>

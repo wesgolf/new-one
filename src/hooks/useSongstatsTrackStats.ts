@@ -17,6 +17,7 @@ export function useSongstatsTrackStats(
   title: string,
   isrc?: string | null,
   storedSongstatsTrackId?: string | null,
+  enabled = true,
 ): UseSongstatsTrackStatsResult {
   const [stats, setStats] = useState<TrackStatsResponse | null>(null);
   const [songstatsTrackId, setTrackId] = useState<string | null>(null);
@@ -24,7 +25,10 @@ export function useSongstatsTrackStats(
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!title) {
+    if (!enabled || !title) {
+      setStats(null);
+      setTrackId(null);
+      setError(null);
       setLoading(false);
       return;
     }
@@ -59,7 +63,7 @@ export function useSongstatsTrackStats(
     })();
 
     return () => { cancelled = true; };
-  }, [title, isrc, storedSongstatsTrackId]);
+  }, [enabled, title, isrc, storedSongstatsTrackId]);
 
   return { stats, songstatsTrackId, loading, error };
 }

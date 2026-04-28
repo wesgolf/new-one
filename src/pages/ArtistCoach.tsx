@@ -24,6 +24,7 @@ import { cn } from '../lib/utils';
 import { supabase } from '../lib/supabase';
 import { requestCache } from '../lib/requestCache';
 import { getCurrentAuthUser } from '../lib/auth';
+import { fetchServerJsonWithFallback } from '../lib/serverApi';
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -239,9 +240,11 @@ export function ArtistCoach() {
   const [dragActive, setDragActive] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'knowledge'>('chat');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [coachUserId, setCoachUserId] = useState<string | null>(null);
   const [sessionsHydrated, setSessionsHydrated] = useState(false);
+  const [resourceNotice, setResourceNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastSyncedPayloadRef = useRef<string>('');
 
@@ -422,7 +425,11 @@ export function ArtistCoach() {
   };
 
   const fetchResources = async () => {
-    const { data } = await supabase.from('bot_resources').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('bot_resources').select('*').order('created_at', { ascending: false });
+    if (error) {
+      setResourceNotice({ type: 'error', message: `Knowledge load failed: ${error.message}` });
+      return;
+    }
     if (data) setResources(data);
   };
 
@@ -445,13 +452,15 @@ export function ArtistCoach() {
         .map((m) => `${m.role === 'user' ? 'Artist' : 'Coach'}: ${m.content}`)
         .join('\n');
 
-      const res = await fetch('/api/coach/summarize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const { summary } = await res.json();
+      const { summary } = await fetchServerJsonWithFallback<{ summary?: string | null }>(
+        '/api/coach/summarize',
+        'coach-summarize',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transcript }),
+        },
+      );
       if (summary) updateSession(sessionId, { summary });
     } catch (err) {
       console.debug('[coach] Summary generation skipped:', err);
@@ -487,22 +496,19 @@ export function ArtistCoach() {
       const result = await requestCache.get(
         cacheKey,
         async () => {
-          const res = await fetch('/api/coach/context', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${session.access_token}`,
+          const json = await fetchServerJsonWithFallback<{ context?: string }>(
+            '/api/coach/context',
+            'coach-context',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({ question: query, page: 'coach', entityIds }),
+              signal: controller.signal,
             },
-            body: JSON.stringify({ question: query, page: 'coach', entityIds }),
-            signal: controller.signal,
-          });
-
-          if (!res.ok) {
-            const body = await res.json().catch(() => ({}));
-            throw new Error(body?.error ?? `Context fetch failed (${res.status})`);
-          }
-
-          const json = await res.json();
+          );
           return (json.context ?? '') as string;
         },
         60_000, // 60-second TTL
@@ -547,23 +553,29 @@ export function ArtistCoach() {
       const contextText = await getContext(text, []);
       const session = sessions.find((s) => s.id === sessionId);
       const recentMessages = updatedMessages.slice(-RECENT_MESSAGES_WINDOW);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20_000);
 
-      const res = await fetch('/api/coach/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: recentMessages,
-          contextText,
-          summary: session?.summary ?? null,
-        }),
-      });
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: 'Server error' }));
-        throw new Error(body.error ?? `HTTP ${res.status}`);
+      let payload: { text?: string };
+      try {
+        payload = await fetchServerJsonWithFallback<{ text?: string }>(
+          '/api/coach/chat',
+          'coach-chat',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messages: recentMessages,
+              contextText,
+              summary: session?.summary ?? null,
+            }),
+            signal: controller.signal,
+          },
+        );
+      } finally {
+        clearTimeout(timeout);
       }
-
-      const { text: aiContent } = await res.json();
+      const aiContent = payload.text;
       const finalMessages = [...updatedMessages, {
         role: 'assistant' as const,
         content: aiContent ?? "I couldn't process that — please try again.",
@@ -591,8 +603,12 @@ export function ArtistCoach() {
   const handleAddResource = async (e: React.FormEvent) => {
     e.preventDefault();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) {
+      setResourceNotice({ type: 'error', message: 'You must be signed in to save a knowledge resource.' });
+      return;
+    }
     setIsUploading(true);
+    setResourceNotice(null);
     let finalUrl = newResource.url;
     try {
       if (selectedFile && (newResource.type === 'image' || newResource.type === 'pdf')) {
@@ -605,15 +621,19 @@ export function ArtistCoach() {
         finalUrl = publicUrl;
       }
       const { error } = await supabase.from('bot_resources').insert([{ ...newResource, url: finalUrl, user_id: user.id }]);
-      if (!error) {
-        setNewResource({ title: '', content: '', category: 'General', type: 'text', url: '' });
-        setSelectedFile(null);
-        setIsAddingResource(false);
-        requestCache.invalidate('coach:kb');
-        fetchResources();
-      }
+      if (error) throw error;
+      setNewResource({ title: '', content: '', category: 'General', type: 'text', url: '' });
+      setSelectedFile(null);
+      setIsAddingResource(false);
+      setResourceNotice({ type: 'success', message: 'Knowledge resource saved.' });
+      requestCache.invalidate('coach:kb');
+      fetchResources();
     } catch (err) {
       console.error('Upload error:', err);
+      setResourceNotice({
+        type: 'error',
+        message: err instanceof Error ? `Knowledge save failed: ${err.message}` : 'Knowledge save failed.',
+      });
     } finally {
       setIsUploading(false);
     }
@@ -621,7 +641,14 @@ export function ArtistCoach() {
 
   const handleSaveEditResource = async (id: string) => {
     const { error } = await supabase.from('bot_resources').update(editingResource).eq('id', id);
-    if (!error) { setEditingResourceId(null); requestCache.invalidate('coach:kb'); fetchResources(); }
+    if (!error) {
+      setEditingResourceId(null);
+      setResourceNotice({ type: 'success', message: 'Knowledge resource updated.' });
+      requestCache.invalidate('coach:kb');
+      fetchResources();
+    } else {
+      setResourceNotice({ type: 'error', message: `Knowledge update failed: ${error.message}` });
+    }
   };
 
   const handleDrag = (e: React.DragEvent) => {
@@ -642,7 +669,13 @@ export function ArtistCoach() {
 
   const handleDeleteResource = async (id: string) => {
     const { error } = await supabase.from('bot_resources').delete().eq('id', id);
-    if (!error) { requestCache.invalidate('coach:kb'); fetchResources(); }
+    if (!error) {
+      setResourceNotice({ type: 'success', message: 'Knowledge resource deleted.' });
+      requestCache.invalidate('coach:kb');
+      fetchResources();
+    } else {
+      setResourceNotice({ type: 'error', message: `Knowledge delete failed: ${error.message}` });
+    }
   };
 
   // ── Sidebar component ─────────────────────────────────────────────────────
@@ -653,14 +686,25 @@ export function ArtistCoach() {
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 shrink-0 border-b border-slate-100">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">History</p>
-        <button
-          onClick={createNewSession}
-          className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-colors"
-          title="New chat"
-        >
-          <Plus className="h-3 w-3" /> New
-        </button>
+        {!sidebarCollapsed && <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">History</p>}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setSidebarCollapsed((value) => !value)}
+            className="hidden rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-800 md:inline-flex"
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {sidebarCollapsed ? <Menu className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+          </button>
+          {!sidebarCollapsed && (
+            <button
+              onClick={createNewSession}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-colors"
+              title="New chat"
+            >
+              <Plus className="h-3 w-3" /> New
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Session list */}
@@ -689,7 +733,7 @@ export function ArtistCoach() {
                     <MessageSquare
                       className={cn('mt-0.5 h-3 w-3 shrink-0 transition-colors', isActive ? 'text-blue-500' : 'text-slate-300')}
                     />
-                    <div className="min-w-0 flex-1">
+                    {!sidebarCollapsed && <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-1">
                         <p className="truncate text-[11px] font-semibold leading-tight text-slate-800">{s.title}</p>
                         <span className="shrink-0 text-[9px] text-slate-400 mt-0.5">{formatRelativeTime(s.updatedAt)}</span>
@@ -705,13 +749,10 @@ export function ArtistCoach() {
                           <p className="line-clamp-1 text-[9px] text-blue-400">Summarized</p>
                         </div>
                       )}
-                    </div>
-                    {/* Delete button — confirm step */}
-                    {isDeleting ? (
-                      <div
-                        className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1"
-                        onClick={(e) => e.stopPropagation()}
-                      >
+                    </div>}
+                    <div className="ml-auto shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {isDeleting ? (
+                        <div className="flex items-center gap-1">
                         <button
                           onClick={() => deleteSession(s.id)}
                           className="rounded-md bg-rose-500 px-2 py-0.5 text-[9px] font-bold text-white hover:bg-rose-600"
@@ -725,14 +766,18 @@ export function ArtistCoach() {
                           Cancel
                         </button>
                       </div>
-                    ) : (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setDeletingId(s.id); }}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 hidden rounded-md p-1 text-slate-300 hover:text-rose-500 group-hover:flex transition-colors"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    )}
+                      ) : (
+                        <button
+                          onClick={() => setDeletingId(s.id)}
+                          className={cn(
+                            'rounded-md p-1 text-slate-300 transition-colors hover:text-rose-500',
+                            sidebarCollapsed ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+                          )}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -746,7 +791,7 @@ export function ArtistCoach() {
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex h-[calc(100vh-88px)] flex-col gap-0 overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm">
+    <div className="flex h-[calc(100vh-88px)] flex-col gap-0 overflow-hidden rounded-[1.5rem] border border-slate-100 bg-white shadow-sm">
 
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5 shrink-0">
@@ -812,7 +857,7 @@ export function ArtistCoach() {
         {activeTab === 'chat' && (
           <>
             {/* Desktop sidebar */}
-            <div className="hidden md:flex w-60 shrink-0 flex-col border-r border-slate-100 bg-slate-50/60">
+            <div className={cn('hidden shrink-0 flex-col border-r border-slate-100 bg-slate-50/60 md:flex', sidebarCollapsed ? 'w-[72px]' : 'w-64')}>
               <SidebarContent />
             </div>
 
@@ -991,6 +1036,16 @@ export function ArtistCoach() {
             style={{ background: 'linear-gradient(160deg,#f6f8ff 0%,#ffffff 55%,#fafafa 100%)' }}
           >
             <div className="p-5 space-y-4">
+              {resourceNotice && (
+                <div className={cn(
+                  'rounded-2xl border px-4 py-3 text-sm',
+                  resourceNotice.type === 'success'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-rose-200 bg-rose-50 text-rose-700',
+                )}>
+                  {resourceNotice.message}
+                </div>
+              )}
               {/* Header */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">

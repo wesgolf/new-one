@@ -73,6 +73,21 @@
   status = 200
 
 [[redirects]]
+  from = "/api/soundcloud/public-tracks"
+  to = "/.netlify/functions/soundcloud-public-tracks"
+  status = 200
+
+[[redirects]]
+  from = "/api/integrations/soundcloud/sync-releases"
+  to = "/.netlify/functions/soundcloud-sync-releases"
+  status = 200
+
+[[redirects]]
+  from = "/api/integrations/songstats/sync-releases"
+  to = "/.netlify/functions/songstats-sync-releases"
+  status = 200
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200

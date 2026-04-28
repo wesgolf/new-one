@@ -59,6 +59,7 @@ function mapReleaseRecord(row: any): ReleaseRecord {
     isrc: row.isrc ?? row.distribution?.isrc ?? null,
     spotify_track_id: row.spotify_track_id ?? row.spotify_data?.track_id ?? null,
     soundcloud_track_id: row.soundcloud_track_id ?? row.distribution?.soundcloud_url ?? null,
+    songstats_track_id: row.songstats_track_id ?? null,
     notes: row.notes ?? row.rationale ?? null,
     status: row.status ?? null,
     created_at: row.created_at,
@@ -80,7 +81,10 @@ function mapReleaseRecord(row: any): ReleaseRecord {
         soundcloud: Number(row.performance?.streams?.soundcloud ?? 0),
         youtube: Number(row.performance?.streams?.youtube ?? 0),
       },
+      youtube_stats: row.performance?.youtube_stats ?? row.youtube_stats ?? null,
     },
+    soundcloud_stats: row.soundcloud_stats ?? null,
+    youtube_stats: row.performance?.youtube_stats ?? row.youtube_stats ?? null,
   } as ReleaseRecord;
 }
 
@@ -449,6 +453,34 @@ export async function fetchReleases() {
   console.log('[Releases] Raw row count:', rows.length);
   const mapped = rows.map(mapReleaseRecord);
   console.log('[Releases] Mapped release ids:', mapped.map((release) => release.id));
+  console.groupEnd();
+  return mapped;
+}
+
+export async function fetchReleaseList() {
+  console.groupCollapsed('[Releases] fetchReleaseList');
+  const { data, error } = await supabase
+    .from('releases')
+    .select(
+      'id,title,artist_name,artist,type,release_date,cover_art_url,bpm,musical_key,isrc,spotify_track_id,soundcloud_track_id,songstats_track_id,status,playlist_count,notable_playlists,recent_playlist_adds,playlist_source_provider,distribution,performance,soundcloud_stats,youtube_stats,created_at,updated_at',
+    )
+    .order('release_date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('[Releases] fetchReleaseList failed:', {
+      message: error.message,
+      details: (error as any)?.details ?? null,
+      hint: (error as any)?.hint ?? null,
+      code: (error as any)?.code ?? null,
+    });
+    console.groupEnd();
+    if (isMissingTableError(error)) return [] as ReleaseRecord[];
+    throw error;
+  }
+
+  const mapped = (data || []).map(mapReleaseRecord);
+  console.log('[Releases] List row count:', mapped.length);
   console.groupEnd();
   return mapped;
 }

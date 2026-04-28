@@ -82,7 +82,7 @@ export function UnauthorizedPageSettingsPanel() {
           </p>
           {settings.show_contact_link && (
             <span className="mt-1 text-xs font-semibold text-brand underline underline-offset-2 cursor-default">
-              Contact us →
+              {settings.contact_email ? `Contact us at ${settings.contact_email}` : 'Contact us →'}
             </span>
           )}
         </div>
@@ -107,6 +107,16 @@ export function UnauthorizedPageSettingsPanel() {
             placeholder={DEFAULT_UNAUTHORIZED_PAGE_SETTINGS.subtext}
             rows={2}
             className="w-full rounded-xl border border-border bg-white px-3.5 py-2 text-sm text-text-primary placeholder:text-text-muted outline-none focus:border-brand focus:ring-2 focus:ring-brand/10 transition-all resize-none"
+          />
+        </SettingsFieldRow>
+
+        <SettingsFieldRow label="Contact email" description="The email address used by the contact link on the unauthorized page.">
+          <input
+            type="email"
+            value={settings.contact_email}
+            onChange={e => setSettings(prev => ({ ...prev, contact_email: e.target.value }))}
+            placeholder="support@example.com"
+            className="w-full rounded-xl border border-border bg-white px-3.5 py-2 text-sm text-text-primary placeholder:text-text-muted outline-none focus:border-brand focus:ring-2 focus:ring-brand/10 transition-all"
           />
         </SettingsFieldRow>
 

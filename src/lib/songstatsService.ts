@@ -1,3 +1,5 @@
+import { fetchServerJsonWithFallback } from './serverApi';
+
 /**
  * Songstats Enterprise API v1 — typed service layer
  *
@@ -33,13 +35,11 @@ async function get<T>(path: string, params?: Record<string, string>): Promise<T>
   if (params) {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   }
-  const res = await fetch(url.toString(), {
-    headers: { Accept: 'application/json' },
-  });
-  if (res.status >= 400) {
-    throw new Error(`Songstats ${path} → HTTP ${res.status}`);
-  }
-  return res.json() as Promise<T>;
+  return fetchServerJsonWithFallback<T>(
+    `${url.pathname}${url.search}`,
+    `songstats${path}${url.search}`,
+    { headers: { Accept: 'application/json' } },
+  );
 }
 
 // ─── Shared sub-types ────────────────────────────────────────────────────────

@@ -31,6 +31,7 @@ import {
 let settingsTableUnavailable = false;
 const SETTINGS_TIMEOUT_MS = 4000;
 const SETTINGS_CACHE_PREFIX = 'artist_os_settings:';
+const SETTINGS_SEEDED_PREFIX = 'artist_os_settings_seeded:';
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
@@ -76,6 +77,10 @@ function writeCachedSettings(category: string, values: Record<string, unknown>) 
   } catch {
     // ignore local cache failures
   }
+}
+
+function seededKey(userId: string) {
+  return `${SETTINGS_SEEDED_PREFIX}${userId}`;
 }
 
 /** Convert an array of raw rows into a single plain object (key → value). */
@@ -278,6 +283,9 @@ async function ensureDefaultSettings(): Promise<void> {
   if (settingsTableUnavailable) return;
 
   const userId = await requireUserId();
+  if (typeof localStorage !== 'undefined' && localStorage.getItem(seededKey(userId)) === '1') {
+    return;
+  }
 
   const rows: Array<{ user_id: string; category: string; key: string; value_json: unknown }> = [];
 
@@ -306,6 +314,11 @@ async function ensureDefaultSettings(): Promise<void> {
 
     if (error && !isMissingTableError(error)) {
       console.warn('[settingsService] ensureDefaultSettings error:', error);
+      return;
+    }
+
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(seededKey(userId), '1');
     }
   } catch (err) {
     // Non-fatal — app should still function without default settings rows

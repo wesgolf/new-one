@@ -12,6 +12,10 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { signInWithEmail, LoginError } from '../lib/auth';
 import { useCurrentUser } from '../hooks/useCurrentUser';
+import { settingsService } from '../services/settingsService';
+import { ARTIST_INFO } from '../constants';
+import type { UnauthorizedPageSettings } from '../types/domain';
+import { DEFAULT_UNAUTHORIZED_PAGE_SETTINGS } from '../types/domain';
 
 // ─── Background decoration ────────────────────────────────────────────────────
 
@@ -60,7 +64,7 @@ function LogoMark({ size = 'md' }: { size?: 'sm' | 'md' }) {
 
 // ─── Access-restricted view (logged in but no permission) ─────────────────────
 
-function AccessDeniedView() {
+function AccessDeniedView({ heading, subtext, showContactLink, contactEmail }: { heading: string; subtext: string; showContactLink: boolean; contactEmail: string }) {
   return (
     <motion.div
       className="glass-modal flex w-full max-w-[480px] flex-col items-center gap-6 p-8 text-center"
@@ -77,11 +81,20 @@ function AccessDeniedView() {
       </div>
 
       <div className="space-y-2">
-        <h1 className="text-2xl font-bold tracking-tight text-text-primary">Access restricted</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-text-primary">{heading}</h1>
         <p className="max-w-xs text-[14px] leading-relaxed text-text-secondary">
-          Your account doesn't have permission to view this page. Contact your administrator to request access.
+          {subtext}
         </p>
       </div>
+
+      {showContactLink && contactEmail ? (
+        <a
+          href={`mailto:${contactEmail}`}
+          className="text-sm font-semibold text-brand hover:text-brand-hover"
+        >
+          Contact support
+        </a>
+      ) : null}
 
       <div className="flex flex-col gap-3 w-full max-w-[260px]">
         <Link
@@ -272,31 +285,53 @@ export function Unauthorized() {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated, isLoading, role } = useCurrentUser();
+  const [unauthorizedPageSettings, setUnauthorizedPageSettings] = useState<UnauthorizedPageSettings>(
+    () => settingsService.getCachedSettingsByCategory('unauthorized_page'),
+  );
 
   // Where to go after successful login (respects original destination)
   const from = (location.state as any)?.from?.pathname ?? '/dashboard';
 
-  // Redirect when auth context confirms login is complete.
-  // Uses isAuthenticated only (not role) so we don't wait for a second
-  // render cycle after the profile fetch completes — eliminates perceived slowness.
   useEffect(() => {
-    if (!isLoading && isAuthenticated) {
+    let cancelled = false;
+    void settingsService.unauthorizedPage.get()
+      .then((settings) => {
+        if (!cancelled) setUnauthorizedPageSettings(settings);
+      })
+      .catch(() => {
+        // Keep cached/default settings if loading fails.
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Redirect when auth context confirms login is complete and role is present.
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && role) {
       navigate(from, { replace: true });
     }
-  }, [isLoading, isAuthenticated, navigate, from]);
+  }, [isLoading, isAuthenticated, role, navigate, from]);
 
   // Determine display mode
   // - isAuthenticated + no role → show "access restricted" (account exists but no profile/role yet)
   const isRestricted = isAuthenticated && !role && !isLoading;
+  const heading = unauthorizedPageSettings.heading || DEFAULT_UNAUTHORIZED_PAGE_SETTINGS.heading;
+  const subtext = unauthorizedPageSettings.subtext || DEFAULT_UNAUTHORIZED_PAGE_SETTINGS.subtext;
+  const showContactLink = unauthorizedPageSettings.show_contact_link ?? DEFAULT_UNAUTHORIZED_PAGE_SETTINGS.show_contact_link;
+  const contactEmail = unauthorizedPageSettings.contact_email || ARTIST_INFO.email || '';
 
   return (
-    <div className="relative min-h-dvh bg-background px-4 py-24">
+    <div className="relative min-h-screen bg-background px-4 py-16">
       <Background />
-      <div className="mx-auto flex min-h-[calc(100dvh-12rem)] max-w-[430px] items-center justify-center">
+      <div className="mx-auto flex min-h-screen max-w-[430px] items-center justify-center">
         <AnimatePresence mode="wait">
           {isRestricted ? (
             <motion.div key="denied" className="w-full">
-              <AccessDeniedView />
+              <AccessDeniedView
+                heading={heading}
+                subtext={subtext}
+                showContactLink={showContactLink}
+                contactEmail={contactEmail}
+              />
             </motion.div>
           ) : (
             <motion.div key="login" className="w-full">

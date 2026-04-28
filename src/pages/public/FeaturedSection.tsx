@@ -57,10 +57,10 @@ export default function FeaturedSection({
             </div>
           </div>
 
-          <div className="flex flex-col justify-between gap-8 p-6 sm:p-8">
+            <div className="flex flex-col justify-between gap-6 p-5 sm:p-7">
             <div className="space-y-4">
               <div className="space-y-2">
-                <h2 className="text-3xl font-black tracking-tight text-white sm:text-4xl">
+                <h2 className="text-2xl font-black tracking-tight text-white sm:text-4xl">
                   {title}
                 </h2>
                 <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/35">
@@ -85,7 +85,7 @@ export default function FeaturedSection({
                     rel="noopener noreferrer"
                     whileHover={{ y: -1 }}
                     whileTap={{ scale: 0.99 }}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-white/80 transition-colors hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
+                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/[0.05] px-4 py-3 text-center text-sm font-semibold text-white/80 transition-colors hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
                   >
                     <Icon className="h-4 w-4" />
                     {label}

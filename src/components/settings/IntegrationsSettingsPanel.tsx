@@ -13,6 +13,7 @@ import { ARTIST_INFO } from '../../constants';
 import { env } from '../../lib/envConfig';
 import { fetchArtistCatalog, fetchArtistStats, fetchTrackInfo, fetchTrackStats, type ArtistCatalogTrack } from '../../lib/songstatsService';
 import { fetchReleases, saveRelease } from '../../lib/supabaseData';
+import { fetchServerJsonWithFallback } from '../../lib/serverApi';
 import { SettingsCard, SettingsFieldRow, SettingsLoadingSkeleton, SettingsSectionHeader } from './SettingsPrimitives';
 
 // ─── Platform metadata ────────────────────────────────────────────────────────
@@ -129,12 +130,10 @@ export function IntegrationsSettingsPanel() {
 
       if (platform === 'zernio') {
         console.log('[Integrations][Zernio] Fetching /api/zernio/accounts');
-        const response = await fetch('/api/zernio/accounts');
-        console.log('[Integrations][Zernio] Response status:', response.status, response.statusText);
-        if (!response.ok) {
-          throw new Error(`Zernio API returned ${response.status} ${response.statusText}`);
-        }
-        const data = await response.json();
+        const data = await fetchServerJsonWithFallback<any>(
+          '/api/zernio/accounts',
+          'zernio/accounts',
+        );
         const count = Array.isArray(data) ? data.length : Array.isArray(data?.accounts) ? data.accounts.length : 0;
         console.log('[Integrations][Zernio] Account count:', count);
         message = `Fetched ${count} Zernio account${count === 1 ? '' : 's'}.`;
@@ -188,12 +187,10 @@ export function IntegrationsSettingsPanel() {
             throw new Error('Missing SoundCloud artist URL.');
           }
           console.log('[Integrations][SoundCloud] Fetching public profile URL:', profileUrl);
-          const response = await fetch(`/api/soundcloud/public-tracks?url=${encodeURIComponent(profileUrl)}&limit=200`);
-          console.log('[Integrations][SoundCloud] Public response status:', response.status, response.statusText);
-          if (!response.ok) {
-            throw new Error(`SoundCloud public tracks returned ${response.status} ${response.statusText}`);
-          }
-          const data = await response.json();
+          const data = await fetchServerJsonWithFallback<{ tracks?: any[] }>(
+            `/api/soundcloud/public-tracks?url=${encodeURIComponent(profileUrl)}&limit=200`,
+            `soundcloud-public-tracks?url=${encodeURIComponent(profileUrl)}&limit=200`,
+          );
           tracks = Array.isArray(data?.tracks) ? data.tracks : [];
           console.log('[Integrations][SoundCloud] Public track count:', tracks.length);
         }
@@ -449,26 +446,24 @@ async function syncSoundCloudReleases(tracks: any[]) {
     console.log('[Integrations][SoundCloud] Access token present:', Boolean(token));
     if (token) {
       console.log('[Integrations][SoundCloud] Calling server sync endpoint: /api/integrations/soundcloud/sync-releases');
-      const response = await fetch('/api/integrations/soundcloud/sync-releases', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+      const payload = await fetchServerJsonWithFallback<any>(
+        '/api/integrations/soundcloud/sync-releases',
+        'soundcloud-sync-releases',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ tracks }),
         },
-        body: JSON.stringify({ tracks }),
-      });
-      console.log('[Integrations][SoundCloud] Server sync status:', response.status, response.statusText);
-      const payload = await response.json().catch(() => null);
+      );
       console.log('[Integrations][SoundCloud] Server sync payload:', payload);
-      if (!response.ok) {
-        console.groupEnd();
-        throw buildSyncError('SoundCloud server sync failed', payload, response.status);
-      }
       if (payload?.error) {
         console.groupEnd();
-        throw buildSyncError('SoundCloud server sync failed', payload, response.status);
+        throw buildSyncError('SoundCloud server sync failed', payload);
       }
-      if (response.ok && payload && typeof payload === 'object') {
+      if (payload && typeof payload === 'object') {
         const created = Number((payload as any).created ?? 0);
         const updated = Number((payload as any).updated ?? 0);
         const skipped = Number((payload as any).skipped ?? 0);
@@ -604,6 +599,44 @@ function songstatsSourceValue(stats: Array<{ source: string; data: Record<string
 async function syncSongstatsReleases(songstatsArtistId: string) {
   console.group('[Integrations][Songstats] syncSongstatsReleases');
   console.log('[Integrations][Songstats] Artist id:', songstatsArtistId);
+  try {
+    const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+    if (sessionErr) {
+      console.warn('[Integrations][Songstats] supabase.auth.getSession error:', sessionErr.message);
+    }
+    const token = sessionData?.session?.access_token ?? null;
+    if (token) {
+      console.log('[Integrations][Songstats] Calling server sync endpoint: /api/integrations/songstats/sync-releases');
+      const payload = await fetchServerJsonWithFallback<any>(
+        '/api/integrations/songstats/sync-releases',
+        'songstats-sync-releases',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ songstatsArtistId }),
+        },
+      );
+      console.log('[Integrations][Songstats] Server sync payload:', payload);
+      if (payload?.error) {
+        throw new Error(payload.error);
+      }
+      if (payload && typeof payload === 'object') {
+        const updated = Number(payload.updated ?? 0);
+        const skipped = Number(payload.skipped ?? 0);
+        console.log('[Integrations][Songstats] Server sync summary:', { updated, skipped });
+        console.groupEnd();
+        return { updated, skipped };
+      }
+    }
+  } catch (error: any) {
+    console.warn('[Integrations][Songstats] Server sync failed; falling back to client-side saveRelease path.', {
+      message: error?.message ?? String(error),
+    });
+  }
+
   const [releases, catalogResponse] = await Promise.all([
     fetchReleases(),
     fetchArtistCatalog(songstatsArtistId, { limit: 200 }),
@@ -667,16 +700,16 @@ async function syncSongstatsReleases(songstatsArtistId: string) {
     const distribution = {
       spotify_url: links.find((link) => link.source === 'spotify')?.url ?? release.distribution?.spotify_url ?? null,
       apple_music_url: links.find((link) => link.source === 'apple_music')?.url ?? release.distribution?.apple_music_url ?? null,
-      soundcloud_url: links.find((link) => link.source === 'soundcloud')?.url ?? release.distribution?.soundcloud_url ?? null,
-      youtube_url: links.find((link) => link.source === 'youtube')?.url ?? release.distribution?.youtube_url ?? null,
+      soundcloud_url: release.distribution?.soundcloud_url ?? null,
+      youtube_url: release.distribution?.youtube_url ?? null,
     };
 
     const performance = {
       streams: {
         spotify: songstatsSourceValue(trackStats?.stats ?? [], 'spotify', 'streams_total') || Number(release.performance?.streams?.spotify ?? 0),
         apple: songstatsSourceValue(trackStats?.stats ?? [], 'apple_music', 'streams_total') || Number(release.performance?.streams?.apple ?? 0),
-        soundcloud: songstatsSourceValue(trackStats?.stats ?? [], 'soundcloud', 'plays_total') || Number(release.performance?.streams?.soundcloud ?? 0),
-        youtube: songstatsSourceValue(trackStats?.stats ?? [], 'youtube', 'video_views_total') || Number(release.performance?.streams?.youtube ?? 0),
+        soundcloud: Number(release.performance?.streams?.soundcloud ?? 0),
+        youtube: Number(release.performance?.streams?.youtube ?? 0),
       },
     };
     console.log('[Integrations][Songstats] saveRelease payload summary:', {

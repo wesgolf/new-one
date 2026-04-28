@@ -28,9 +28,9 @@ export function CareerMap() {
   useEffect(() => {
     async function fetchData() {
       const [g, r, s] = await Promise.all([
-        supabase.from('goals').select('*').order('deadline', { ascending: true }),
-        supabase.from('releases').select('*').order('release_date', { ascending: true }),
-        supabase.from('shows').select('*').order('date', { ascending: true }),
+        supabase.from('goals').select('id,title,target,current,status,status_indicator,deadline').order('deadline', { ascending: true }),
+        supabase.from('releases').select('id,title,status,release_date,distribution').order('release_date', { ascending: true }),
+        supabase.from('shows').select('id,title,venue,date').order('date', { ascending: true }),
       ]);
       setGoals(g.data || []);
       setReleases(r.data || []);

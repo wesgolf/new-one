@@ -59,13 +59,13 @@ export default function RadioShow({ release, soundcloudUrl, youtubeUrl }: RadioS
               </div>
             </div>
 
-            <div className="flex flex-col justify-between gap-8 p-6 sm:p-8">
+            <div className="flex flex-col justify-between gap-6 p-5 sm:p-7">
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/35">
                   {releaseDate && <span>{releaseDate}</span>}
                   {release?.type && <span>{release.type}</span>}
                 </div>
-                <h3 className="text-3xl font-black leading-tight tracking-tight text-white sm:text-4xl">
+                <h3 className="text-2xl font-black leading-tight tracking-tight text-white sm:text-4xl">
                   {title}
                 </h3>
                 <p className="max-w-2xl text-sm leading-relaxed text-white/55">

@@ -235,6 +235,50 @@ async function startServer() {
       },
     });
     const html = String(response.data || '');
+    const hydrationMatch = html.match(/window\.__sc_hydration = (.*?);<\/script>/s);
+    const hydration = hydrationMatch ? JSON.parse(hydrationMatch[1]) : [];
+    const clientId = hydration.find((entry: any) => entry?.hydratable === 'apiClient')?.data?.id;
+
+    if (clientId) {
+      const resolveResponse = await axios.get('https://api-v2.soundcloud.com/resolve', {
+        timeout: 15000,
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'Artist-OS/1.0',
+        },
+        params: {
+          url: profileUrl,
+          client_id: clientId,
+        },
+      });
+
+      const userId = resolveResponse.data?.id;
+      if (userId) {
+        const tracksResponse = await axios.get(`https://api-v2.soundcloud.com/users/${userId}/tracks`, {
+          timeout: 15000,
+          headers: {
+            Accept: 'application/json',
+            'User-Agent': 'Artist-OS/1.0',
+          },
+          params: {
+            client_id: clientId,
+            limit,
+          },
+        });
+
+        const collection = Array.isArray(tracksResponse.data?.collection) ? tracksResponse.data.collection : [];
+        return collection.map((track: any) => ({
+          title: String(track?.title ?? '').trim(),
+          permalink_url: String(track?.permalink_url ?? '').trim(),
+          created_at: track?.created_at ?? null,
+          playback_count: Number(track?.playback_count ?? 0),
+          likes_count: Number(track?.likes_count ?? track?.favoritings_count ?? 0),
+          reposts_count: Number(track?.reposts_count ?? 0),
+          comment_count: Number(track?.comment_count ?? 0),
+        })).filter((track: any) => track.title && track.permalink_url);
+      }
+    }
+
     return Array.from(
       html.matchAll(
         /<article[^>]*itemtype="http:\/\/schema\.org\/MusicRecording"[^>]*>[\s\S]*?<a itemprop="url" href="([^"]+)">([\s\S]*?)<\/a>[\s\S]*?<time pubdate>([^<]+)<\/time>/gi,
@@ -250,6 +294,9 @@ async function startServer() {
           permalink_url: new URL(href, profileUrl).toString(),
           created_at: publishedAt,
           playback_count: 0,
+          likes_count: 0,
+          reposts_count: 0,
+          comment_count: 0,
         };
       })
       .filter(Boolean)
@@ -992,16 +1039,16 @@ async function startServer() {
       const distribution = {
         spotify_url: links.find((link) => link.source === 'spotify')?.url ?? releaseDistribution.spotify_url ?? null,
         apple_music_url: links.find((link) => link.source === 'apple_music')?.url ?? releaseDistribution.apple_music_url ?? null,
-        soundcloud_url: links.find((link) => link.source === 'soundcloud')?.url ?? releaseDistribution.soundcloud_url ?? null,
-        youtube_url: links.find((link) => link.source === 'youtube')?.url ?? releaseDistribution.youtube_url ?? null,
+        soundcloud_url: releaseDistribution.soundcloud_url ?? null,
+        youtube_url: releaseDistribution.youtube_url ?? null,
       };
       const stats = trackStats?.stats ?? [];
       const performance = {
         streams: {
           spotify: songstatsSourceValue(stats, 'spotify', 'streams_total') || Number(existingStreams.spotify ?? 0),
           apple: songstatsSourceValue(stats, 'apple_music', 'streams_total') || Number(existingStreams.apple ?? 0),
-          soundcloud: songstatsSourceValue(stats, 'soundcloud', 'streams_total') || Number(existingStreams.soundcloud ?? 0),
-          youtube: songstatsSourceValue(stats, 'youtube', 'video_views_total') || Number(existingStreams.youtube ?? 0),
+          soundcloud: Number(existingStreams.soundcloud ?? 0),
+          youtube: Number(existingStreams.youtube ?? 0),
         },
       };
       const spotifyTrackId =
@@ -1087,6 +1134,12 @@ async function startServer() {
           youtube: Number(existingStreams.youtube ?? 0),
         },
       };
+      const soundcloudStats = sql.json({
+        plays: Number(track?.playback_count ?? 0),
+        likes: Number(track?.likes_count ?? track?.favoritings_count ?? 0),
+        reposts: Number(track?.reposts_count ?? 0),
+        comments: Number(track?.comment_count ?? 0),
+      });
       const releaseDate = String(track?.created_at ?? '').split('T')[0] || new Date().toISOString().split('T')[0];
 
       if (existing) {
@@ -1096,6 +1149,7 @@ async function startServer() {
             soundcloud_track_id = ${permalinkUrl},
             distribution = ${sql.json(distribution)},
             performance = ${sql.json(performance)},
+            soundcloud_stats = ${soundcloudStats},
             release_date = COALESCE(release_date, ${releaseDate}::date),
             status = COALESCE(status, 'released'),
             updated_at = NOW()
@@ -1105,11 +1159,11 @@ async function startServer() {
       } else {
         await sql`
           INSERT INTO releases (
-            user_id, title, status, release_date, soundcloud_track_id, distribution, performance, created_at, updated_at
+            user_id, title, status, release_date, soundcloud_track_id, distribution, performance, soundcloud_stats, created_at, updated_at
           )
           VALUES (
             ${userId}::uuid, ${title}, 'released', ${releaseDate}::date, ${permalinkUrl},
-            ${sql.json(distribution)}, ${sql.json(performance)}, NOW(), NOW()
+            ${sql.json(distribution)}, ${sql.json(performance)}, ${soundcloudStats}, NOW(), NOW()
           )
         `;
         created += 1;
@@ -1243,6 +1297,176 @@ async function startServer() {
     }
   });
 
+  app.post('/api/integrations/songstats/sync-releases', async (req: Request, res: Response) => {
+    const authHeader = String(req.headers['authorization'] ?? '');
+    if (!authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing Authorization header' });
+    }
+
+    if (!SONGSTATS_API_KEY) {
+      return res.status(503).json({ error: 'Songstats API key not configured on server.' });
+    }
+
+    const databaseUrl = readDatabaseUrlFromEnv();
+    if (!databaseUrl) {
+      return res.status(503).json({ error: 'DATABASE_URL is not configured on the server.' });
+    }
+
+    const SUPABASE_URL_SERVER = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? '';
+    const SUPABASE_ANON_SERVER = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON ?? process.env.VITE_SUPABASE_PK ?? '';
+    if (!SUPABASE_URL_SERVER || !SUPABASE_ANON_SERVER) {
+      return res.status(500).json({ error: 'Supabase server client is not configured.' });
+    }
+
+    const songstatsArtistId = String((req.body as any)?.songstatsArtistId ?? '').trim();
+    if (!songstatsArtistId) {
+      return res.status(400).json({ error: 'songstatsArtistId is required' });
+    }
+
+    const { createClient: createSbClient } = await import('@supabase/supabase-js');
+    const token = authHeader.slice(7);
+    const sb = createSbClient(SUPABASE_URL_SERVER, SUPABASE_ANON_SERVER, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+      auth: { persistSession: false },
+    });
+    const { data: { user }, error: authErr } = await sb.auth.getUser(token);
+    if (authErr || !user) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+
+    const normalizeReleaseTitleLocal = (value: string | null | undefined) =>
+      String(value || '')
+        .toLowerCase()
+        .replace(/\(.*?\)|\[.*?\]/g, '')
+        .replace(/[-–—]+/g, ' ')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+
+    const songstatsSourceValueLocal = (
+      stats: Array<{ source: string; data: Record<string, number> }>,
+      source: string,
+      key: string,
+    ) => Number(stats.find((entry) => entry.source === source)?.data?.[key] ?? 0);
+
+    const fetchSongstats = async <T>(path: string, params: Record<string, string>) => {
+      const response = await axios.get(`${SONGSTATS_API_BASE}${path}`, {
+        headers: {
+          Accept: 'application/json',
+          apikey: SONGSTATS_API_KEY,
+        },
+        params,
+        timeout: 15000,
+      });
+      return response.data as T;
+    };
+
+    const sql = postgres(databaseUrl, { ssl: 'require', max: 1 });
+    let updated = 0;
+    let skipped = 0;
+    const failures: Array<{ releaseId: string; title: string; error: string }> = [];
+
+    try {
+      const releases = await sql`
+        SELECT id, title, isrc, spotify_track_id, distribution, performance
+        FROM releases
+        WHERE user_id = ${user.id}::uuid
+        ORDER BY updated_at DESC
+      `;
+
+      const catalogResponse = await fetchSongstats<{
+        catalog?: Array<{ songstats_track_id: string; title: string; isrcs?: string[] }>;
+      }>('/artists/catalog', {
+        songstats_artist_id: songstatsArtistId,
+        source_ids: 'all',
+        limit: '200',
+      });
+      const catalog = Array.isArray(catalogResponse.catalog) ? catalogResponse.catalog : [];
+      const catalogByTitle = new Map(catalog.map((track) => [normalizeReleaseTitleLocal(track.title), track]));
+      const catalogByIsrc = new Map(
+        catalog.flatMap((track) => (track.isrcs ?? []).map((isrc) => [String(isrc).trim(), track] as const)),
+      );
+
+      for (const release of releases) {
+        const matched =
+          (release.isrc ? catalogByIsrc.get(String(release.isrc).trim()) : null) ??
+          catalogByTitle.get(normalizeReleaseTitleLocal(release.title));
+        if (!matched) {
+          skipped += 1;
+          continue;
+        }
+
+        try {
+          const [trackStats, trackInfo] = await Promise.all([
+            fetchSongstats<{ stats?: Array<{ source: string; data: Record<string, number> }> }>(
+              '/tracks/stats',
+              { songstats_track_id: matched.songstats_track_id, source_ids: 'all' },
+            ).catch(() => null),
+            fetchSongstats<{ track_info?: { links?: Array<{ source: string; external_id: string; url: string }> } }>(
+              '/tracks/info',
+              { songstats_track_id: matched.songstats_track_id },
+            ).catch(() => null),
+          ]);
+
+          if (!trackStats && !trackInfo) {
+            skipped += 1;
+            continue;
+          }
+
+          const releaseDistribution = (release.distribution ?? {}) as Record<string, unknown>;
+          const releasePerformance = (release.performance ?? {}) as Record<string, any>;
+          const existingStreams = (releasePerformance.streams ?? {}) as Record<string, number>;
+          const links = trackInfo?.track_info?.links ?? [];
+          const distribution = {
+            spotify_url: links.find((link) => link.source === 'spotify')?.url ?? releaseDistribution.spotify_url ?? null,
+            apple_music_url: links.find((link) => link.source === 'apple_music')?.url ?? releaseDistribution.apple_music_url ?? null,
+            soundcloud_url: releaseDistribution.soundcloud_url ?? null,
+            youtube_url: releaseDistribution.youtube_url ?? null,
+          };
+          const stats = trackStats?.stats ?? [];
+          const performance = {
+            streams: {
+              spotify: songstatsSourceValueLocal(stats, 'spotify', 'streams_total') || Number(existingStreams.spotify ?? 0),
+              apple: songstatsSourceValueLocal(stats, 'apple_music', 'streams_total') || Number(existingStreams.apple ?? 0),
+              soundcloud: Number(existingStreams.soundcloud ?? 0),
+              youtube: Number(existingStreams.youtube ?? 0),
+            },
+          };
+          const spotifyTrackId =
+            release.spotify_track_id ??
+            links.find((link) => link.source === 'spotify')?.external_id ??
+            null;
+
+          await sql`
+            UPDATE releases
+            SET
+              distribution = ${sql.json(distribution)},
+              performance = ${sql.json(performance)},
+              spotify_track_id = COALESCE(spotify_track_id, ${spotifyTrackId}),
+              updated_at = NOW()
+            WHERE id = ${release.id}::uuid
+          `;
+          updated += 1;
+        } catch (error: any) {
+          skipped += 1;
+          failures.push({
+            releaseId: String(release.id),
+            title: String(release.title),
+            error: error?.message ?? String(error),
+          });
+        }
+      }
+
+      return res.status(200).json({ updated, skipped, failures });
+    } catch (error: any) {
+      return res.status(500).json({
+        error: 'Songstats release sync failed',
+        message: error?.message ?? String(error),
+      });
+    } finally {
+      await sql.end({ timeout: 2 });
+    }
+  });
+
   // Zernio API Config
   const ZERNIO_API_KEY = process.env.VITE_ZERNIO_KEY || process.env.VITE_ZERNIO_API_KEY || process.env.ZERNIO_API_KEY;
   const ZERNIO_API_BASE = 'https://zernio.com/api/v1';
@@ -1266,6 +1490,8 @@ async function startServer() {
     '/analytics/daily-metrics',
     '/analytics/overview',
     '/analytics/posting-frequency',
+    '/analytics/youtube/daily-views',
+    '/analytics/youtube/demographics',
     '/calendar',
     '/settings',
     '/user',

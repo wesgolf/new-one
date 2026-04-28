@@ -25,6 +25,7 @@ export interface HubSettings {
   contactEmail:  string;
   pressKitUrl:   string;
   featuredReleaseId?: string | null;
+  radioMixReleaseId?: string | null;
   featuredTracks: Array<{ title: string; url: string; streams: string }>;
 }
 
@@ -43,6 +44,7 @@ export const DEFAULT_PUBLIC_HUB_SETTINGS: HubSettings = {
   contactEmail:  ARTIST_INFO.email ?? '',
   pressKitUrl:   ARTIST_INFO.press_kit_url ?? '',
   featuredReleaseId: null,
+  radioMixReleaseId: null,
   featuredTracks: [],
 };
 

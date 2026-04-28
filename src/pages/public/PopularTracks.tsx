@@ -30,7 +30,7 @@ export default function PopularTracks({ tracks, loading = false }: PopularTracks
       <div className="flex items-end justify-between gap-4 px-1">
         <div>
           <h2 className="text-2xl font-black tracking-tight text-white">
-          Popular Tracks
+            Popular Tracks
           </h2>
           <p className="mt-2 text-sm text-white/40">
             Top 8 tracks ranked by cumulative streams across Spotify, Apple Music, SoundCloud, and YouTube.
@@ -73,7 +73,7 @@ export default function PopularTracks({ tracks, loading = false }: PopularTracks
             {columns.map((column, columnIndex) => (
               <div
                 key={columnIndex}
-                className="min-w-[calc(100%-1rem)] snap-center rounded-[2rem] border border-white/10 bg-white/[0.03] p-3 md:min-w-0"
+                className="min-w-full snap-center rounded-[2rem] border border-white/10 bg-white/[0.03] p-3 md:min-w-0"
               >
                 <div className="space-y-2">
                   {column.map((track, trackIndex) => {
@@ -103,7 +103,7 @@ export default function PopularTracks({ tracks, loading = false }: PopularTracks
                               {formatStreams(track.totalStreams)} streams
                             </span>
                           </div>
-                          <h3 className="truncate text-base font-bold text-white">
+                          <h3 className="line-clamp-2 text-sm font-bold leading-snug text-white sm:text-base">
                             {track.title}
                           </h3>
                         </div>

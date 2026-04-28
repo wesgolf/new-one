@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { fetchReleases, deleteRelease } from '../lib/supabaseData';
+import { fetchReleaseList, deleteRelease } from '../lib/supabaseData';
 import { useCurrentUserRole } from '../hooks/useCurrentUserRole';
 import { subscribeAssistantActions } from '../lib/commandBus';
 import { useAssistantPageContext } from '../hooks/useAssistantPageContext';
@@ -87,7 +87,7 @@ export function ReleaseTracker() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setReleases(await fetchReleases());
+      setReleases(await fetchReleaseList());
     } finally {
       setLoading(false);
     }

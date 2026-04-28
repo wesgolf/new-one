@@ -1,95 +1,54 @@
 import { Handler } from '@netlify/functions';
 
+const SONGSTATS_API_KEY =
+  process.env.SONGSTATS_API_KEY ??
+  process.env.VITE_SONGSTATS_API_KEY;
+const SONGSTATS_API_BASE = 'https://api.songstats.com/enterprise/v1';
+
+const CORS = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+};
+
 export const handler: Handler = async (event) => {
-  // Ensure event has a type
-  const typedEvent = event as { body: string };
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 204, headers: CORS, body: '' };
+  }
+
+  if (event.httpMethod !== 'GET') {
+    return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: 'Method not allowed' }) };
+  }
+
+  if (!SONGSTATS_API_KEY) {
+    return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Songstats API key not configured' }) };
+  }
+
+  const upstreamPath = (event.path ?? '').replace(/^\/(?:\.netlify\/functions\/)?songstats/, '') || '/';
+  const url = `${SONGSTATS_API_BASE}${upstreamPath}${event.rawQuery ? `?${event.rawQuery}` : ''}`;
+
   try {
-    const body = JSON.parse(typedEvent.body);
-
-    const SONGSTATS_API_KEY = process.env.SONGSTATS_API_KEY;
-    const SONGSTATS_ARTIST_ID = process.env.SONGSTATS_ARTIST_ID;
-
-    if (!SONGSTATS_API_KEY || !SONGSTATS_ARTIST_ID) {
-      return {
-        statusCode: 400,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          error: 'Missing required environment variables: SONGSTATS_API_KEY or SONGSTATS_ARTIST_ID.',
-        }),
-      };
-    }
-
-    const path = event.path.replace('/api/songstats', '');
-    const url = `https://api.songstats.com/enterprise/v1${path}`;
-
-    try {
-      const response = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${SONGSTATS_API_KEY}`,
-        },
-      });
-
-      if (!response.ok) {
-        return {
-          statusCode: response.status,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            error: 'Failed to fetch data from Songstats.',
-            details: await response.text(),
-          }),
-        };
-      }
-
-      const data = await response.json();
-      return {
-        statusCode: 200,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-      };
-    } catch (error) {
-      if (error instanceof Error) {
-        console.error('Error:', error.message);
-        return {
-          statusCode: 500,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            error: 'Internal server error.',
-            details: error.message,
-          }),
-        };
-      } else {
-        console.error('Unknown error:', error);
-        return {
-          statusCode: 500,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            error: 'Internal server error.',
-            details: 'Unknown error occurred.',
-          }),
-        };
-      }
-    }
-  } catch (error) {
-    console.error('Songstats handler error:', error);
-    return {
-      statusCode: 500,
+    const response = await fetch(url, {
       headers: {
-        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        apikey: SONGSTATS_API_KEY,
       },
-      body: JSON.stringify({
-        error: 'Failed to parse request.',
-        details: error instanceof Error ? error.message : String(error),
-      }),
+    });
+
+    const text = await response.text();
+    return {
+      statusCode: response.status,
+      headers: CORS,
+      body: text,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[songstats] proxy error:', message);
+    return {
+      statusCode: 502,
+      headers: CORS,
+      body: JSON.stringify({ error: 'Songstats proxy error', message }),
     };
   }
 };

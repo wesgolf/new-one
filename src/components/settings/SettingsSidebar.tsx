@@ -21,7 +21,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     id:          'integrations',
     label:       'Integrations',
-    description: 'Connected platforms',
+    description: 'API providers',
     Icon:        Plug2,
   },
   {

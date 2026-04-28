@@ -133,66 +133,13 @@ function statusLabel(s: string | null | undefined) {
 
 // ── Track Stats Panel (Songstats) ────────────────────────────────────────────
 
-const PLATFORM_CONFIG: Record<string, {
-  label: string;
-  color: string;
-  bg: string;
-  icon: string;
-  fields: { key: string; label: string; }[];
-}> = {
-  spotify: {
-    label: 'Spotify', color: 'text-[#1DB954]', bg: 'bg-[#1DB954]/8', icon: '🎵',
-    fields: [
-      { key: 'streams_total',          label: 'Streams' },
-      { key: 'saves_total',            label: 'Saves' },
-      { key: 'playlist_count_current', label: 'Playlists' },
-      { key: 'playlist_reach_current', label: 'Playlist Reach' },
-    ],
-  },
-  soundcloud: {
-    label: 'SoundCloud', color: 'text-[#FF5500]', bg: 'bg-[#FF5500]/8', icon: '🔊',
-    fields: [
-      { key: 'plays_total',  label: 'Plays' },
-      { key: 'likes_total',  label: 'Likes' },
-      { key: 'reposts_total', label: 'Reposts' },
-    ],
-  },
-  apple_music: {
-    label: 'Apple Music', color: 'text-[#FA243C]', bg: 'bg-[#FA243C]/8', icon: '🎶',
-    fields: [
-      { key: 'playlists_current', label: 'Playlists' },
-      { key: 'playlists_editorial_current', label: 'Editorial' },
-    ],
-  },
-  shazam: {
-    label: 'Shazam', color: 'text-[#0066FF]', bg: 'bg-[#0066FF]/8', icon: '⚡',
-    fields: [
-      { key: 'shazams_total',  label: 'Shazams' },
-      { key: 'charts_current', label: 'Charts' },
-    ],
-  },
-  youtube: {
-    label: 'YouTube', color: 'text-[#FF0000]', bg: 'bg-[#FF0000]/8', icon: '▶️',
-    fields: [
-      { key: 'video_views_total', label: 'Views' },
-      { key: 'likes_total',       label: 'Likes' },
-    ],
-  },
-  tiktok: {
-    label: 'TikTok', color: 'text-slate-900', bg: 'bg-slate-100', icon: '🎵',
-    fields: [
-      { key: 'sounds_total', label: 'Sounds' },
-      { key: 'views_total',  label: 'Views' },
-    ],
-  },
-  beatport: {
-    label: 'Beatport', color: 'text-[#00FF95]', bg: 'bg-[#00FF95]/10', icon: '🎧',
-    fields: [
-      { key: 'overall_top_100_charted_tracks_total', label: 'Top 100 Tracks' },
-      { key: 'dj_charts_total', label: 'DJ Charts' },
-    ],
-  },
-};
+function metricCount(values: Array<number | null | undefined>) {
+  return values.reduce((sum, value) => sum + (Number(value ?? 0) || 0), 0);
+}
+
+function hasAnyMetric(metrics: Record<string, number | null | undefined>) {
+  return Object.values(metrics).some((value) => Number(value ?? 0) > 0);
+}
 
 function fmt(n: number | undefined): string {
   if (n == null || isNaN(n)) return '—';
@@ -202,172 +149,303 @@ function fmt(n: number | undefined): string {
 }
 
 function TrackStatsPanel({ release }: { release: ReleaseRecord }) {
+  const releaseStreams = release.performance?.streams ?? {};
+  const hasSpotify = Boolean(release.distribution?.spotify_url || release.spotify_track_id || Number(releaseStreams.spotify ?? 0) > 0);
+  const hasApple = Boolean(release.distribution?.apple_music_url || Number(releaseStreams.apple ?? 0) > 0);
+  const hasSoundCloud = Boolean(
+    release.distribution?.soundcloud_url ||
+    release.soundcloud_track_id ||
+    Number(releaseStreams.soundcloud ?? 0) > 0 ||
+    hasAnyMetric(release.soundcloud_stats ?? {}),
+  );
+  const hasYouTube = Boolean(
+    release.distribution?.youtube_url ||
+    Number(releaseStreams.youtube ?? 0) > 0 ||
+    hasAnyMetric(release.youtube_stats ?? {}),
+  );
+  const isJointRelease = hasSpotify || hasApple;
+  const isDirectOnlyRelease = !isJointRelease && (hasSoundCloud || hasYouTube);
   const { stats, songstatsTrackId: resolvedId, loading, error } = useSongstatsTrackStats(
     release.title,
     release.isrc,
     release.songstats_track_id,
+    isJointRelease,
   );
-
-  // SoundCloud data: prefer Songstats stats, fall back to stored soundcloud_stats
-  const scFromSongstats = stats?.stats?.find(s => s.source.toLowerCase() === 'soundcloud')?.data;
-  const scStored = release.soundcloud_stats;
-  const scData = {
-    plays:    scFromSongstats?.plays_total    ?? scStored?.plays    ?? null,
-    likes:    scFromSongstats?.likes_total    ?? scStored?.likes    ?? null,
-    reposts:  scFromSongstats?.reposts_total  ?? scStored?.reposts  ?? null,
-    comments: scFromSongstats?.comment_count  ?? scStored?.comments ?? null,
-  };
-  const hasStoredSC = Object.values(scData).some(v => v != null && v > 0);
-
-  if (loading) {
-    return (
-      <div className="flex h-32 items-center justify-center gap-2 text-slate-400">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        <span className="text-xs">Loading stats from Songstats…</span>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <p className="mt-4 text-xs text-rose-400">
-        Could not load stats: {error}
-      </p>
-    );
-  }
-
-  if (!resolvedId || !stats?.stats?.length) {
-    // Even without Songstats match, show stored SoundCloud direct data
-    if (hasStoredSC) {
-      return (
-        <div className="mt-4 space-y-4">
-          <div className="rounded-2xl bg-[#FF5500]/8 p-4">
-            <p className="text-[10px] font-black uppercase tracking-widest mb-3 text-[#FF5500]">
-              🔊 SoundCloud
-            </p>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {([
-                { key: 'plays',    label: 'Plays' },
-                { key: 'likes',    label: 'Likes' },
-                { key: 'reposts',  label: 'Reposts' },
-                { key: 'comments', label: 'Comments' },
-              ] as const).filter(f => (scData[f.key] ?? 0) > 0).map(f => (
-                <div key={f.key}>
-                  <p className="text-lg font-bold text-slate-900 tabular-nums">{fmt(scData[f.key]!)}</p>
-                  <p className="text-[10px] font-medium text-slate-500 mt-0.5">{f.label}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-          {!resolvedId && (
-            <p className="text-[11px] text-slate-400">
-              Songstats not yet matched — run a manual pull from Settings → Integrations to unlock Spotify &amp; Apple Music data.
-            </p>
-          )}
-        </div>
-      );
-    }
-    return (
-      <div className="mt-4">
-        <div className="grid grid-cols-2 gap-3">
-          {[{ label: 'Total streams', icon: '🎧' }, { label: 'Saves', icon: '❤️' },
-            { label: 'Spotify listeners', icon: '📊' }, { label: 'Apple streams', icon: '🎶' }]
-            .map(({ label, icon }) => (
-              <div key={label} className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-sm">{icon}</p>
-                <p className="mt-2 text-xl font-bold text-slate-300">—</p>
-                <p className="mt-0.5 text-[11px] font-medium text-slate-400">{label}</p>
-              </div>
-            ))}
-        </div>
-        <p className="mt-4 text-xs text-slate-400">
-          {!resolvedId
-            ? 'Track not yet matched in Songstats — run a manual pull from Settings → Integrations.'
-            : 'No data returned for this track yet.'}
-        </p>
-      </div>
-    );
-  }
-
-  // Build a map of source → data
   const bySource: Record<string, Record<string, number>> = {};
-  for (const entry of stats.stats) {
+  for (const entry of stats?.stats ?? []) {
     bySource[entry.source.toLowerCase()] = entry.data;
   }
 
-  // Only show platforms that have at least one non-zero value
-  // Exclude soundcloud from Songstats list — we render it separately with merged data below
-  const activePlatforms = Object.entries(PLATFORM_CONFIG).filter(([src, cfg]) => {
-    if (src === 'soundcloud') return false; // handled separately
-    const d = bySource[src];
-    if (!d) return false;
-    return cfg.fields.some(f => (d[f.key] ?? 0) > 0);
-  });
+  const scData = {
+    plays: release.soundcloud_stats?.plays ?? (Number(releaseStreams.soundcloud ?? 0) || null),
+    likes: release.soundcloud_stats?.likes ?? null,
+    reposts: release.soundcloud_stats?.reposts ?? null,
+    comments: release.soundcloud_stats?.comments ?? null,
+  };
+  const ytData = {
+    views: release.youtube_stats?.views ?? release.performance?.youtube_stats?.views ?? (Number(releaseStreams.youtube ?? 0) || null),
+    likes: release.youtube_stats?.likes ?? release.performance?.youtube_stats?.likes ?? null,
+    comments: release.youtube_stats?.comments ?? release.performance?.youtube_stats?.comments ?? null,
+  };
 
-  if (activePlatforms.length === 0 && !hasStoredSC) {
+  const spotifyMetrics = {
+    streams: bySource.spotify?.streams_total ?? (Number(releaseStreams.spotify ?? 0) || null),
+    saves: bySource.spotify?.saves_total ?? null,
+    playlists: bySource.spotify?.playlist_count_current ?? null,
+    playlistReach: bySource.spotify?.playlist_reach_current ?? null,
+  };
+  const appleMetrics = {
+    streams: bySource.apple_music?.streams_total ?? (Number(releaseStreams.apple ?? 0) || null),
+    playlists: bySource.apple_music?.playlists_current ?? null,
+    editorial: bySource.apple_music?.playlists_editorial_current ?? null,
+  };
+
+  const platformTabs = [
+    isJointRelease ? { id: 'overview', label: 'Overview' } : null,
+    hasSpotify ? { id: 'spotify', label: 'Spotify' } : null,
+    hasApple ? { id: 'apple_music', label: 'Apple Music' } : null,
+    hasSoundCloud ? { id: 'soundcloud', label: 'SoundCloud' } : null,
+    hasYouTube ? { id: 'youtube', label: 'YouTube' } : null,
+  ].filter(Boolean) as Array<{ id: string; label: string }>;
+
+  const [activeTab, setActiveTab] = useState<string>(isJointRelease ? 'overview' : (platformTabs[0]?.id ?? 'overview'));
+
+  useEffect(() => {
+    if (!platformTabs.some((tab) => tab.id === activeTab)) {
+      setActiveTab(isJointRelease ? 'overview' : (platformTabs[0]?.id ?? 'overview'));
+    }
+  }, [activeTab, isJointRelease, platformTabs]);
+
+  const totalTrustedStreams = metricCount([
+    spotifyMetrics.streams,
+    appleMetrics.streams,
+    scData.plays,
+    ytData.views,
+  ]);
+
+  const serviceCount = [hasSpotify, hasApple, hasSoundCloud, hasYouTube].filter(Boolean).length;
+
+  const renderMetricGrid = (metrics: Array<{ label: string; value: number | null | undefined }>, columns = 'sm:grid-cols-4') => {
+    const nonEmpty = metrics.filter((metric) => Number(metric.value ?? 0) > 0);
+    if (!nonEmpty.length) {
+      return <p className="text-xs text-slate-400">No trusted metrics stored for this service yet.</p>;
+    }
+    return (
+      <div className={cn('grid grid-cols-2 gap-3', columns)}>
+        {nonEmpty.map((metric) => (
+          <div key={metric.label} className="rounded-2xl border border-white/60 bg-white/70 px-4 py-3 shadow-sm">
+            <p className="text-lg font-bold text-slate-900 tabular-nums">{fmt(metric.value ?? undefined)}</p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">{metric.label}</p>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderServiceCard = (options: {
+    icon: string;
+    label: string;
+    source: string;
+    color: string;
+    bg: string;
+    href?: string | null;
+    metrics: Array<{ label: string; value: number | null | undefined }>;
+    note?: string | null;
+  }) => (
+    <div className={cn('rounded-[1.75rem] border border-slate-200 p-5 shadow-sm', options.bg)}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className={cn('text-[10px] font-black uppercase tracking-[0.22em]', options.color)}>
+            {options.icon} {options.label}
+          </p>
+          <p className="mt-2 text-xs font-medium text-slate-500">{options.source}</p>
+        </div>
+        {options.href ? (
+          <a
+            href={options.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition-colors hover:text-slate-900"
+          >
+            Open link
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        ) : null}
+      </div>
+      <div className="mt-4">
+        {renderMetricGrid(options.metrics, 'sm:grid-cols-3')}
+      </div>
+      {options.note ? <p className="mt-3 text-xs text-slate-400">{options.note}</p> : null}
+    </div>
+  );
+
+  const renderOverview = () => (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Cumulative Streams</p>
+          <p className="mt-2 text-2xl font-bold text-slate-950">{fmt(totalTrustedStreams)}</p>
+          <p className="mt-1 text-xs text-slate-500">Spotify, Apple, SoundCloud, YouTube</p>
+        </div>
+        <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">SoundCloud Likes</p>
+          <p className="mt-2 text-2xl font-bold text-slate-950">{fmt(scData.likes ?? undefined)}</p>
+          <p className="mt-1 text-xs text-slate-500">Direct SoundCloud engagement</p>
+        </div>
+        <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">YouTube Likes</p>
+          <p className="mt-2 text-2xl font-bold text-slate-950">{fmt(ytData.likes ?? undefined)}</p>
+          <p className="mt-1 text-xs text-slate-500">Direct YouTube engagement</p>
+        </div>
+        <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 px-4 py-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Active Services</p>
+          <p className="mt-2 text-2xl font-bold text-slate-950">{serviceCount}</p>
+          <p className="mt-1 text-xs text-slate-500">Trusted platform sources</p>
+        </div>
+      </div>
+
+      <div className="rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4">
+        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Source Rules</p>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          Spotify and Apple Music are coming from Songstats. SoundCloud is coming from direct SoundCloud release data.
+          YouTube is reserved for direct YouTube/Zernio data only and is not sourced from Songstats.
+        </p>
+      </div>
+    </div>
+  );
+
+  const contentForTab = () => {
+    if (activeTab === 'overview') return renderOverview();
+    if (activeTab === 'spotify') {
+      return renderServiceCard({
+        icon: '🎵',
+        label: 'Spotify',
+        source: resolvedId ? 'Songstats matched DSP data' : 'Stored release totals',
+        color: 'text-[#1DB954]',
+        bg: 'bg-[#1DB954]/8',
+        href: release.distribution?.spotify_url ?? spotifyUrl(release.spotify_track_id) ?? null,
+        metrics: [
+          { label: 'Streams', value: spotifyMetrics.streams },
+          { label: 'Saves', value: spotifyMetrics.saves },
+          { label: 'Playlists', value: spotifyMetrics.playlists },
+          { label: 'Playlist Reach', value: spotifyMetrics.playlistReach },
+        ],
+        note: !resolvedId ? 'Run a Songstats pull to enrich Spotify breakdown beyond stored stream totals.' : null,
+      });
+    }
+    if (activeTab === 'apple_music') {
+      return renderServiceCard({
+        icon: '🎶',
+        label: 'Apple Music',
+        source: resolvedId ? 'Songstats matched DSP data' : 'Stored release totals',
+        color: 'text-[#FA243C]',
+        bg: 'bg-[#FA243C]/8',
+        href: release.distribution?.apple_music_url ?? null,
+        metrics: [
+          { label: 'Streams', value: appleMetrics.streams },
+          { label: 'Playlists', value: appleMetrics.playlists },
+          { label: 'Editorial', value: appleMetrics.editorial },
+        ],
+        note: !resolvedId ? 'Run a Songstats pull to enrich Apple Music breakdown beyond stored stream totals.' : null,
+      });
+    }
+    if (activeTab === 'soundcloud') {
+      return renderServiceCard({
+        icon: '🔊',
+        label: 'SoundCloud',
+        source: 'Direct SoundCloud release data',
+        color: 'text-[#FF5500]',
+        bg: 'bg-[#FF5500]/8',
+        href: release.distribution?.soundcloud_url ?? soundcloudUrl(release.soundcloud_track_id) ?? null,
+        metrics: [
+          { label: 'Plays', value: scData.plays },
+          { label: 'Likes', value: scData.likes },
+          { label: 'Reposts', value: scData.reposts },
+          { label: 'Comments', value: scData.comments },
+        ],
+      });
+    }
+    if (activeTab === 'youtube') {
+      return renderServiceCard({
+        icon: '▶️',
+        label: 'YouTube',
+        source: 'Direct YouTube/Zernio data',
+        color: 'text-[#FF0000]',
+        bg: 'bg-[#FF0000]/8',
+        href: release.distribution?.youtube_url ?? null,
+        metrics: [
+          { label: 'Views', value: ytData.views },
+          { label: 'Likes', value: ytData.likes },
+          { label: 'Comments', value: ytData.comments },
+        ],
+        note: ytData.likes == null && ytData.comments == null
+          ? 'Only top-line YouTube views are stored for this release right now.'
+          : null,
+      });
+    }
+    return null;
+  };
+
+  if (!platformTabs.length) {
     return (
       <p className="mt-4 text-xs text-slate-400">
-        Songstats returned data but all values are zero. Check back once the track has been streamed.
+        No track analytics have been stored for this release yet.
       </p>
     );
   }
 
   return (
     <div className="mt-4 space-y-4">
-      {/* SoundCloud — merged Songstats + direct stored data */}
-      {hasStoredSC && (
-        <div className="rounded-2xl bg-[#FF5500]/8 p-4">
-          <p className="text-[10px] font-black uppercase tracking-widest mb-3 text-[#FF5500]">
-            🔊 SoundCloud
-          </p>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {([
-              { key: 'plays',    label: 'Plays' },
-              { key: 'likes',    label: 'Likes' },
-              { key: 'reposts',  label: 'Reposts' },
-              { key: 'comments', label: 'Comments' },
-            ] as const).filter(f => (scData[f.key] ?? 0) > 0).map(f => (
-              <div key={f.key}>
-                <p className="text-lg font-bold text-slate-900 tabular-nums">{fmt(scData[f.key]!)}</p>
-                <p className="text-[10px] font-medium text-slate-500 mt-0.5">{f.label}</p>
-              </div>
-            ))}
-          </div>
+      {loading && isJointRelease ? (
+        <div className="flex items-center gap-2 text-xs text-slate-400">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading Songstats breakdown for Spotify and Apple Music…
         </div>
-      )}
+      ) : null}
 
-      {/* All other platforms from Songstats */}
-      {activePlatforms.map(([src, cfg]) => {
-        const d = bySource[src];
-        const nonEmpty = cfg.fields.filter(f => (d[f.key] ?? 0) > 0);
-        return (
-          <div key={src} className={`rounded-2xl p-4 ${cfg.bg}`}>
-            <p className={`text-[10px] font-black uppercase tracking-widest mb-3 ${cfg.color}`}>
-              {cfg.icon} {cfg.label}
-            </p>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {nonEmpty.map(f => (
-                <div key={f.key}>
-                  <p className="text-lg font-bold text-slate-900 tabular-nums">{fmt(d[f.key])}</p>
-                  <p className="text-[10px] font-medium text-slate-500 mt-0.5">{f.label}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })}
+      {error && isJointRelease ? (
+        <p className="text-xs text-rose-400">
+          Songstats detail could not be loaded: {error}
+        </p>
+      ) : null}
 
-      {resolvedId && (
+      <div className="flex flex-wrap gap-2">
+        {platformTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={cn(
+              'rounded-full border px-3.5 py-2 text-xs font-semibold transition-colors',
+              activeTab === tab.id
+                ? 'border-slate-900 bg-slate-900 text-white'
+                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900',
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {isDirectOnlyRelease ? (
+        <p className="text-xs text-slate-500">
+          This release is being treated as a SoundCloud / YouTube-only release, so only direct platform data is rendered here.
+        </p>
+      ) : null}
+
+      {contentForTab()}
+
+      {resolvedId && isJointRelease ? (
         <a
-          href={stats.track_info?.site_url ?? `https://songstats.com/track/${resolvedId}`}
+          href={stats?.track_info?.site_url ?? `https://songstats.com/track/${resolvedId}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-blue-500 transition-colors"
+          className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-400 transition-colors hover:text-blue-500"
         >
           <ExternalLink className="h-3 w-3" />
-          View full report on Songstats
+          View full DSP report on Songstats
         </a>
-      )}
+      ) : null}
     </div>
   );
 }

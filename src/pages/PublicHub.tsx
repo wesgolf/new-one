@@ -2,7 +2,7 @@
  * PublicHub — public-facing artist landing page driven by release data.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AnimatePresence, motion, useScroll, useTransform } from 'motion/react';
+import { motion, useScroll, useTransform } from 'motion/react';
 import { Check, Send, X } from 'lucide-react';
 import { ARTIST_INFO } from '../constants';
 import { fetchPublicHubReleases } from '../lib/supabaseData';
@@ -152,7 +152,6 @@ export function PublicHub() {
   const [releases, setReleases] = useState<ReleaseRecord[]>([]);
   const [releasesLoading, setReleasesLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('Featured');
-  const [contactOpen, setContactOpen] = useState(false);
   const { settings } = usePublicHubSettings();
   const { scrollY } = useScroll();
 
@@ -217,31 +216,34 @@ export function PublicHub() {
   }, [releasedReleases, releases]);
 
   const latestRadioMix = useMemo(() => {
+    if (settings.radioMixReleaseId) {
+      return releases.find((release) => release.id === settings.radioMixReleaseId) ?? null;
+    }
     return releases.find((release) => isRadioMix(release)) ?? null;
-  }, [releases]);
+  }, [releases, settings.radioMixReleaseId]);
 
   const logoScale = useTransform(scrollY, [0, 320], [4.75, 1]);
   const logoY = useTransform(scrollY, [0, 220], [314, -10]);
   const logoOpacity = useTransform(scrollY, [0, 40], [1, 1]);
+  const logoTop = useTransform(scrollY, [0, 180], [8, 30]);
+  const tabsTop = useTransform(scrollY, [0, 180], [112, 80]);
 
   const heroImage = settings.heroImage || HERO_IMAGE;
-  const spotifyProfileUrl = ARTIST_INFO.spotify_url || (ARTIST_INFO.spotify_ids?.[0] ? `https://open.spotify.com/artist/${ARTIST_INFO.spotify_ids[0]}` : '');
-  const appleArtistUrl = ARTIST_INFO.apple_music_url || '';
-  const soundcloudProfileUrl = ARTIST_INFO.soundcloud_url || '';
-  const instagramUrl = ARTIST_INFO.instagram_url || (ARTIST_INFO.instagram_handle ? `https://instagram.com/${ARTIST_INFO.instagram_handle.replace('@', '')}` : '');
-  const tiktokUrl = ARTIST_INFO.tiktok_url || '';
-  const youtubeUrl = ARTIST_INFO.youtube_url || '';
+  const spotifyProfileUrl = settings.spotifyUrl || ARTIST_INFO.spotify_url || (ARTIST_INFO.spotify_ids?.[0] ? `https://open.spotify.com/artist/${ARTIST_INFO.spotify_ids[0]}` : '');
+  const appleArtistUrl = settings.appleMusicUrl || ARTIST_INFO.apple_music_url || '';
+  const soundcloudProfileUrl = settings.soundcloudUrl || ARTIST_INFO.soundcloud_url || '';
+  const instagramUrl = settings.instagramUrl || ARTIST_INFO.instagram_url || (ARTIST_INFO.instagram_handle ? `https://instagram.com/${ARTIST_INFO.instagram_handle.replace('@', '')}` : '');
+  const tiktokUrl = settings.tiktokUrl || ARTIST_INFO.tiktok_url || '';
+  const youtubeUrl = settings.youtubeUrl || ARTIST_INFO.youtube_url || '';
   const pressKitUrl = settings.pressKitUrl || ARTIST_INFO.press_kit_url || ARTIST_INFO.dropbox_url || '';
-  const contactEmail = settings.contactEmail || ARTIST_INFO.email || '';
-
   return (
     <div
       className="pub-dark relative min-h-screen selection:bg-white/20 selection:text-white"
       style={{ background: '#050505', color: '#ffffff', fontFamily: "'Inter', system-ui, sans-serif" }}
     >
       <motion.div
-        style={{ scale: logoScale, y: logoY, opacity: logoOpacity }}
-        className="pointer-events-none fixed left-0 top-2 z-[9999] flex w-full justify-center"
+        style={{ scale: logoScale, y: logoY, opacity: logoOpacity, top: logoTop }}
+        className="pointer-events-none fixed left-0 z-[9999] flex w-full justify-center"
       >
         <button
           type="button"
@@ -252,7 +254,7 @@ export function PublicHub() {
         </button>
       </motion.div>
 
-      <main className="relative isolate mx-auto max-w-4xl px-4 pb-32 pt-5 sm:px-6 sm:pt-8">
+      <main className="relative isolate mx-auto max-w-4xl px-4 pb-24 pt-4 sm:px-6 sm:pt-6">
         <Hero
           imageUrl={heroImage}
           spotifyUrl={spotifyProfileUrl}
@@ -264,8 +266,8 @@ export function PublicHub() {
         />
 
         <div className={HERO_COLUMN_CLASS}>
-          <div className="sticky top-28 z-[60] mb-12 py-2 sm:top-32">
-            <div className="mx-auto flex max-w-fit gap-1 rounded-full border border-white/10 bg-[rgba(22,22,22,0.97)] p-1 shadow-2xl">
+          <motion.div style={{ top: tabsTop }} className="sticky z-[60] mb-10 py-2">
+            <div className="mx-auto flex w-full max-w-full gap-1 overflow-x-auto rounded-full border border-white/10 bg-[rgba(22,22,22,0.97)] p-1 shadow-2xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-w-fit">
               {TABS.map((tab) => (
                 <button
                   key={tab.label}
@@ -274,14 +276,14 @@ export function PublicHub() {
                     setActiveTab(tab.label);
                     scrollTo(tab.href);
                   }}
-                  className={`relative rounded-full px-5 py-2 text-[10px] font-black uppercase tracking-widest transition-colors duration-300 ${
-                    activeTab === tab.label ? 'text-black' : 'text-white/45 hover:text-white'
+                  className={`relative min-w-0 flex-1 whitespace-nowrap rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] transition-colors duration-300 sm:flex-none sm:px-5 ${
+                    activeTab === tab.label ? 'text-white' : 'text-white/45 hover:text-white'
                   }`}
                 >
                   {activeTab === tab.label && (
                     <motion.div
                       layoutId="publicHubActiveTab"
-                      className="absolute inset-0 -z-10 rounded-full bg-white"
+                      className="absolute inset-0 -z-10 rounded-full bg-white/10"
                       transition={{ type: 'spring', bounce: 0.18, duration: 0.5 }}
                     />
                   )}
@@ -289,7 +291,7 @@ export function PublicHub() {
                 </button>
               ))}
             </div>
-          </div>
+          </motion.div>
 
           <div className="space-y-28">
             <section id="featured">
@@ -318,19 +320,8 @@ export function PublicHub() {
       </main>
 
       <Footer
-        contactEmail={contactEmail}
         pressKitUrl={pressKitUrl}
-        onContact={() => setContactOpen(true)}
       />
-
-      <AnimatePresence>
-        {contactOpen && (
-          <ContactModal
-            onClose={() => setContactOpen(false)}
-            contactEmail={contactEmail}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 }

@@ -123,6 +123,15 @@ export function PublicHubSettingsPanel() {
     return releasedReleases.find((release) => release.id === settings.featuredReleaseId) ?? releasedReleases[0] ?? null;
   }, [releasedReleases, settings.featuredReleaseId]);
 
+  const previewRadioMix = useMemo(() => {
+    if (!settings.radioMixReleaseId) return releasedReleases.find((release) => {
+      const type = String(release.type ?? '').toLowerCase();
+      const title = String(release.title ?? '').toLowerCase();
+      return type.includes('mix') || type.includes('episode') || title.includes('radio') || title.includes('mix');
+    }) ?? null;
+    return releasedReleases.find((release) => release.id === settings.radioMixReleaseId) ?? null;
+  }, [releasedReleases, settings.radioMixReleaseId]);
+
   if (loading) return <SettingsLoadingSkeleton />;
 
   if (error) {
@@ -151,20 +160,90 @@ export function PublicHubSettingsPanel() {
 
       <SettingsCard title="Preview">
         <div className="px-5 py-5">
-          <div className="rounded-2xl border border-dashed border-border bg-surface-raised p-5">
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-muted">
-              Featured release
-            </p>
-            <p className="mt-2 text-base font-bold text-text-primary">
-              {previewRelease?.title ?? 'Latest released track'}
-            </p>
-            <p className="mt-1 text-sm text-text-secondary">
-              {previewRelease?.release_date
-                ? new Date(previewRelease.release_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-                : 'Falls back to the newest released track'}
-            </p>
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl border border-dashed border-border bg-surface-raised p-5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-muted">Hero links</p>
+              <p className="mt-2 text-base font-bold text-text-primary">Instagram, Spotify, Apple, SoundCloud, TikTok, YouTube</p>
+              <p className="mt-1 text-sm text-text-secondary">Pulled from env defaults unless you override them here.</p>
+            </div>
+            <div className="rounded-2xl border border-dashed border-border bg-surface-raised p-5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-muted">Featured release</p>
+              <p className="mt-2 text-base font-bold text-text-primary">{previewRelease?.title ?? 'Latest released track'}</p>
+              <p className="mt-1 text-sm text-text-secondary">
+                {previewRelease?.release_date
+                  ? new Date(previewRelease.release_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+                  : 'Falls back to the newest released track'}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-dashed border-border bg-surface-raised p-5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-muted">Radio mix</p>
+              <p className="mt-2 text-base font-bold text-text-primary">{previewRadioMix?.title ?? 'Latest radio mix'}</p>
+              <p className="mt-1 text-sm text-text-secondary">Choose a specific mix below or keep the latest one automatic.</p>
+            </div>
           </div>
         </div>
+      </SettingsCard>
+
+      <SettingsCard title="Social links">
+        <SettingsFieldRow label="Spotify URL" description="Public Spotify artist profile URL for the hero section.">
+          <input
+            type="url"
+            value={settings.spotifyUrl}
+            onChange={(e) => setSettings((prev) => ({ ...prev, spotifyUrl: e.target.value }))}
+            className="min-w-[260px] rounded-xl border border-border bg-white px-3.5 py-2 text-sm text-text-primary outline-none transition-all focus:border-brand focus:ring-2 focus:ring-brand/10"
+            placeholder="https://open.spotify.com/artist/..."
+          />
+        </SettingsFieldRow>
+
+        <SettingsFieldRow label="Apple Music URL" description="Public Apple Music artist profile URL for the hero section.">
+          <input
+            type="url"
+            value={settings.appleMusicUrl}
+            onChange={(e) => setSettings((prev) => ({ ...prev, appleMusicUrl: e.target.value }))}
+            className="min-w-[260px] rounded-xl border border-border bg-white px-3.5 py-2 text-sm text-text-primary outline-none transition-all focus:border-brand focus:ring-2 focus:ring-brand/10"
+            placeholder="https://music.apple.com/..."
+          />
+        </SettingsFieldRow>
+
+        <SettingsFieldRow label="SoundCloud URL" description="Public SoundCloud artist profile URL for the hero section.">
+          <input
+            type="url"
+            value={settings.soundcloudUrl}
+            onChange={(e) => setSettings((prev) => ({ ...prev, soundcloudUrl: e.target.value }))}
+            className="min-w-[260px] rounded-xl border border-border bg-white px-3.5 py-2 text-sm text-text-primary outline-none transition-all focus:border-brand focus:ring-2 focus:ring-brand/10"
+            placeholder="https://soundcloud.com/..."
+          />
+        </SettingsFieldRow>
+
+        <SettingsFieldRow label="Instagram URL" description="Instagram profile URL shown in the hero section.">
+          <input
+            type="url"
+            value={settings.instagramUrl}
+            onChange={(e) => setSettings((prev) => ({ ...prev, instagramUrl: e.target.value }))}
+            className="min-w-[260px] rounded-xl border border-border bg-white px-3.5 py-2 text-sm text-text-primary outline-none transition-all focus:border-brand focus:ring-2 focus:ring-brand/10"
+            placeholder="https://instagram.com/..."
+          />
+        </SettingsFieldRow>
+
+        <SettingsFieldRow label="TikTok URL" description="Public TikTok profile URL shown in the hero section.">
+          <input
+            type="url"
+            value={settings.tiktokUrl}
+            onChange={(e) => setSettings((prev) => ({ ...prev, tiktokUrl: e.target.value }))}
+            className="min-w-[260px] rounded-xl border border-border bg-white px-3.5 py-2 text-sm text-text-primary outline-none transition-all focus:border-brand focus:ring-2 focus:ring-brand/10"
+            placeholder="https://www.tiktok.com/@..."
+          />
+        </SettingsFieldRow>
+
+        <SettingsFieldRow label="YouTube URL" description="Public YouTube channel URL shown in the hero section.">
+          <input
+            type="url"
+            value={settings.youtubeUrl}
+            onChange={(e) => setSettings((prev) => ({ ...prev, youtubeUrl: e.target.value }))}
+            className="min-w-[260px] rounded-xl border border-border bg-white px-3.5 py-2 text-sm text-text-primary outline-none transition-all focus:border-brand focus:ring-2 focus:ring-brand/10"
+            placeholder="https://www.youtube.com/..."
+          />
+        </SettingsFieldRow>
       </SettingsCard>
 
       <SettingsCard title="Featured Track">
@@ -185,19 +264,27 @@ export function PublicHubSettingsPanel() {
             ))}
           </select>
         </SettingsFieldRow>
+
+        <SettingsFieldRow
+          label="Radio mix"
+          description="Pick the release that should appear in the Radio Mix section."
+        >
+          <select
+            value={settings.radioMixReleaseId ?? ''}
+            onChange={(e) => setSettings((prev) => ({ ...prev, radioMixReleaseId: e.target.value || null }))}
+            className="min-w-[260px] rounded-xl border border-border bg-white px-3.5 py-2 text-sm text-text-primary outline-none transition-all focus:border-brand focus:ring-2 focus:ring-brand/10"
+          >
+            <option value="">Latest radio mix (default)</option>
+            {releasedReleases.map((release) => (
+              <option key={release.id} value={release.id}>
+                {release.title}
+              </option>
+            ))}
+          </select>
+        </SettingsFieldRow>
       </SettingsCard>
 
       <SettingsCard title="Footer Links">
-        <SettingsFieldRow label="Contact email" description="Used by the footer email link and contact modal.">
-          <input
-            type="email"
-            value={settings.contactEmail}
-            onChange={(e) => setSettings((prev) => ({ ...prev, contactEmail: e.target.value }))}
-            className="min-w-[260px] rounded-xl border border-border bg-white px-3.5 py-2 text-sm text-text-primary outline-none transition-all focus:border-brand focus:ring-2 focus:ring-brand/10"
-            placeholder="artist@example.com"
-          />
-        </SettingsFieldRow>
-
         <SettingsFieldRow label="Press kit URL" description="Used by the footer Press Kit link.">
           <input
             type="url"

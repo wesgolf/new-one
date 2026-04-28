@@ -171,14 +171,14 @@ export function Calendar() {
 
       const [releasesRes, contentRes, showsRes, meetingsRes, todosRes, goalsRes, tasksRes, ppRes] =
         await Promise.all([
-          safe(supabase.from('releases').select('*')),
-          safe(supabase.from('content_items').select('*')),
-          safe(supabase.from('shows').select('*')),
-          safe(supabase.from('meetings').select('*')),
-          safe(supabase.from('todos').select('*')),
-          safe(supabase.from('goals').select('*')),
-          safe(supabase.from('tasks').select('*')),
-          safe(supabase.from('platform_posts').select('*, content_items(title)')),
+          safe(supabase.from('releases').select('id,title,release_date,notes,status')),
+          safe(supabase.from('content_items').select('id,title,scheduled_date,scheduled_time,platform,publish_status,zernio_id,zernio_post_id,caption,is_full_day,is_recurring,recurrence_pattern,recurrence_interval,recurrence_end_date')),
+          safe(supabase.from('shows').select('id,title,venue,date,time,status')),
+          safe(supabase.from('meetings').select('id,title,date,time,notes,is_recurring,recurrence_pattern,recurrence_interval,recurrence_end_date')),
+          safe(supabase.from('todos').select('id,task,title,due_date,due_time,priority,completed')),
+          safe(supabase.from('goals').select('id,title,deadline,category,target,current,unit')),
+          safe(supabase.from('tasks').select('id,title,due_date,priority,status')),
+          safe(supabase.from('platform_posts').select('id,platform,status,scheduled_at,content_items(title)')),
         ]);
 
       const rawEvents: Event[] = [

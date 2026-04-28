@@ -209,13 +209,13 @@ export function useDashboard() {
         opportunitiesRes,
         ideasRes,
       ] = await Promise.allSettled([
-        supabase.from('releases').select('*').order('created_at', { ascending: false }),
-        supabase.from('content_items').select('*').order('scheduled_date', { ascending: true }),
-        supabase.from('todos').select('*').order('due_date', { ascending: true }),
-        supabase.from('goals').select('*'),
-        supabase.from('shows').select('*').order('date', { ascending: true }),
-        supabase.from('meetings').select('*').order('date', { ascending: true }),
-        supabase.from('opportunities').select('*'),
+        supabase.from('releases').select('id,title,status,release_date,created_at,updated_at').order('created_at', { ascending: false }),
+        supabase.from('content_items').select('id,title,platform,status,scheduled_date,created_at,updated_at').order('scheduled_date', { ascending: true }),
+        supabase.from('todos').select('id,task,completed,priority,due_date,created_at').order('due_date', { ascending: true }),
+        supabase.from('goals').select('id,title,target,current,status,status_indicator,deadline,created_at,updated_at'),
+        supabase.from('shows').select('id,title,venue,date,created_at').order('date', { ascending: true }),
+        supabase.from('meetings').select('id,title,date,created_at').order('date', { ascending: true }),
+        supabase.from('opportunities').select('id,name,status,created_at'),
         supabase.from('ideas').select('id, title, status, updated_at, created_at').order('updated_at', { ascending: false }),
       ]);
 
