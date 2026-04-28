@@ -639,7 +639,7 @@ async function syncSongstatsReleases(songstatsArtistId: string) {
 
   const [releases, catalogResponse] = await Promise.all([
     fetchReleases(),
-    fetchArtistCatalog(songstatsArtistId, { limit: 200 }),
+    fetchArtistCatalog(songstatsArtistId, { limit: 100 }),
   ]);
   console.log('[Integrations][Songstats] Existing release count:', releases.length);
 

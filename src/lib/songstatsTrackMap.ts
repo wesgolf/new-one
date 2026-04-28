@@ -57,7 +57,7 @@ async function getCatalog(): Promise<ArtistCatalogTrack[]> {
 
   catalogFetching = (async () => {
     try {
-      const res = await fetchArtistCatalog(SONGSTATS_ARTIST_ID, { limit: 200 });
+      const res = await fetchArtistCatalog(SONGSTATS_ARTIST_ID, { limit: 100 });
       catalogCache = res.catalog ?? [];
       return catalogCache;
     } catch {

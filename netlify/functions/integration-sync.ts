@@ -249,7 +249,7 @@ async function runSongstats(sql: postgres.Sql<any>, userId: string) {
   const catalogUrl = new URL('https://api.songstats.com/enterprise/v1/artists/catalog');
   catalogUrl.searchParams.set('songstats_artist_id', SONGSTATS_ARTIST_ID);
   catalogUrl.searchParams.set('source_ids', 'all');
-  catalogUrl.searchParams.set('limit', '200');
+  catalogUrl.searchParams.set('limit', '100');
   const catalogRes = await fetch(catalogUrl.toString(), {
     headers: { Accept: 'application/json', apikey: SONGSTATS_API_KEY },
   });

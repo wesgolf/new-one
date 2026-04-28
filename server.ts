@@ -995,7 +995,7 @@ async function startServer() {
     }>('/artists/catalog', {
       songstats_artist_id: SONGSTATS_ARTIST_ID,
       source_ids: 'all',
-      limit: '200',
+      limit: '100',
     });
 
     const catalog = Array.isArray(catalogResponse.catalog) ? catalogResponse.catalog : [];
@@ -1378,7 +1378,7 @@ async function startServer() {
       }>('/artists/catalog', {
         songstats_artist_id: songstatsArtistId,
         source_ids: 'all',
-        limit: '200',
+        limit: '100',
       });
       const catalog = Array.isArray(catalogResponse.catalog) ? catalogResponse.catalog : [];
       const catalogByTitle = new Map(catalog.map((track) => [normalizeReleaseTitleLocal(track.title), track]));

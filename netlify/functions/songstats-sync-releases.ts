@@ -123,7 +123,7 @@ export const handler: Handler = async (event) => {
     }>('/artists/catalog', {
       songstats_artist_id: body.songstatsArtistId,
       source_ids: 'all',
-      limit: '200',
+      limit: '100',
     });
     const catalog = Array.isArray(catalogResponse.catalog) ? catalogResponse.catalog : [];
     const catalogByTitle = new Map(catalog.map((track) => [normalizeReleaseTitle(track.title), track]));
