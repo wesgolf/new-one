@@ -28,7 +28,7 @@ function readCachedPublicHubSettings(): HubSettings {
     const raw = localStorage.getItem(PUBLIC_HUB_SETTINGS_CACHE_KEY);
     if (!raw) return DEFAULT_PUBLIC_HUB_SETTINGS;
     const parsed = JSON.parse(raw) as Partial<HubSettings>;
-    return { ...DEFAULT_PUBLIC_HUB_SETTINGS, ...parsed };
+    return normalizePublicHubSettings(parsed);
   } catch {
     return DEFAULT_PUBLIC_HUB_SETTINGS;
   }
@@ -40,6 +40,21 @@ function writeCachedPublicHubSettings(settings: HubSettings) {
   } catch {
     // ignore cache failures
   }
+}
+
+function normalizePublicHubSettings(input?: Partial<HubSettings> | null): HubSettings {
+  return {
+    ...DEFAULT_PUBLIC_HUB_SETTINGS,
+    ...(input ?? {}),
+    spotifyUrl: input?.spotifyUrl?.trim() || DEFAULT_PUBLIC_HUB_SETTINGS.spotifyUrl,
+    appleMusicUrl: input?.appleMusicUrl?.trim() || DEFAULT_PUBLIC_HUB_SETTINGS.appleMusicUrl,
+    soundcloudUrl: input?.soundcloudUrl?.trim() || DEFAULT_PUBLIC_HUB_SETTINGS.soundcloudUrl,
+    instagramUrl: input?.instagramUrl?.trim() || DEFAULT_PUBLIC_HUB_SETTINGS.instagramUrl,
+    tiktokUrl: input?.tiktokUrl?.trim() || DEFAULT_PUBLIC_HUB_SETTINGS.tiktokUrl,
+    youtubeUrl: input?.youtubeUrl?.trim() || DEFAULT_PUBLIC_HUB_SETTINGS.youtubeUrl,
+    contactEmail: input?.contactEmail?.trim() || DEFAULT_PUBLIC_HUB_SETTINGS.contactEmail,
+    pressKitUrl: input?.pressKitUrl?.trim() || DEFAULT_PUBLIC_HUB_SETTINGS.pressKitUrl,
+  };
 }
 
 export function PublicHubSettingsPanel() {
@@ -69,7 +84,7 @@ export function PublicHubSettingsPanel() {
       if (rowResult.value.error) {
         setSettings(DEFAULT_PUBLIC_HUB_SETTINGS);
       } else if (rowResult.value.data?.value && typeof rowResult.value.data.value === 'object') {
-        const merged = { ...DEFAULT_PUBLIC_HUB_SETTINGS, ...(rowResult.value.data.value as Partial<HubSettings>) };
+        const merged = normalizePublicHubSettings(rowResult.value.data.value as Partial<HubSettings>);
         setSettings(merged);
         writeCachedPublicHubSettings(merged);
       } else {
@@ -91,13 +106,14 @@ export function PublicHubSettingsPanel() {
     setSaving(true);
     setSaved(false);
     setError(null);
-    writeCachedPublicHubSettings(settings);
+    const normalized = normalizePublicHubSettings(settings);
+    writeCachedPublicHubSettings(normalized);
     try {
       const { error: upsertError } = await withTimeout(
         supabase
           .from('app_settings')
           .upsert(
-            { key: 'public_hub', value: settings },
+            { key: 'public_hub', value: normalized },
             { onConflict: 'key' },
           ),
       );

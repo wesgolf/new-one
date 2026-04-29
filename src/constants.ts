@@ -1,3 +1,37 @@
+function extractSpotifyArtistIds() {
+  const explicitIds = [
+    import.meta.env.VITE_SPOTIFY_ARTIST_ID,
+    import.meta.env.VITE_SPOTIFY_ARTIST_ID_2,
+    import.meta.env.VITE_SPOTIFY_ARTIST_ID_3,
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+
+  if (explicitIds.length) {
+    return Array.from(new Set(explicitIds));
+  }
+
+  const rawIds = String(import.meta.env.VITE_SPOTIFY_IDS || '').trim();
+  if (rawIds) {
+    return Array.from(
+      new Set(
+        rawIds
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  const artistUrl = String(import.meta.env.VITE_SPOTIFY_ARTIST_URL || import.meta.env.VITE_SPOTIFY_URL || '').trim();
+  const match = artistUrl.match(/open\.spotify\.com\/artist\/([A-Za-z0-9]+)/i);
+  if (match?.[1]) {
+    return [match[1]];
+  }
+
+  return [];
+}
+
 export const ARTIST_INFO = {
   name: import.meta.env.VITE_ARTIST_NAME || "Wesley Rob",
   email: import.meta.env.VITE_ARTIST_EMAIL || "wesleyrob27@gmail.com",
@@ -7,7 +41,7 @@ export const ARTIST_INFO = {
   soundcloud_url: import.meta.env.VITE_SOUNDCLOUD_ARTIST_URL || import.meta.env.VITE_SOUNDCLOUD_URL || "https://soundcloud.com/wesmusic1",
   youtube_url: import.meta.env.VITE_YOUTUBE_ARTIST_URL || import.meta.env.VITE_YOUTUBE_URL || "",
   tiktok_url: import.meta.env.VITE_TIKTOK_ARTIST_URL || import.meta.env.VITE_TIKTOK_URL || "",
-  spotify_ids: (import.meta.env.VITE_SPOTIFY_IDS || "7v4v7v4v7v4v7v4v7v4v7v").split(','), // Multiple Spotify Artist IDs separated by commas
+  spotify_ids: extractSpotifyArtistIds(),
   instagram_handle: import.meta.env.VITE_INSTAGRAM_HANDLE || "@wesleyrob",
   instagram_url: import.meta.env.VITE_INSTAGRAM_ACCOUNT || "",
   press_kit_url: import.meta.env.VITE_PRESS_KIT_URL || import.meta.env.VITE_DROPBOX_URL || "https://www.dropbox.com/sh/example-artist-folder",

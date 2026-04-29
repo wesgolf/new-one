@@ -436,6 +436,9 @@ export const handler = schedule('*/15 * * * *', async () => {
 
     for (const user of users) {
       for (const provider of user.enabledPlatforms) {
+        if (provider === 'spotify') {
+          continue;
+        }
         const lastSuccess = await getLastSuccessfulRunAt(sql, shape, user.userId, provider);
         const due = !lastSuccess || (Date.now() - lastSuccess.getTime()) >= user.syncInterval * 1000;
         if (!due) continue;

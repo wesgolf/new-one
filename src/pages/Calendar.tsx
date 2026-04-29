@@ -161,6 +161,8 @@ export function Calendar() {
     try {
       setLoading(true);
       setError(null);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData.session?.user?.id ?? null;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const safe = async (q: any) => {
@@ -169,14 +171,22 @@ export function Calendar() {
         return res;
       };
 
+      const scoped = (table: string, select: string) => {
+        let query = supabase.from(table).select(select);
+        if (userId && ['releases', 'content_items', 'shows', 'meetings', 'goals'].includes(table)) {
+          query = query.eq('user_id', userId);
+        }
+        return query;
+      };
+
       const [releasesRes, contentRes, showsRes, meetingsRes, todosRes, goalsRes, tasksRes, ppRes] =
         await Promise.all([
-          safe(supabase.from('releases').select('id,title,release_date,notes,status')),
-          safe(supabase.from('content_items').select('id,title,scheduled_date,scheduled_time,platform,publish_status,zernio_id,zernio_post_id,caption,is_full_day,is_recurring,recurrence_pattern,recurrence_interval,recurrence_end_date')),
-          safe(supabase.from('shows').select('id,title,venue,date,time,status')),
-          safe(supabase.from('meetings').select('id,title,date,time,notes,is_recurring,recurrence_pattern,recurrence_interval,recurrence_end_date')),
+          safe(scoped('releases', 'id,title,release_date,notes,status')),
+          safe(scoped('content_items', 'id,title,scheduled_date,scheduled_time,platform,publish_status,zernio_id,zernio_post_id,caption,is_full_day,is_recurring,recurrence_pattern,recurrence_interval,recurrence_end_date')),
+          safe(scoped('shows', 'id,title,venue,date,time,status')),
+          safe(scoped('meetings', 'id,title,date,time,notes,is_recurring,recurrence_pattern,recurrence_interval,recurrence_end_date')),
           safe(supabase.from('todos').select('id,task,title,due_date,due_time,priority,completed')),
-          safe(supabase.from('goals').select('id,title,deadline,category,target,current,unit')),
+          safe(scoped('goals', 'id,title,deadline,category,target,current,unit')),
           safe(supabase.from('tasks').select('id,title,due_date,priority,status')),
           safe(supabase.from('platform_posts').select('id,platform,status,scheduled_at,content_items(title)')),
         ]);

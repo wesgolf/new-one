@@ -35,18 +35,33 @@ export const DEFAULT_PUBLIC_HUB_SETTINGS: HubSettings = {
   heroImage:     '',
   ctaText:       'Stream Now',
   ctaUrl:        '',
-  spotifyUrl:    '',
-  appleMusicUrl: '',
+  spotifyUrl:    ARTIST_INFO.spotify_url ?? '',
+  appleMusicUrl: ARTIST_INFO.apple_music_url ?? '',
   soundcloudUrl: ARTIST_INFO.soundcloud_url ?? '',
   instagramUrl:  ARTIST_INFO.instagram_url || `https://instagram.com/${(ARTIST_INFO.instagram_handle ?? '').replace('@', '')}`,
-  tiktokUrl:     '',
-  youtubeUrl:    '',
+  tiktokUrl:     ARTIST_INFO.tiktok_url ?? '',
+  youtubeUrl:    ARTIST_INFO.youtube_url ?? '',
   contactEmail:  ARTIST_INFO.email ?? '',
   pressKitUrl:   ARTIST_INFO.press_kit_url ?? '',
   featuredReleaseId: null,
   radioMixReleaseId: null,
   featuredTracks: [],
 };
+
+function normalizeHubSettings(input?: Partial<HubSettings> | null): HubSettings {
+  return {
+    ...DEFAULT_PUBLIC_HUB_SETTINGS,
+    ...(input ?? {}),
+    spotifyUrl: input?.spotifyUrl?.trim() || DEFAULT_PUBLIC_HUB_SETTINGS.spotifyUrl,
+    appleMusicUrl: input?.appleMusicUrl?.trim() || DEFAULT_PUBLIC_HUB_SETTINGS.appleMusicUrl,
+    soundcloudUrl: input?.soundcloudUrl?.trim() || DEFAULT_PUBLIC_HUB_SETTINGS.soundcloudUrl,
+    instagramUrl: input?.instagramUrl?.trim() || DEFAULT_PUBLIC_HUB_SETTINGS.instagramUrl,
+    tiktokUrl: input?.tiktokUrl?.trim() || DEFAULT_PUBLIC_HUB_SETTINGS.tiktokUrl,
+    youtubeUrl: input?.youtubeUrl?.trim() || DEFAULT_PUBLIC_HUB_SETTINGS.youtubeUrl,
+    contactEmail: input?.contactEmail?.trim() || DEFAULT_PUBLIC_HUB_SETTINGS.contactEmail,
+    pressKitUrl: input?.pressKitUrl?.trim() || DEFAULT_PUBLIC_HUB_SETTINGS.pressKitUrl,
+  };
+}
 
 export function usePublicHubSettings(): { settings: HubSettings; loading: boolean } {
   const [settings, setSettings] = useState<HubSettings>(DEFAULT_PUBLIC_HUB_SETTINGS);
@@ -64,7 +79,7 @@ export function usePublicHubSettings(): { settings: HubSettings; loading: boolea
           .maybeSingle();
         if (cancelled) return;
         if (data?.value && typeof data.value === 'object') {
-          setSettings({ ...DEFAULT_PUBLIC_HUB_SETTINGS, ...(data.value as Partial<HubSettings>) });
+          setSettings(normalizeHubSettings(data.value as Partial<HubSettings>));
         }
       } catch {
         // fall through to setLoading
@@ -76,5 +91,5 @@ export function usePublicHubSettings(): { settings: HubSettings; loading: boolea
     return () => { cancelled = true; };
   }, []);
 
-  return { settings, loading };
+  return { settings: normalizeHubSettings(settings), loading };
 }

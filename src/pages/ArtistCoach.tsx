@@ -425,7 +425,16 @@ export function ArtistCoach() {
   };
 
   const fetchResources = async () => {
-    const { data, error } = await supabase.from('bot_resources').select('*').order('created_at', { ascending: false });
+    const user = await getCurrentAuthUser();
+    if (!user) {
+      setResources([]);
+      return;
+    }
+    const { data, error } = await supabase
+      .from('bot_resources')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
     if (error) {
       setResourceNotice({ type: 'error', message: `Knowledge load failed: ${error.message}` });
       return;
@@ -620,7 +629,17 @@ export function ArtistCoach() {
         const { data: { publicUrl } } = supabase.storage.from('bot_resources').getPublicUrl(filePath);
         finalUrl = publicUrl;
       }
-      const { error } = await supabase.from('bot_resources').insert([{ ...newResource, url: finalUrl, user_id: user.id }]);
+      const normalizedContent = newResource.content.trim() || (
+        finalUrl
+          ? `${newResource.type.toUpperCase()} reference: ${newResource.title.trim()} ${finalUrl}`.trim()
+          : `${newResource.type.toUpperCase()} reference: ${newResource.title.trim()}`.trim()
+      );
+      const { error } = await supabase.from('bot_resources').insert([{
+        ...newResource,
+        content: normalizedContent,
+        url: finalUrl,
+        user_id: user.id,
+      }]);
       if (error) throw error;
       setNewResource({ title: '', content: '', category: 'General', type: 'text', url: '' });
       setSelectedFile(null);
@@ -640,7 +659,12 @@ export function ArtistCoach() {
   };
 
   const handleSaveEditResource = async (id: string) => {
-    const { error } = await supabase.from('bot_resources').update(editingResource).eq('id', id);
+    const user = await getCurrentAuthUser();
+    const { error } = await supabase
+      .from('bot_resources')
+      .update(editingResource)
+      .eq('id', id)
+      .eq('user_id', user?.id ?? '');
     if (!error) {
       setEditingResourceId(null);
       setResourceNotice({ type: 'success', message: 'Knowledge resource updated.' });
@@ -668,7 +692,12 @@ export function ArtistCoach() {
   };
 
   const handleDeleteResource = async (id: string) => {
-    const { error } = await supabase.from('bot_resources').delete().eq('id', id);
+    const user = await getCurrentAuthUser();
+    const { error } = await supabase
+      .from('bot_resources')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user?.id ?? '');
     if (!error) {
       setResourceNotice({ type: 'success', message: 'Knowledge resource deleted.' });
       requestCache.invalidate('coach:kb');
@@ -1046,6 +1075,9 @@ export function ArtistCoach() {
                   {resourceNotice.message}
                 </div>
               )}
+              <div className="rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-xs leading-relaxed text-blue-700">
+                The coach prompt uses your recent messages, the saved session summary, indexed notes from your knowledge base, recent releases, recent analytics snapshots, and upcoming calendar items. PDFs, images, and websites are stored as references plus your notes right now; they are not OCRed or scraped into full prompt text yet.
+              </div>
               {/* Header */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -1260,6 +1292,11 @@ export function ArtistCoach() {
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{newResource.type === 'text' ? 'Content' : 'Notes / description'}</label>
                   <textarea required={newResource.type === 'text'} rows={4} value={newResource.content} onChange={(e) => setNewResource({ ...newResource, content: e.target.value })} placeholder={newResource.type === 'text' ? 'Paste your notes here…' : 'Add context for the coach…'} className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-100 transition-all" />
+                  {newResource.type !== 'text' && (
+                    <p className="text-[11px] text-slate-400">
+                      Add a short summary here. The coach indexes these notes now; it does not yet read the full PDF, image, or webpage automatically.
+                    </p>
+                  )}
                 </div>
                 <button type="submit" disabled={isUploading} className="btn-primary w-full py-3">
                   {isUploading ? <><Loader2 className="h-4 w-4 animate-spin" /> Uploading…</> : 'Save to knowledge base'}

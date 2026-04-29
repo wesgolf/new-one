@@ -3,7 +3,7 @@
  * Fetches analytics + accounts + recent posts from Zernio via the server proxy.
  * Defensively normalizes the response shape since Zernio's API isn't strictly typed here.
  */
-import { fetchJson } from '../lib/api';
+import { buildNetlifyFunctionPath } from '../lib/serverApi';
 
 export interface ZernioAccount {
   id: string;
@@ -187,16 +187,33 @@ function normalizePost(raw: any): ZernioPost {
 }
 
 async function safeFetch<T = any>(url: string): Promise<{ ok: boolean; data?: T; status?: number; error?: string }> {
+  const fallbackUrl = url.startsWith('/api/zernio/config-check')
+    ? buildNetlifyFunctionPath('zernio-config-check')
+    : url.startsWith('/api/zernio')
+    ? url.replace(/^\/api\/zernio/, buildNetlifyFunctionPath('zernio'))
+    : null;
+
   try {
-    const res = await fetch(url);
+    let res = await fetch(url);
     const ct = res.headers.get('content-type') ?? '';
-    // If Express isn't handling this path, Vite returns 200 OK with HTML.
-    // Detect that early so we get a useful error instead of a JSON parse failure.
-    if (ct.includes('text/html')) {
-      if (import.meta.env.DEV) {
-        console.error(`[safeFetch] ${url} → HTML response detected. Restart the dev server.`);
-      }
-      return { ok: false, status: res.status, error: 'Server returned HTML — API proxy not matched. Restart dev server.' };
+    const shouldFallback =
+      !!fallbackUrl &&
+      (
+        ct.includes('text/html') ||
+        res.status === 404 ||
+        res.status === 405 ||
+        res.status === 408 ||
+        res.status >= 500
+      );
+
+    if (shouldFallback) {
+      console.warn(`[safeFetch] ${url} → HTTP ${res.status} ${ct || 'unknown'} — retrying direct Netlify function path.`);
+      res = await fetch(fallbackUrl!);
+    }
+
+    const finalContentType = res.headers.get('content-type') ?? '';
+    if (finalContentType.includes('text/html')) {
+      return { ok: false, status: res.status, error: 'API route not reached (HTML fallback response).' };
     }
     if (!res.ok) {
       let errBody: any = null;

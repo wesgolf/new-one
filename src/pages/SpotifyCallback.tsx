@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { handleSpotifyCallback } from '../lib/spotify';
+import { consumeSpotifyReturnPath, handleSpotifyCallback } from '../lib/spotify';
 
 export function SpotifyCallback() {
   const [searchParams] = useSearchParams();
@@ -8,25 +8,29 @@ export function SpotifyCallback() {
   const code = searchParams.get('code');
 
   useEffect(() => {
+    const complete = () => {
+      const returnPath = consumeSpotifyReturnPath();
+      if (window.opener && !window.opener.closed) {
+        try {
+          window.opener.postMessage({ type: 'spotify-auth-success', returnPath }, window.location.origin);
+        } catch (error) {
+          console.warn('Failed to notify opener about Spotify auth success:', error);
+        }
+        window.close();
+        return;
+      }
+      navigate(returnPath || '/settings', { replace: true });
+    };
+
     if (code) {
       handleSpotifyCallback(code)
-        .then(() => {
-          if (window.opener) {
-            window.close();
-          } else {
-            navigate('/dashboard');
-          }
-        })
+        .then(complete)
         .catch((err) => {
           console.error('Spotify auth failed', err);
-          if (window.opener) {
-            window.close();
-          } else {
-            navigate('/dashboard');
-          }
+          complete();
         });
     } else {
-      navigate('/dashboard');
+      complete();
     }
   }, [code, navigate]);
 

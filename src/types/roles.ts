@@ -21,6 +21,7 @@ export interface UserProfile {
   full_name: string;
   role: UserRoleType;
   avatar_url?: string;
+  text_number?: string | null;
   created_at: string;
   updated_at: string;
 }

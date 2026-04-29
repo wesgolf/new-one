@@ -1,6 +1,6 @@
 import { Handler } from '@netlify/functions';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? process.env.VITE_GEMINI_API_KEY;
 const MAX_CONTEXT_CHARS = 3000;
 
 const CORS = {

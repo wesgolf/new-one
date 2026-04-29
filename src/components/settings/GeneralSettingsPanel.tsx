@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Moon,
+  Phone,
   RefreshCw,
   SlidersHorizontal,
   Sun,
@@ -11,6 +12,7 @@ import type { GeneralSettings } from '../../types/domain';
 import { cn } from '../../lib/utils';
 import { applyGeneralSettings, loadCachedGeneralSettings, normalizeGeneralSettings } from '../../lib/generalSettingsRuntime';
 import { SettingsCard, SettingsFieldRow, SettingsLoadingSkeleton, SettingsSectionHeader } from './SettingsPrimitives';
+import { supabase } from '../../lib/supabase';
 
 // ─── Theme badge ──────────────────────────────────────────────────────────────
 
@@ -30,6 +32,7 @@ const LAYOUT_OPTIONS: { value: GeneralSettings['dashboard_layout']; label: strin
 
 export function GeneralSettingsPanel() {
   const [settings, setSettings] = useState<GeneralSettings>(loadCachedGeneralSettings());
+  const [textNumber, setTextNumber] = useState(loadCachedGeneralSettings().sms_phone || '');
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState<string | null>(null);
   const [saving,   setSaving]   = useState<string | null>(null); // key currently saving
@@ -40,7 +43,24 @@ export function GeneralSettingsPanel() {
       const data = await settingsService.general.get();
       const normalized = normalizeGeneralSettings(data);
       setSettings(normalized);
+      setTextNumber(normalized.sms_phone ?? '');
       applyGeneralSettings(normalized);
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData.session?.user?.id;
+      if (userId) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('text_number')
+          .eq('id', userId)
+          .maybeSingle();
+        const profileNumber = typeof profile?.text_number === 'string' ? profile.text_number : '';
+        if (profileNumber) {
+          setTextNumber(profileNumber);
+          setSettings((prev) => ({ ...prev, sms_phone: profileNumber }));
+          applyGeneralSettings({ ...normalized, sms_phone: profileNumber });
+        }
+      }
     } catch (err: any) {
       setError(err?.message ?? 'Failed to load general settings');
     } finally {
@@ -64,6 +84,35 @@ export function GeneralSettingsPanel() {
       // revert on failure
       setSettings(settings);
       applyGeneralSettings(settings);
+    } finally {
+      setSaving(null);
+    }
+  }, [settings]);
+
+  const saveTextNumber = useCallback(async (value: string) => {
+    const normalizedValue = value.trim();
+    const previous = settings.sms_phone ?? '';
+    const nextSettings = { ...settings, sms_phone: normalizedValue };
+    setSaving('sms_phone');
+    setTextNumber(normalizedValue);
+    setSettings(nextSettings);
+    applyGeneralSettings(nextSettings);
+    try {
+      await settingsService.general.update('sms_phone', normalizedValue);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData.session?.user?.id;
+      if (userId) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ text_number: normalizedValue, updated_at: new Date().toISOString() })
+          .eq('id', userId);
+        if (profileError) throw profileError;
+      }
+    } catch (err: any) {
+      setTextNumber(previous);
+      setSettings(settings);
+      applyGeneralSettings(settings);
+      setError(err?.message ?? 'Failed to save text number');
     } finally {
       setSaving(null);
     }
@@ -148,6 +197,24 @@ export function GeneralSettingsPanel() {
 
       {/* ── Notifications ────────────────────────────────── */}
       <SettingsCard title="Notifications">
+        <SettingsFieldRow
+          label="Text number"
+          description="Phone number stored on the user profile for SMS notifications."
+          saving={saving === 'sms_phone'}
+        >
+          <div className="flex items-center gap-2 rounded-xl border border-border bg-white px-3.5 py-2 min-w-[260px]">
+            <Phone className="h-3.5 w-3.5 text-text-muted" />
+            <input
+              type="tel"
+              value={textNumber}
+              onChange={(e) => setTextNumber(e.target.value)}
+              onBlur={() => { if (textNumber !== settings.sms_phone) void saveTextNumber(textNumber); }}
+              placeholder="+14167217403"
+              className="w-full bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
+            />
+          </div>
+        </SettingsFieldRow>
+
         {(
           [
             { key: 'sms',    label: 'Text notifications',     description: 'Send weekly summary digests to the user phone on file'  },

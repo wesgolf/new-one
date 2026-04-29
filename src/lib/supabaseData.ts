@@ -88,6 +88,107 @@ function mapReleaseRecord(row: any): ReleaseRecord {
   } as ReleaseRecord;
 }
 
+const RELEASE_LIST_SELECT_WITH_ARTIST = [
+  'id',
+  'title',
+  'artist',
+  'type',
+  'release_date',
+  'cover_art_url',
+  'bpm',
+  'musical_key',
+  'isrc',
+  'spotify_track_id',
+  'soundcloud_track_id',
+  'songstats_track_id',
+  'status',
+  'playlist_count',
+  'notable_playlists',
+  'recent_playlist_adds',
+  'playlist_source_provider',
+  'distribution',
+  'performance',
+  'soundcloud_stats',
+  'youtube_stats',
+  'created_at',
+  'updated_at',
+].join(',');
+
+const RELEASE_LIST_SELECT_WITH_ARTIST_NAME = [
+  'id',
+  'title',
+  'artist_name',
+  'type',
+  'release_date',
+  'cover_art_url',
+  'bpm',
+  'musical_key',
+  'isrc',
+  'spotify_track_id',
+  'soundcloud_track_id',
+  'songstats_track_id',
+  'status',
+  'playlist_count',
+  'notable_playlists',
+  'recent_playlist_adds',
+  'playlist_source_provider',
+  'distribution',
+  'performance',
+  'soundcloud_stats',
+  'youtube_stats',
+  'created_at',
+  'updated_at',
+].join(',');
+
+const PUBLIC_HUB_SELECT_WITH_ARTIST = [
+  'id',
+  'title',
+  'artist',
+  'type',
+  'release_date',
+  'cover_art_url',
+  'spotify_track_id',
+  'soundcloud_track_id',
+  'status',
+  'created_at',
+  'updated_at',
+  'distribution',
+  'performance',
+].join(',');
+
+const PUBLIC_HUB_SELECT_WITH_ARTIST_NAME = [
+  'id',
+  'title',
+  'artist_name',
+  'type',
+  'release_date',
+  'cover_art_url',
+  'spotify_track_id',
+  'soundcloud_track_id',
+  'status',
+  'created_at',
+  'updated_at',
+  'distribution',
+  'performance',
+].join(',');
+
+function isMissingColumnError(error: any, column: string) {
+  return error?.code === '42703' && String(error?.message || '').includes(column);
+}
+
+function normalizeReleaseWritePayload(
+  payload: Partial<ReleaseRecord> & Record<string, any>,
+  artistField: 'artist' | 'artist_name',
+) {
+  const { artist_name, artist, ...rest } = payload;
+  const next: Record<string, any> = { ...rest };
+  const artistValue = artist_name ?? artist ?? null;
+  if (artistValue !== null && artistValue !== undefined && artistValue !== '') {
+    next[artistField] = artistValue;
+  }
+  return next;
+}
+
 export async function safeProfiles(): Promise<ProfileSummary[]> {
   try {
     const { data, error } = await supabase
@@ -449,7 +550,22 @@ export async function fetchSyncJobs(limit = 12) {
 
 export async function fetchReleases() {
   console.groupCollapsed('[Releases] fetchReleases');
-  const rows = await safeSelect<any>('releases', 'release_date', false);
+  const user = await getCurrentAuthUser();
+  let query = supabase.from('releases').select('*').order('release_date', { ascending: false });
+  if (user?.id) query = query.eq('user_id', user.id);
+  const { data, error } = await query;
+  if (error) {
+    console.error('[Releases] fetchReleases failed:', {
+      message: error.message,
+      details: (error as any)?.details ?? null,
+      hint: (error as any)?.hint ?? null,
+      code: (error as any)?.code ?? null,
+    });
+    console.groupEnd();
+    if (isMissingTableError(error)) return [] as ReleaseRecord[];
+    throw error;
+  }
+  const rows = (data || []) as any[];
   console.log('[Releases] Raw row count:', rows.length);
   const mapped = rows.map(mapReleaseRecord);
   console.log('[Releases] Mapped release ids:', mapped.map((release) => release.id));
@@ -459,13 +575,23 @@ export async function fetchReleases() {
 
 export async function fetchReleaseList() {
   console.groupCollapsed('[Releases] fetchReleaseList');
-  const { data, error } = await supabase
-    .from('releases')
-    .select(
-      'id,title,artist_name,artist,type,release_date,cover_art_url,bpm,musical_key,isrc,spotify_track_id,soundcloud_track_id,songstats_track_id,status,playlist_count,notable_playlists,recent_playlist_adds,playlist_source_provider,distribution,performance,soundcloud_stats,youtube_stats,created_at,updated_at',
-    )
-    .order('release_date', { ascending: false })
-    .order('created_at', { ascending: false });
+  const user = await getCurrentAuthUser();
+  const runQuery = async (selectClause: string) => {
+    let query = supabase
+      .from('releases')
+      .select(selectClause)
+      .order('release_date', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (user?.id) query = query.eq('user_id', user.id);
+    return query;
+  };
+
+  let { data, error } = await runQuery(RELEASE_LIST_SELECT_WITH_ARTIST);
+
+  if (error && isMissingColumnError(error, 'artist')) {
+    console.warn('[Releases] fetchReleaseList retrying with artist_name column due to legacy/new schema mismatch.');
+    ({ data, error } = await runQuery(RELEASE_LIST_SELECT_WITH_ARTIST_NAME));
+  }
 
   if (error) {
     console.error('[Releases] fetchReleaseList failed:', {
@@ -486,11 +612,18 @@ export async function fetchReleaseList() {
 }
 
 export async function fetchPublicHubReleases() {
-  const { data, error } = await supabase
-    .from('releases')
-    .select('id,title,artist_name,artist,type,release_date,cover_art_url,spotify_track_id,soundcloud_track_id,status,created_at,updated_at,distribution,performance')
-    .order('release_date', { ascending: false })
-    .order('created_at', { ascending: false });
+  const runQuery = (selectClause: string) =>
+    supabase
+      .from('releases')
+      .select(selectClause)
+      .order('release_date', { ascending: false })
+      .order('created_at', { ascending: false });
+
+  let { data, error } = await runQuery(PUBLIC_HUB_SELECT_WITH_ARTIST);
+
+  if (error && isMissingColumnError(error, 'artist')) {
+    ({ data, error } = await runQuery(PUBLIC_HUB_SELECT_WITH_ARTIST_NAME));
+  }
 
   if (error) {
     if (isMissingTableError(error)) return [] as ReleaseRecord[];
@@ -501,7 +634,12 @@ export async function fetchPublicHubReleases() {
 }
 
 export async function fetchReleaseById(releaseId: string) {
-  const { data, error } = await supabase.from('releases').select('*').eq('id', releaseId).maybeSingle();
+  const user = await getCurrentAuthUser();
+  let query = supabase.from('releases').select('*').eq('id', releaseId);
+  if (user?.id) {
+    query = query.eq('user_id', user.id);
+  }
+  const { data, error } = await query.maybeSingle();
   if (error) {
     if (isMissingTableError(error)) return null;
     throw error;
@@ -550,10 +688,24 @@ export async function saveRelease(data: Partial<ReleaseRecord> & { id?: string }
   if (data.id) {
     const { id, ...rest } = data;
     console.log('[Releases] Mode: update existing release', { id });
-    const { error } = await supabase
+    let payload = normalizeReleaseWritePayload(
+      { ...rest, updated_at: new Date().toISOString() },
+      'artist',
+    );
+    let { error } = await supabase
       .from('releases')
-      .update({ ...rest, updated_at: new Date().toISOString() })
+      .update(payload)
       .eq('id', id);
+    if (error && isMissingColumnError(error, 'artist')) {
+      payload = normalizeReleaseWritePayload(
+        { ...rest, updated_at: new Date().toISOString() },
+        'artist_name',
+      );
+      ({ error } = await supabase
+        .from('releases')
+        .update(payload)
+        .eq('id', id));
+    }
     if (error) {
       console.error('[Releases] Update failed:', {
         id,
@@ -568,19 +720,28 @@ export async function saveRelease(data: Partial<ReleaseRecord> & { id?: string }
     }
     console.log('[Releases] Update succeeded:', { id });
   } else {
-    const insertPayload = {
+    let insertPayload = normalizeReleaseWritePayload({
       ...data,
       user_id: user?.id ?? null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-    };
+    }, 'artist');
     console.log('[Releases] Mode: insert new release', {
       title: insertPayload.title ?? null,
       user_id: insertPayload.user_id ?? null,
       release_date: insertPayload.release_date ?? null,
       soundcloud_track_id: insertPayload.soundcloud_track_id ?? null,
     });
-    const { error } = await supabase.from('releases').insert([insertPayload]);
+    let { error } = await supabase.from('releases').insert([insertPayload]);
+    if (error && isMissingColumnError(error, 'artist')) {
+      insertPayload = normalizeReleaseWritePayload({
+        ...data,
+        user_id: user?.id ?? null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }, 'artist_name');
+      ({ error } = await supabase.from('releases').insert([insertPayload]));
+    }
     if (error) {
       console.error('[Releases] Insert failed:', {
         title: insertPayload.title ?? null,

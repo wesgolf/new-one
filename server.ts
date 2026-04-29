@@ -1204,6 +1204,10 @@ async function startServer() {
 
       for (const user of users) {
         for (const provider of user.enabledPlatforms) {
+          if (provider === 'spotify') {
+            console.log('[integration scheduler] skipping spotify auto-sync; Spotify is client-authenticated and currently supports manual sync only.');
+            continue;
+          }
           const lastSuccess = await getLastSuccessfulRunAt(sql, shape, user.userId, provider);
           const due = !lastSuccess || (Date.now() - lastSuccess.getTime()) >= user.syncInterval * 1000;
           if (!due) continue;
@@ -1318,7 +1322,7 @@ async function startServer() {
       return res.status(500).json({ error: 'Supabase server client is not configured.' });
     }
 
-    const songstatsArtistId = String((req.body as any)?.songstatsArtistId ?? '').trim();
+    const songstatsArtistId = String((req.body as any)?.songstatsArtistId ?? process.env.SONGSTATS_ARTIST_ID ?? process.env.VITE_SONGSTATS_ARTIST_ID ?? '').trim();
     if (!songstatsArtistId) {
       return res.status(400).json({ error: 'songstatsArtistId is required' });
     }

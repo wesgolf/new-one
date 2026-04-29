@@ -74,6 +74,7 @@ const MIGRATION_FILES = [
   'supabase-search-migration.sql',
   'supabase-coach-sessions-migration.sql',
   'supabase-songstats-track-id-migration.sql',
+  'supabase-profiles-text-number-migration.sql',
   'supabase-query-performance-migration.sql',
 ];
 

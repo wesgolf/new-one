@@ -1,5 +1,5 @@
 import { fetchJson, type FetchJsonOptions } from './api';
-import { ApiContentTypeError, ApiHttpError } from './api/errors';
+import { ApiContentTypeError, ApiHttpError, ApiNetworkError } from './api/errors';
 
 function trimLeadingSlash(value: string) {
   return value.replace(/^\/+/, '');
@@ -26,6 +26,22 @@ function isHtmlFallbackError(error: unknown) {
   return false;
 }
 
+function shouldFallbackToFunction(error: unknown, primaryPath: string) {
+  if (!primaryPath.startsWith('/api/')) return false;
+
+  if (isHtmlFallbackError(error)) return true;
+
+  if (error instanceof ApiHttpError) {
+    return error.status === 404 || error.status === 405 || error.status === 408 || error.status >= 500;
+  }
+
+  if (error instanceof ApiNetworkError) {
+    return true;
+  }
+
+  return false;
+}
+
 export async function fetchServerJsonWithFallback<T = unknown>(
   primaryPath: string,
   fallbackFunctionPath?: string,
@@ -34,7 +50,7 @@ export async function fetchServerJsonWithFallback<T = unknown>(
   try {
     return await fetchJson<T>(primaryPath, options);
   } catch (error) {
-    if (!fallbackFunctionPath || !isHtmlFallbackError(error)) {
+    if (!fallbackFunctionPath || !shouldFallbackToFunction(error, primaryPath)) {
       throw error;
     }
 

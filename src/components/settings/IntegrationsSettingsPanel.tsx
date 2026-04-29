@@ -14,6 +14,7 @@ import { env } from '../../lib/envConfig';
 import { fetchArtistCatalog, fetchArtistStats, fetchTrackInfo, fetchTrackStats, type ArtistCatalogTrack } from '../../lib/songstatsService';
 import { fetchReleases, saveRelease } from '../../lib/supabaseData';
 import { fetchServerJsonWithFallback } from '../../lib/serverApi';
+import { fetchArtistTracks, getSpotifyToken, redirectToSpotifyAuth } from '../../lib/spotify';
 import { SettingsCard, SettingsFieldRow, SettingsLoadingSkeleton, SettingsSectionHeader } from './SettingsPrimitives';
 
 // ─── Platform metadata ────────────────────────────────────────────────────────
@@ -37,6 +38,10 @@ const PROVIDER_META: Record<
     label: 'SoundCloud',
     shortDescription: 'Artist tracks',
   },
+  spotify: {
+    label: 'Spotify',
+    shortDescription: 'Catalog sync',
+  },
 };
 
 const ALL_PLATFORMS = Object.keys(PROVIDER_META) as IntegrationPlatformKey[];
@@ -59,6 +64,7 @@ const INITIAL_PULL_STATE: Record<IntegrationPlatformKey, ManualPullState> = {
   zernio: { status: 'idle', message: null, ranAt: null },
   songstats: { status: 'idle', message: null, ranAt: null },
   soundcloud: { status: 'idle', message: null, ranAt: null },
+  spotify: { status: 'idle', message: null, ranAt: null },
 };
 
 const SHARED_RUNS_KEY = 'integration_api_runs';
@@ -92,6 +98,7 @@ export function IntegrationsSettingsPanel() {
         zernio: { status: 'idle', message: null, ranAt: sharedRuns.zernio ?? null },
         songstats: { status: 'idle', message: null, ranAt: sharedRuns.songstats ?? null },
         soundcloud: { status: 'idle', message: null, ranAt: sharedRuns.soundcloud ?? null },
+        spotify: { status: 'idle', message: null, ranAt: sharedRuns.spotify ?? null },
       });
     } catch (err: any) {
       setError(err?.message ?? 'Failed to load integration settings');
@@ -140,14 +147,14 @@ export function IntegrationsSettingsPanel() {
       }
 
       if (platform === 'songstats') {
-        if (!env.songstatsArtistId) {
-          throw new Error('Missing VITE_SONGSTATS_ARTIST_ID.');
-        }
-        console.log('[Integrations][Songstats] Artist id:', env.songstatsArtistId);
-        const data = await fetchArtistStats(env.songstatsArtistId, 'all');
+        const songstatsArtistId = String(env.songstatsArtistId ?? '').trim();
+        console.log('[Integrations][Songstats] Artist id:', songstatsArtistId || '(server env fallback)');
+        const data = songstatsArtistId
+          ? await fetchArtistStats(songstatsArtistId, 'all')
+          : { stats: [] };
         const count = Array.isArray(data.stats) ? data.stats.length : 0;
         console.log('[Integrations][Songstats] Source count from /artists/stats:', count);
-        const sync = await syncSongstatsReleases(env.songstatsArtistId);
+        const sync = await syncSongstatsReleases(songstatsArtistId);
         console.log('[Integrations][Songstats] Sync result:', sync);
         message = `Fetched ${count} sources. Updated ${sync.updated} release${sync.updated === 1 ? '' : 's'}${sync.skipped ? `, skipped ${sync.skipped}` : ''}.`;
       }
@@ -198,6 +205,27 @@ export function IntegrationsSettingsPanel() {
         const sync = await syncSoundCloudReleases(tracks);
         console.log('[Integrations][SoundCloud] Sync result:', sync);
         message = `Fetched ${tracks.length} tracks. ${sync.created} created, ${sync.updated} updated${sync.skipped ? `, ${sync.skipped} skipped` : ''}.`;
+      }
+
+      if (platform === 'spotify') {
+        const token = await getSpotifyToken();
+        console.log('[Integrations][Spotify] Access token present:', Boolean(token));
+        if (!token) {
+          redirectToSpotifyAuth();
+          throw new Error('Opened Spotify auth popup. Finish login, then run Pull now again.');
+        }
+
+        const artistIds = ARTIST_INFO.spotify_ids
+          .map((value) => String(value || '').trim())
+          .filter(Boolean);
+        console.log('[Integrations][Spotify] Resolved artist IDs from config:', artistIds);
+        if (!artistIds.length) {
+          throw new Error('Missing Spotify artist ID. Set VITE_SPOTIFY_ARTIST_ID / VITE_SPOTIFY_ARTIST_ID_2, or VITE_SPOTIFY_IDS in env.');
+        }
+
+        const sync = await syncSpotifyReleases(artistIds);
+        console.log('[Integrations][Spotify] Sync result:', sync);
+        message = `Fetched ${sync.fetched} tracks. ${sync.updated} updated${sync.skipped ? `, ${sync.skipped} skipped` : ''}.`;
       }
 
       const ranAt = new Date().toISOString();
@@ -590,6 +618,112 @@ async function syncSoundCloudReleases(tracks: any[]) {
   console.log('[Integrations][SoundCloud] Final sync summary:', { updated, created, skipped });
   console.groupEnd();
   return { updated, created, skipped };
+}
+
+function spotifyTrackUrl(trackId: string | null | undefined) {
+  return trackId ? `https://open.spotify.com/track/${trackId}` : null;
+}
+
+async function syncSpotifyReleases(artistIds: string[]) {
+  console.group('[Integrations][Spotify] syncSpotifyReleases');
+  console.log('[Integrations][Spotify] Artist IDs:', artistIds);
+
+  const fetchedById = new Map<string, any>();
+  for (const artistId of artistIds) {
+    console.log('[Integrations][Spotify] Fetching artist tracks for:', artistId);
+    const tracks = await fetchArtistTracks(artistId);
+    console.log('[Integrations][Spotify] Track count for artist:', { artistId, count: tracks.length });
+    for (const track of tracks) {
+      if (track?.id && !fetchedById.has(track.id)) {
+        fetchedById.set(track.id, track);
+      }
+    }
+  }
+
+  const tracks = Array.from(fetchedById.values());
+  const releases = await fetchReleases();
+  console.log('[Integrations][Spotify] Existing release count:', releases.length);
+
+  const bySpotifyId = new Map(
+    releases
+      .filter((release) => release.spotify_track_id)
+      .map((release) => [String(release.spotify_track_id), release]),
+  );
+  const byTitle = new Map(releases.map((release) => [normalizeReleaseTitle(release.title), release]));
+
+  let updated = 0;
+  let skipped = 0;
+
+  for (const track of tracks) {
+    const existing =
+      bySpotifyId.get(String(track.id)) ??
+      byTitle.get(normalizeReleaseTitle(track.name)) ??
+      null;
+
+    console.groupCollapsed('[Integrations][Spotify] Track candidate');
+    console.log('[Integrations][Spotify] Raw track:', {
+      id: track.id ?? null,
+      name: track.name ?? null,
+      album: track.album?.name ?? null,
+      release_date: track.album?.release_date ?? null,
+      external_url: track.external_urls?.spotify ?? null,
+    });
+    console.log('[Integrations][Spotify] Match lookup:', {
+      matchedReleaseId: existing?.id ?? null,
+      matchedReleaseTitle: existing?.title ?? null,
+    });
+
+    if (!existing) {
+      skipped += 1;
+      console.warn('[Integrations][Spotify] No existing release match. Skipping.');
+      console.groupEnd();
+      continue;
+    }
+
+    const nextDistribution = {
+      ...existing.distribution,
+      spotify_url: track.external_urls?.spotify ?? spotifyTrackUrl(track.id) ?? existing.distribution?.spotify_url ?? null,
+    };
+
+    try {
+      await saveRelease({
+        id: existing.id,
+        title: existing.title,
+        artist_name: existing.artist_name ?? track.artists?.map((artist: any) => artist?.name).filter(Boolean).join(', ') ?? null,
+        release_date: existing.release_date ?? track.album?.release_date ?? null,
+        cover_art_url: existing.cover_art_url ?? track.album?.images?.[0]?.url ?? null,
+        spotify_track_id: track.id ?? existing.spotify_track_id ?? null,
+        distribution: nextDistribution,
+      });
+      updated += 1;
+      console.log('[Integrations][Spotify] Release updated successfully:', existing.id);
+    } catch (error: any) {
+      skipped += 1;
+      console.error('[Integrations][Spotify] saveRelease failed for track:', {
+        spotify_track_id: track.id ?? null,
+        title: track.name ?? null,
+        message: error?.message ?? null,
+        details: error?.details ?? null,
+        hint: error?.hint ?? null,
+        code: error?.code ?? null,
+        status: error?.status ?? null,
+      });
+    } finally {
+      console.groupEnd();
+    }
+  }
+
+  console.log('[Integrations][Spotify] Final sync summary:', {
+    fetched: tracks.length,
+    updated,
+    skipped,
+  });
+  console.groupEnd();
+  return {
+    fetched: tracks.length,
+    updated,
+    skipped,
+  };
 }
 
 function songstatsSourceValue(stats: Array<{ source: string; data: Record<string, number> }>, source: string, key: string) {

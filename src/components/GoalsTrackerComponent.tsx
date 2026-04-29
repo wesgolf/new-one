@@ -23,6 +23,7 @@ import { Goal, GoalEntry } from '../types';
 import { supabase } from '../lib/supabase';
 import { GoalModal } from './GoalModal';
 import { calculateGoalPace } from '../engine/growth';
+import { fetchServerJsonWithFallback } from '../lib/serverApi';
 
 interface GoalsTrackerProps {
   onAction?: (msg: string) => void;
@@ -180,27 +181,31 @@ export default function GoalsTrackerComponent({ onAction }: GoalsTrackerProps) {
       const currentDate = new Date().toISOString().split('T')[0];
       const { data: shows } = await supabase.from('shows').select('*');
 
-      const res = await fetch('/api/goals/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currentDate,
-          shows: shows?.slice(0, 5) ?? [],
-          goals: goals.map((g) => ({
-            id:          g.id,
-            title:       g.title,
-            goal_type:   g.goal_type ?? 'count',
-            target:      g.target,
-            current:     g.current,
-            unit:        g.unit,
-            deadline:    g.deadline,
-            is_timeless: g.is_timeless,
-          })),
-        }),
-      });
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const { statuses, analysis } = await res.json();
+      const { statuses, analysis } = await fetchServerJsonWithFallback<{
+        statuses?: Record<string, { status: string; reasoning: string; current?: number }>;
+        analysis?: string;
+      }>(
+        '/api/goals/analyze',
+        'goals-analyze',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            currentDate,
+            shows: shows?.slice(0, 5) ?? [],
+            goals: goals.map((g) => ({
+              id:          g.id,
+              title:       g.title,
+              goal_type:   g.goal_type ?? 'count',
+              target:      g.target,
+              current:     g.current,
+              unit:        g.unit,
+              deadline:    g.deadline,
+              is_timeless: g.is_timeless,
+            })),
+          }),
+        },
+      );
 
       if (statuses) {
         setGoalStatuses(statuses);

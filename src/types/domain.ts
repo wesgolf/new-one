@@ -165,6 +165,7 @@ export interface ProfileSummary {
   full_name?: string | null;
   role?: string | null;
   email?: string | null;
+  text_number?: string | null;
 }
 
 export interface ReleaseRecord {
@@ -407,7 +408,7 @@ export const DEFAULT_UNAUTHORIZED_PAGE_SETTINGS: UnauthorizedPageSettings = {
 
 // ── integrations ──────────────────────────────────────────────────────────────
 
-export type IntegrationPlatformKey = 'zernio' | 'songstats' | 'soundcloud';
+export type IntegrationPlatformKey = 'zernio' | 'songstats' | 'soundcloud' | 'spotify';
 
 export interface IntegrationsSettings {
   auto_sync:          boolean;
@@ -418,7 +419,7 @@ export interface IntegrationsSettings {
 export const DEFAULT_INTEGRATIONS_SETTINGS: IntegrationsSettings = {
   auto_sync:         true,
   sync_interval:     3600,
-  enabled_platforms: ['zernio', 'songstats', 'soundcloud'],
+  enabled_platforms: ['zernio', 'songstats', 'soundcloud', 'spotify'],
 };
 
 /** Convenience map from category → typed value */

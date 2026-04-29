@@ -9,6 +9,7 @@ const SUPABASE_ANON =
   process.env.VITE_SUPABASE_PK ??
   '';
 const SONGSTATS_API_KEY = process.env.SONGSTATS_API_KEY ?? process.env.VITE_SONGSTATS_API_KEY ?? '';
+const SONGSTATS_ARTIST_ID = process.env.SONGSTATS_ARTIST_ID ?? process.env.VITE_SONGSTATS_ARTIST_ID ?? '';
 
 const CORS = {
   'Content-Type': 'application/json',
@@ -91,7 +92,8 @@ export const handler: Handler = async (event) => {
   } catch {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid JSON body' }) };
   }
-  if (!body.songstatsArtistId) {
+  const songstatsArtistId = String(body.songstatsArtistId ?? SONGSTATS_ARTIST_ID).trim();
+  if (!songstatsArtistId) {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'songstatsArtistId is required' }) };
   }
 
@@ -121,7 +123,7 @@ export const handler: Handler = async (event) => {
     const catalogResponse = await fetchSongstats<{
       catalog?: Array<{ songstats_track_id: string; title: string; isrcs?: string[] }>;
     }>('/artists/catalog', {
-      songstats_artist_id: body.songstatsArtistId,
+      songstats_artist_id: songstatsArtistId,
       source_ids: 'all',
       limit: '100',
     });

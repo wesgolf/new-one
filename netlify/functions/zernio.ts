@@ -6,7 +6,10 @@ import { Handler } from '@netlify/functions';
  * The API key is read from process.env.ZERNIO_API_KEY — never the browser build.
  */
 
-const ZERNIO_API_KEY = process.env.ZERNIO_API_KEY;
+const ZERNIO_API_KEY =
+  process.env.ZERNIO_API_KEY ??
+  process.env.VITE_ZERNIO_API_KEY ??
+  process.env.VITE_ZERNIO_KEY;
 const ZERNIO_API_BASE = 'https://zernio.com/api/v1';
 
 const ALLOWED_GET_PATHS = new Set([
@@ -49,7 +52,7 @@ export const handler: Handler = async (event) => {
   }
 
   // Strip /api/zernio prefix to get the upstream path
-  const subPath = (event.path ?? '').replace(/^\/api\/zernio/, '') || '/';
+  const subPath = (event.path ?? '').replace(/^\/(?:api\/zernio|\.netlify\/functions\/zernio)/, '') || '/';
   const isGet  = event.httpMethod === 'GET';
   const isPost = event.httpMethod === 'POST';
 

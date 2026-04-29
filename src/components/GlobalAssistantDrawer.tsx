@@ -15,6 +15,7 @@ import {
 import { dispatchAssistantAction } from '../lib/commandBus';
 import { useAssistantContext } from '../context/AssistantContext';
 import type { AssistantAction } from '../types/domain';
+import { fetchServerJsonWithFallback } from '../lib/serverApi';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -125,13 +126,18 @@ export function GlobalAssistantDrawer() {
     setAiLoading(true);
 
     try {
-      const res = await fetch('/api/assistant/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed, pageContext }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const { reply, actions } = await res.json();
+      const { reply, actions } = await fetchServerJsonWithFallback<{
+        reply?: string;
+        actions?: AssistantAction[];
+      }>(
+        '/api/assistant/chat',
+        'assistant-chat',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: trimmed, pageContext }),
+        },
+      );
       setMessages(prev => [
         ...prev,
         {

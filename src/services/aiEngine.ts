@@ -1,4 +1,5 @@
 import { Release, ContentItem, Goal, Todo } from "../types";
+import { fetchServerJsonWithFallback } from "../lib/serverApi";
 
 export interface AIAnalysisResult {
   focusTrackId: string;
@@ -68,11 +69,13 @@ export async function analyzeArtistState(
     todos:    todos.slice(0, 10).map(summariseTodo),
   };
 
-  const res = await fetch('/api/ai/analyze', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error(`AI analysis failed: HTTP ${res.status}`);
-  return res.json() as Promise<AIAnalysisResult>;
+  return fetchServerJsonWithFallback<AIAnalysisResult>(
+    '/api/ai/analyze',
+    'ai-analyze',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  );
 }

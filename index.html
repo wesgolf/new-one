@@ -23,27 +23,19 @@
 
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', async () => {
-          if (isLocalDev) {
-            try {
-              // Dev mode: remove old SW + cache to avoid stale Vite/React chunks.
-              const regs = await navigator.serviceWorker.getRegistrations();
-              await Promise.all(regs.map((reg) => reg.unregister()));
-              if ('caches' in window) {
-                const keys = await caches.keys();
-                await Promise.all(keys.map((key) => caches.delete(key)));
-              }
-              console.log('SW disabled in local dev and caches cleared');
-            } catch (err) {
-              console.log('SW cleanup in local dev failed:', err);
+          try {
+            // Always unregister. The current SW layer causes stale deploys and
+            // forces hard refreshes, which is worse than the offline benefit.
+            const regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map((reg) => reg.unregister()));
+            if ('caches' in window) {
+              const keys = await caches.keys();
+              await Promise.all(keys.map((key) => caches.delete(key)));
             }
-            return;
+            console.log('Service workers disabled and caches cleared');
+          } catch (err) {
+            console.log('Service worker cleanup failed:', err);
           }
-
-          navigator.serviceWorker.register('/sw.js').then(reg => {
-            console.log('SW registered:', reg);
-          }).catch(err => {
-            console.log('SW registration failed:', err);
-          });
         });
       }
       // Suppress benign Vite WebSocket errors in this environment
@@ -66,4 +58,3 @@
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

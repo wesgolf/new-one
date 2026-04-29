@@ -320,7 +320,7 @@ export function Unauthorized() {
   const contactEmail = unauthorizedPageSettings.contact_email || ARTIST_INFO.email || '';
 
   return (
-    <div className="relative min-h-screen bg-background px-4 py-16">
+    <div className="relative min-h-screen bg-background px-4 py-0">
       <Background />
       <div className="mx-auto flex min-h-screen max-w-[430px] items-center justify-center">
         <AnimatePresence mode="wait">

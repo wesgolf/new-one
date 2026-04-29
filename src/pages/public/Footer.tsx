@@ -4,7 +4,7 @@ interface FooterProps {
 
 export default function Footer({ pressKitUrl }: FooterProps) {
   return (
-    <footer className="w-full border-t border-outline/5 bg-background px-6 py-10 text-center">
+    <footer className="w-full border-t border-outline/5 bg-background px-6 pt-0 pb-10 text-center">
       <div className="font-headline text-3xl font-black tracking-tighter text-on-surface">
         WES.
       </div>
