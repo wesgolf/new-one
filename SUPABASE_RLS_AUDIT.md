@@ -59,15 +59,9 @@ This audit reviews the security of Supabase client usage and Row Level Security 
 ## Appendix
 ### Comments Added
 - Comments explaining the safety of exposing the anon key were added to:
-  - `/supabase-schema.sql`
-  - `/supabase-profiles-migration.sql`
-  - `/supabase-releases-migration.sql`
+  - `/supabase-baseline-v3.sql`
 
 ### Files Reviewed
 - `/src/lib/supabase.ts`
 - `/src/lib/envConfig.ts`
-- `/supabase-schema.sql`
-- `/supabase-profiles-migration.sql`
-- `/supabase-releases-migration.sql`
-- `/supabase-sync-migration.sql`
-- `/supabase-tasks-migration.sql`
+- `/supabase-baseline-v3.sql`

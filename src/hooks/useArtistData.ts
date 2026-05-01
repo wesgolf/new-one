@@ -36,7 +36,7 @@ export function useArtistData<T>(table: string) {
                             (err.details && err.details.includes('results in 0 columns'));
       
       if (isSchemaError) {
-        message = `Database schema mismatch. Please copy the code from "supabase-schema.sql" and run it in your Supabase SQL Editor to update your tables.`;
+        message = `Database schema mismatch. Re-run the active baseline migration from "supabase-baseline-v3.sql" against Supabase.`;
       } else if (err.message === 'Failed to fetch') {
         message = 'Connection to Supabase failed. Please check your internet connection and Supabase URL.';
       } else if (err.code === 'PGRST301') {

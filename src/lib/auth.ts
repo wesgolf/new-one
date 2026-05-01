@@ -139,8 +139,8 @@ export const signOut = async () => {
  */
 export const getCurrentAuthUser = async () => {
   console.groupCollapsed('[Auth] getCurrentAuthUser');
-  // Use getSession first — it reads from local storage without a network call
-  // and never throws when no session exists.
+  // Use getSession only for routine client-side reads. It resolves from local
+  // storage and avoids the extra /auth/v1/user validation request.
   const { data: sessionData } = await supabase.auth.getSession();
   const sessionUser = sessionData?.session?.user ?? null;
   console.log('[Auth] Session present:', Boolean(sessionData?.session));
@@ -151,29 +151,9 @@ export const getCurrentAuthUser = async () => {
     return null;
   }
 
-  try {
-    const { data, error } = await supabase.auth.getUser();
-    if (error) {
-      console.warn('[Auth] supabase.auth.getUser failed. Falling back to session user.', {
-        message: error.message,
-        status: (error as any)?.status ?? null,
-        code: (error as any)?.code ?? null,
-      });
-      console.groupEnd();
-      return sessionUser;
-    }
-    const resolvedUser = data?.user ?? sessionUser;
-    console.log('[Auth] getUser resolved user id:', resolvedUser?.id ?? null);
-    console.groupEnd();
-    return resolvedUser;
-  } catch (error: any) {
-    console.warn('[Auth] getUser threw unexpectedly. Falling back to session user.', {
-      name: error?.name ?? null,
-      message: error?.message ?? null,
-    });
-    console.groupEnd();
-    return sessionUser;
-  }
+  console.log('[Auth] Returning session user without extra network validation.');
+  console.groupEnd();
+  return sessionUser;
 };
 
 /**

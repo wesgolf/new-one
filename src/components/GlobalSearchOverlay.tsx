@@ -1,7 +1,7 @@
 /**
  * Global Search Overlay Component
  * Toggles with CMD/CTRL+K or from navbar icon
- * Searches across ideas, releases, content, tasks
+ * Searches across ideas, tasks, goals, calendar events, and reports
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -13,7 +13,7 @@ import { supabase } from '../lib/supabase';
 interface SearchResult {
   id: string;
   title: string;
-  type: 'idea' | 'release' | 'content' | 'task';
+  type: 'idea' | 'task' | 'goal' | 'event' | 'report';
   path: string;
   metadata?: string;
 }
@@ -35,11 +35,12 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
     setLoading(true);
     try {
       const like = `%${q}%`;
-      const [ideasRes, releasesRes, contentRes, tasksRes] = await Promise.allSettled([
+      const [ideasRes, tasksRes, goalsRes, eventsRes, reportsRes] = await Promise.allSettled([
         supabase.from('ideas').select('id, title, status').ilike('title', like).limit(4),
-        supabase.from('releases').select('id, title, status').ilike('title', like).limit(4),
-        supabase.from('content_items').select('id, title, platform').ilike('title', like).limit(4),
-        supabase.from('tasks').select('id, title, status').ilike('title', like).limit(4),
+        supabase.from('tasks').select('id, title, completed').ilike('title', like).limit(4),
+        supabase.from('goals').select('id, title, category').ilike('title', like).limit(4),
+        supabase.from('calendar_events').select('id, title, event_type').ilike('title', like).limit(4),
+        supabase.from('reports').select('id, title, report_date').ilike('title', like).limit(4),
       ]);
 
       const merged: SearchResult[] = [
@@ -47,17 +48,21 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
           id: r.id, title: r.title, type: 'idea' as const,
           path: '/ideas', metadata: r.status ?? 'Idea',
         })),
-        ...((releasesRes.status === 'fulfilled' ? releasesRes.value.data ?? [] : []) as any[]).map((r) => ({
-          id: r.id, title: r.title, type: 'release' as const,
-          path: `/releases/${r.id}`, metadata: r.status ?? 'Release',
-        })),
-        ...((contentRes.status === 'fulfilled' ? contentRes.value.data ?? [] : []) as any[]).map((r) => ({
-          id: r.id, title: r.title, type: 'content' as const,
-          path: '/content', metadata: r.platform ?? 'Content',
-        })),
         ...((tasksRes.status === 'fulfilled' ? tasksRes.value.data ?? [] : []) as any[]).map((r) => ({
           id: r.id, title: r.title, type: 'task' as const,
-          path: '/tasks', metadata: r.status ?? 'Task',
+          path: '/tasks', metadata: r.completed ?? 'Task',
+        })),
+        ...((goalsRes.status === 'fulfilled' ? goalsRes.value.data ?? [] : []) as any[]).map((r) => ({
+          id: r.id, title: r.title, type: 'goal' as const,
+          path: '/goals', metadata: r.category ?? 'Goal',
+        })),
+        ...((eventsRes.status === 'fulfilled' ? eventsRes.value.data ?? [] : []) as any[]).map((r) => ({
+          id: r.id, title: r.title, type: 'event' as const,
+          path: '/calendar', metadata: r.event_type ?? 'Event',
+        })),
+        ...((reportsRes.status === 'fulfilled' ? reportsRes.value.data ?? [] : []) as any[]).map((r) => ({
+          id: r.id, title: r.title, type: 'report' as const,
+          path: '/reports', metadata: r.report_date ? new Date(r.report_date).toLocaleDateString() : 'Report',
         })),
       ];
       setResults(merged.slice(0, 12));
@@ -104,11 +109,12 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
 
   const typeColors = {
     idea: 'bg-blue-50 text-blue-700 border-blue-200',
-    release: 'bg-blue-50 text-blue-700 border-blue-200',
-    content: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     task: 'bg-amber-50 text-amber-700 border-amber-200',
+    goal: 'bg-violet-50 text-violet-700 border-violet-200',
+    event: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    report: 'bg-slate-100 text-slate-700 border-slate-200',
   };
-  const typeLabels = { idea: 'Idea', release: 'Release', content: 'Content', task: 'Task' };
+  const typeLabels = { idea: 'Idea', task: 'Task', goal: 'Goal', event: 'Event', report: 'Report' };
 
   return (
     <>
@@ -124,7 +130,7 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search ideas, releases, content, tasks..."
+              placeholder="Search ideas, tasks, goals, events, reports..."
               className="flex-1 bg-transparent outline-none text-lg text-text-primary placeholder-text-tertiary"
             />
             <button onClick={onClose} className="p-1 hover:bg-light-surface-secondary rounded-lg transition-colors">
@@ -183,4 +189,3 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
 }
 
 export { GlobalSearch as GlobalSearchOverlay };
-

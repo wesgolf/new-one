@@ -1,8 +1,8 @@
 /**
  * Artist OS — Supabase Migration Runner
  *
- * Reads DATABASE_URL from .env or .env.local and executes approved supabase-*.sql files
- * in order.
+ * Reads DATABASE_URL from .env or .env.local and executes the active baseline
+ * schema file.
  *
  * Safety:
  *   - Destructive SQL is blocked by default.
@@ -64,18 +64,7 @@ if (!DATABASE_URL) {
 
 // All migration files in the order they should run
 const MIGRATION_FILES = [
-  'supabase-schema.sql',
-  'supabase-settings-migration.sql',
-  'supabase-app-settings-migration.sql',
-  'supabase-releases-migration.sql',
-  'supabase-ideas-migration.sql',
-  'supabase-tasks-migration.sql',
-  'supabase-sync-migration.sql',
-  'supabase-search-migration.sql',
-  'supabase-coach-sessions-migration.sql',
-  'supabase-songstats-track-id-migration.sql',
-  'supabase-profiles-text-number-migration.sql',
-  'supabase-query-performance-migration.sql',
+  'supabase-baseline-v3.sql',
 ];
 
 const ROOT = path.resolve(process.cwd());

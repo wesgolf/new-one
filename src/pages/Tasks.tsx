@@ -7,8 +7,8 @@ import { usePermissions } from '../hooks/usePermissions';
 import { subscribeAssistantActions } from '../lib/commandBus';
 import type { ProfileSummary, TaskPriority, TaskRecord, TaskStatus } from '../types/domain';
 
-const STATUS_OPTIONS: TaskStatus[] = ['todo', 'in_progress', 'blocked', 'done'];
-const PRIORITY_OPTIONS: TaskPriority[] = ['low', 'medium', 'high', 'urgent'];
+const STATUS_OPTIONS: TaskStatus[] = ['pending', 'completed', 'cancelled'];
+const PRIORITY_OPTIONS: TaskPriority[] = ['low', 'medium', 'high'];
 
 interface TaskModalProps {
   open: boolean;
@@ -31,7 +31,7 @@ function TaskModal({ open, profiles, initialTask, onClose, onSaved }: TaskModalP
       setError(null);
       setForm(
         initialTask || {
-          status: 'todo',
+          status: 'pending',
           priority: 'medium',
         }
       );
@@ -89,7 +89,7 @@ function TaskModal({ open, profiles, initialTask, onClose, onSaved }: TaskModalP
             <label className="block">
               <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">Status</span>
               <select
-                value={form.status || 'todo'}
+                value={form.status || 'pending'}
                 onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as TaskStatus }))}
                 className="input-base"
               >
@@ -120,8 +120,8 @@ function TaskModal({ open, profiles, initialTask, onClose, onSaved }: TaskModalP
               <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">Due date</span>
               <input
                 type="datetime-local"
-                value={form.due_date ? form.due_date.slice(0, 16) : ''}
-                onChange={(event) => setForm((current) => ({ ...current, due_date: event.target.value ? new Date(event.target.value).toISOString() : null }))}
+                value={form.due_date ? form.due_date.slice(0, 10) : ''}
+                onChange={(event) => setForm((current) => ({ ...current, due_date: event.target.value || null }))}
                 className="input-base"
               />
             </label>
@@ -130,8 +130,8 @@ function TaskModal({ open, profiles, initialTask, onClose, onSaved }: TaskModalP
           <label className="block">
             <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">Assign to</span>
             <select
-              value={form.assigned_to || ''}
-              onChange={(event) => setForm((current) => ({ ...current, assigned_to: event.target.value || null }))}
+              value={form.user_id_assigned_to || form.assigned_to || ''}
+              onChange={(event) => setForm((current) => ({ ...current, user_id_assigned_to: event.target.value || null, assigned_to: event.target.value || null }))}
               className="input-base"
             >
               <option value="">Unassigned</option>
@@ -195,8 +195,8 @@ export function Tasks() {
         if (canCreateTasks) {
           setSelectedTask({
             title: action.payload?.title || '',
-            due_date: action.payload?.startsAt || null,
-            status: 'todo',
+            due_date: action.payload?.startsAt ? String(action.payload.startsAt).slice(0, 10) : null,
+            status: 'pending',
             priority: 'medium',
           });
           setModalOpen(true);
@@ -241,7 +241,7 @@ export function Tasks() {
     await saveTask({
       ...task,
       status,
-      completed_at: status === 'done' ? new Date().toISOString() : null,
+      completed_at: status === 'completed' ? new Date().toISOString() : null,
     });
     load();
   };

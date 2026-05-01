@@ -18,7 +18,7 @@ export function UnauthorizedPageSettingsPanel() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const data = await settingsService.unauthorizedPage.get();
+      const data = await settingsService.unauthorized_page.get();
       setSettings(data);
     } catch (err: any) {
       setError(err?.message ?? 'Failed to load unauthorized page settings');
@@ -33,7 +33,7 @@ export function UnauthorizedPageSettingsPanel() {
     setSaving(true);
     setSaved(false);
     try {
-      await settingsService.unauthorizedPage.save(settings);
+      await settingsService.unauthorized_page.save(settings);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (err: any) {

@@ -37,7 +37,7 @@ interface RowProps {
 
 function TaskRow({ task, onToggleDone }: RowProps) {
   const group = getGroup(task);
-  const isDone = task.status === 'done';
+  const isDone = task.status === 'completed';
 
   return (
     <li className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
@@ -82,9 +82,7 @@ function TaskRow({ task, onToggleDone }: RowProps) {
 
       <span
         className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-          task.priority === 'urgent'
-            ? 'bg-red-50 text-red-600'
-            : task.priority === 'high'
+          task.priority === 'high'
             ? 'bg-amber-50 text-amber-700'
             : 'bg-surface text-text-tertiary'
         }`}
@@ -122,12 +120,12 @@ export function MyTasksWidget() {
 
   const handleToggleDone = useCallback(
     async (task: TaskRecord) => {
-      const newStatus = task.status === 'done' ? 'todo' : 'done';
+      const newStatus = task.status === 'completed' ? 'pending' : 'completed';
       try {
         await saveTask({
           ...task,
           status: newStatus,
-          completed_at: newStatus === 'done' ? new Date().toISOString() : null,
+          completed_at: newStatus === 'completed' ? new Date().toISOString() : null,
         });
         load();
       } catch {
@@ -138,7 +136,7 @@ export function MyTasksWidget() {
   );
 
   // Group into buckets (show only active tasks in widget)
-  const activeTasks = tasks.filter((t) => t.status !== 'done');
+  const activeTasks = tasks.filter((t) => t.status !== 'completed');
   const grouped = GROUP_ORDER.reduce<Record<Group, TaskRecord[]>>(
     (acc, g) => {
       acc[g] = activeTasks.filter((t) => getGroup(t) === g);

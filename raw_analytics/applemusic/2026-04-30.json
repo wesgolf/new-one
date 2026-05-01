@@ -1,0 +1,21 @@
+{
+  "profile": {
+    "name": "Apple Music Artist",
+    "url": "",
+    "followers": 0,
+    "following": 0,
+    "trackCount": 0,
+    "totalPlays": 0
+  },
+  "tracks": [],
+  "insights": {
+    "totalPlays": 0,
+    "totalLikes": 0,
+    "totalReposts": 0,
+    "totalComments": 0,
+    "totalDownloads": 0,
+    "locations": [],
+    "sources": []
+  },
+  "scrapedAt": "2026-04-30T07:00:37.614Z"
+}

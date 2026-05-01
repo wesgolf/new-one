@@ -15,13 +15,11 @@ import { Settings as SettingsIcon } from 'lucide-react';
 import { SettingsSidebar, type SettingsSection } from '../components/settings/SettingsSidebar';
 import { GeneralSettingsPanel } from '../components/settings/GeneralSettingsPanel';
 import { IntegrationsSettingsPanel } from '../components/settings/IntegrationsSettingsPanel';
-import { PublicHubSettingsPanel } from '../components/settings/PublicHubSettingsPanel';
 import { settingsService } from '../services/settingsService';
 
 const PANEL_MAP: Record<SettingsSection, React.ComponentType> = {
   general:      GeneralSettingsPanel,
   integrations: IntegrationsSettingsPanel,
-  public_hub:   PublicHubSettingsPanel,
 };
 
 export function Settings() {

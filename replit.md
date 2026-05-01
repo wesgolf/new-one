@@ -46,7 +46,7 @@ Core flow: Upload .mp4 → create content_item + content_asset → select platfo
 - Status legend sidebar
 - SoundCloud and Spotify sync integration
 
-## Database Schema (`supabase-schema.sql`)
+## Database Schema (`supabase-baseline-v3.sql`)
 
 ### Core Tables
 - `content_items`: Title, platform, status, publish_status, platform_settings (JSONB), media_url, campaign, notes, scheduled_date/time

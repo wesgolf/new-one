@@ -14,37 +14,44 @@ export function useReminders() {
         if (!userId) return;
 
         const now = new Date();
-        const tomorrow = new Date(now);
-        tomorrow.setDate(now.getDate() + 1);
-        
-        const tomorrowStr = tomorrow.toISOString().split('T')[0];
+        const tomorrowStart = new Date(now);
+        tomorrowStart.setDate(now.getDate() + 1);
+        tomorrowStart.setHours(0, 0, 0, 0);
+        const tomorrowEnd = new Date(tomorrowStart);
+        tomorrowEnd.setHours(23, 59, 59, 999);
 
-        // Check releases
-        const { data: releases } = await supabase
-          .from('releases')
-          .select('title, release_date')
-          .eq('user_id', userId)
-          .eq('release_date', tomorrowStr);
+        const [eventsRes, goalsRes, tasksRes] = await Promise.all([
+          supabase
+            .from('calendar_events')
+            .select('title,starts_at,event_type')
+            .eq('user_id', userId)
+            .gte('starts_at', tomorrowStart.toISOString())
+            .lt('starts_at', tomorrowEnd.toISOString()),
+          supabase
+            .from('goals')
+            .select('title,due_by')
+            .eq('user_id', userId)
+            .gte('due_by', tomorrowStart.toISOString())
+            .lt('due_by', tomorrowEnd.toISOString()),
+          supabase
+            .from('tasks')
+            .select('title,due_date,completed')
+            .or(`user_id_assigned_by.eq.${userId},user_id_assigned_to.eq.${userId}`)
+            .eq('completed', 'pending')
+            .eq('due_date', tomorrowStart.toISOString().slice(0, 10)),
+        ]);
 
-        if (releases && releases.length > 0) {
-          releases.forEach(r => {
-            showNotification(`Upcoming Release: ${r.title}`, `Your release is scheduled for tomorrow!`);
-          });
-        }
+        (eventsRes.data ?? []).forEach((event) => {
+          showNotification(`Upcoming ${event.event_type}: ${event.title}`, 'You have a calendar event scheduled for tomorrow.');
+        });
 
-        // Check content items
-        const { data: content } = await supabase
-          .from('content_items')
-          .select('title, scheduled_date')
-          .eq('user_id', userId)
-          .filter('scheduled_date', 'gte', tomorrowStr + 'T00:00:00Z')
-          .filter('scheduled_date', 'lt', tomorrowStr + 'T23:59:59Z');
+        (goalsRes.data ?? []).forEach((goal) => {
+          showNotification(`Goal due tomorrow: ${goal.title}`, 'One of your goals reaches its due date tomorrow.');
+        });
 
-        if (content && content.length > 0) {
-          content.forEach(c => {
-            showNotification(`Upcoming Post: ${c.title}`, `You have a post scheduled for tomorrow!`);
-          });
-        }
+        (tasksRes.data ?? []).forEach((task) => {
+          showNotification(`Task due tomorrow: ${task.title}`, 'You have an open task due tomorrow.');
+        });
       } catch (err) {
         console.error('Reminder check failed:', err);
       }

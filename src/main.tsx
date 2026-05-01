@@ -1,5 +1,5 @@
-import {StrictMode} from 'react';
-import {createRoot} from 'react-dom/client';
+import { StrictMode } from 'react';
+import { createRoot, Root } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import * as Sentry from "@sentry/react";
 import { AuthProvider } from './context/AuthContext';
@@ -43,7 +43,22 @@ const SentryApp = Sentry.withErrorBoundary(App, {
   ),
 });
 
-createRoot(document.getElementById('root')!).render(
+declare global {
+  interface Window {
+    __artistOsRoot?: Root;
+  }
+}
+
+const container = document.getElementById('root');
+
+if (!container) {
+  throw new Error('Root container #root was not found.');
+}
+
+const root = window.__artistOsRoot ?? createRoot(container);
+window.__artistOsRoot = root;
+
+root.render(
   <StrictMode>
     <BrowserRouter>
       <AuthProvider>

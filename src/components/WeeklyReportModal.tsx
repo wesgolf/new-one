@@ -383,7 +383,9 @@ function ReportPhase({
       } catch {
         // execCommand not available
       }
-      document.body.removeChild(el);
+      if (el.parentNode === document.body) {
+        document.body.removeChild(el);
+      }
     }
 
     if (success) {

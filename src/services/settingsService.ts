@@ -1,26 +1,8 @@
-/**
- * settingsService.ts
- *
- * Centralized read/write layer for the `user_settings` table.
- * All settings are stored as JSONB under (user_id, category, key).
- *
- * Usage:
- *   import { settingsService } from '../services/settingsService';
- *
- *   const general = await settingsService.getSettingsByCategory('general');
- *   await settingsService.updateSetting('general', 'theme', 'dark');
- *   await settingsService.ensureDefaultSettings();
- */
-
 import { supabase } from '../lib/supabase';
-import { isMissingTableError } from '../lib/supabaseData';
 import type {
   GeneralSettings,
   IntegrationsSettings,
-  SettingCategory,
-  SettingsMap,
   UnauthorizedPageSettings,
-  UserSettingRow,
 } from '../types/domain';
 import {
   DEFAULT_GENERAL_SETTINGS,
@@ -28,345 +10,158 @@ import {
   DEFAULT_UNAUTHORIZED_PAGE_SETTINGS,
 } from '../types/domain';
 
-let settingsTableUnavailable = false;
-const SETTINGS_TIMEOUT_MS = 4000;
-const SETTINGS_CACHE_PREFIX = 'artist_os_settings:';
-const SETTINGS_SEEDED_PREFIX = 'artist_os_settings_seeded:';
+const PROFILE_SETTINGS_CACHE_KEY = 'artist_os_profile_settings_v1';
 
-// ─── Internal helpers ─────────────────────────────────────────────────────────
+type CachedSettingsShape = {
+  general: GeneralSettings;
+  integrations: IntegrationsSettings;
+  unauthorized_page: UnauthorizedPageSettings;
+};
 
-async function withTimeout<T>(promise: PromiseLike<T> | T, ms = SETTINGS_TIMEOUT_MS): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+function readCached(): CachedSettingsShape {
   try {
-    return await Promise.race([
-      Promise.resolve(promise),
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('Settings request timed out')), ms);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
+    const raw = localStorage.getItem(PROFILE_SETTINGS_CACHE_KEY);
+    if (!raw) {
+      return {
+        general: { ...DEFAULT_GENERAL_SETTINGS },
+        integrations: { ...DEFAULT_INTEGRATIONS_SETTINGS },
+        unauthorized_page: { ...DEFAULT_UNAUTHORIZED_PAGE_SETTINGS },
+      };
+    }
+    const parsed = JSON.parse(raw) as Partial<CachedSettingsShape>;
+    return {
+      general: { ...DEFAULT_GENERAL_SETTINGS, ...(parsed.general ?? {}) },
+      integrations: { ...DEFAULT_INTEGRATIONS_SETTINGS, ...(parsed.integrations ?? {}) },
+      unauthorized_page: { ...DEFAULT_UNAUTHORIZED_PAGE_SETTINGS, ...(parsed.unauthorized_page ?? {}) },
+    };
+  } catch {
+    return {
+      general: { ...DEFAULT_GENERAL_SETTINGS },
+      integrations: { ...DEFAULT_INTEGRATIONS_SETTINGS },
+      unauthorized_page: { ...DEFAULT_UNAUTHORIZED_PAGE_SETTINGS },
+    };
   }
 }
 
-async function requireUserId(): Promise<string> {
-  const { data } = await withTimeout(supabase.auth.getSession(), 1500);
+function writeCached(values: CachedSettingsShape) {
+  localStorage.setItem(PROFILE_SETTINGS_CACHE_KEY, JSON.stringify(values));
+}
+
+async function requireUserId() {
+  const { data } = await supabase.auth.getSession();
   const userId = data.session?.user?.id;
   if (!userId) throw new Error('Not authenticated');
   return userId;
 }
 
-function cacheKey(category: string) {
-  return `${SETTINGS_CACHE_PREFIX}${category}`;
-}
-
-function readCachedSettings<T extends Record<string, unknown>>(category: string, defaults: T): T {
-  try {
-    const raw = localStorage.getItem(cacheKey(category));
-    if (!raw) return { ...defaults };
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    return { ...defaults, ...parsed } as T;
-  } catch {
-    return { ...defaults };
-  }
-}
-
-function writeCachedSettings(category: string, values: Record<string, unknown>) {
-  try {
-    localStorage.setItem(cacheKey(category), JSON.stringify(values));
-  } catch {
-    // ignore local cache failures
-  }
-}
-
-function seededKey(userId: string) {
-  return `${SETTINGS_SEEDED_PREFIX}${userId}`;
-}
-
-/** Convert an array of raw rows into a single plain object (key → value). */
-function rowsToObject<T extends Record<string, unknown>>(
-  rows: UserSettingRow[],
-  defaults: T,
-): T {
-  const merged = { ...defaults } as Record<string, unknown>;
-  for (const row of rows) {
-    merged[row.key] = row.value_json;
-  }
-  return merged as T;
-}
-
-// ─── Default settings map ─────────────────────────────────────────────────────
-
-const CATEGORY_DEFAULTS: Record<string, Record<string, unknown>> = {
-  general:           DEFAULT_GENERAL_SETTINGS           as unknown as Record<string, unknown>,
-  unauthorized_page: DEFAULT_UNAUTHORIZED_PAGE_SETTINGS as unknown as Record<string, unknown>,
-  integrations:      DEFAULT_INTEGRATIONS_SETTINGS      as unknown as Record<string, unknown>,
-};
-
-// ─── Public API ───────────────────────────────────────────────────────────────
-
-/**
- * Fetch all settings rows for a given category and return them as a typed
- * object merged on top of the category defaults. Missing keys fall back to
- * their defaults so callers always get a fully-shaped object.
- */
-async function getSettingsByCategory<K extends keyof SettingsMap>(
-  category: K,
-): Promise<SettingsMap[K]>;
-async function getSettingsByCategory(
-  category: SettingCategory,
-): Promise<Record<string, unknown>>;
-async function getSettingsByCategory(
-  category: string,
-): Promise<Record<string, unknown>> {
-  const defaults = CATEGORY_DEFAULTS[category] ?? {};
-  const cached = readCachedSettings(category, defaults);
-
-  if (settingsTableUnavailable) return cached;
-
-  try {
-    const userId = await requireUserId();
-    const { data, error } = await withTimeout(
-      supabase
-        .from('user_settings')
-        .select('id, user_id, category, key, value_json, created_at, updated_at')
-        .eq('user_id', userId)
-        .eq('category', category),
-    );
-
-    if (error) {
-      if (isMissingTableError(error)) {
-        settingsTableUnavailable = true;
-        console.warn('[settingsService] user_settings table missing; using defaults for this session.');
-        return cached;
-      }
-      throw error;
-    }
-
-    const merged = rowsToObject(
-      (data ?? []) as UserSettingRow[],
-      defaults as Record<string, unknown>,
-    );
-    writeCachedSettings(category, merged);
-    return merged;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err ?? '');
-    if (!message.toLowerCase().includes('timed out')) {
-      console.warn(`[settingsService] getSettingsByCategory(${category}) failed:`, err);
-    }
-    return cached;
-  }
-}
-
-/**
- * Update a single setting key within a category.
- * Raises if the user is not authenticated or if the DB write fails.
- */
-async function updateSetting(
-  category: SettingCategory,
-  key: string,
-  value: unknown,
-): Promise<void> {
-  const defaults = CATEGORY_DEFAULTS[category] ?? {};
-  const current = readCachedSettings(category, defaults);
-  writeCachedSettings(category, { ...current, [key]: value });
-
-  if (settingsTableUnavailable) return;
-
+async function loadProfileSettings(): Promise<CachedSettingsShape> {
+  const cached = readCached();
   const userId = await requireUserId();
-
-  const { error } = await withTimeout(
-    supabase
-      .from('user_settings')
-      .update({ value_json: value, updated_at: new Date().toISOString() })
-      .eq('user_id', userId)
-      .eq('category', category)
-      .eq('key', key),
-  );
-
-  if (error) {
-    if (isMissingTableError(error)) {
-      settingsTableUnavailable = true;
-      console.warn('[settingsService] user_settings table missing; skipping setting write.');
-      return;
-    }
-    throw error;
-  }
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('settings')
+    .eq('id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  const settings = (data?.settings ?? {}) as Record<string, unknown>;
+  const merged = {
+    general: { ...DEFAULT_GENERAL_SETTINGS, ...((settings.general as Record<string, unknown>) ?? {}) } as GeneralSettings,
+    integrations: { ...DEFAULT_INTEGRATIONS_SETTINGS, ...((settings.integrations as Record<string, unknown>) ?? {}) } as IntegrationsSettings,
+    unauthorized_page: { ...DEFAULT_UNAUTHORIZED_PAGE_SETTINGS, ...((settings.unauthorized_page as Record<string, unknown>) ?? {}) } as UnauthorizedPageSettings,
+  };
+  writeCached(merged);
+  return {
+    general: { ...cached.general, ...merged.general },
+    integrations: { ...cached.integrations, ...merged.integrations },
+    unauthorized_page: { ...cached.unauthorized_page, ...merged.unauthorized_page },
+  };
 }
 
-/**
- * Insert or update a single setting. Safe to call even if the row does not
- * exist yet. Uses the (user_id, category, key) unique constraint.
- */
-async function upsertSetting(
-  category: SettingCategory,
-  key: string,
-  value: unknown,
-): Promise<void> {
-  const defaults = CATEGORY_DEFAULTS[category] ?? {};
-  const current = readCachedSettings(category, defaults);
-  writeCachedSettings(category, { ...current, [key]: value });
-
-  if (settingsTableUnavailable) return;
-
+async function saveProfileSettings(next: CachedSettingsShape) {
   const userId = await requireUserId();
-
-  const { error } = await withTimeout(
-    supabase.from('user_settings').upsert(
-      {
-        user_id:    userId,
-        category,
-        key,
-        value_json: value,
+  writeCached(next);
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      settings: {
+        general: next.general,
+        integrations: next.integrations,
+        unauthorized_page: next.unauthorized_page,
       },
-      { onConflict: 'user_id,category,key' },
-    ),
-  );
-
-  if (error) {
-    if (isMissingTableError(error)) {
-      settingsTableUnavailable = true;
-      console.warn('[settingsService] user_settings table missing; skipping setting upsert.');
-      return;
-    }
-    throw error;
-  }
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', userId);
+  if (error) throw error;
 }
-
-/**
- * Upsert all keys of a category object in a single batch.
- * Useful for saving a whole category form at once.
- */
-async function upsertCategory(
-  category: SettingCategory,
-  values: Record<string, unknown>,
-): Promise<void> {
-  const defaults = CATEGORY_DEFAULTS[category] ?? {};
-  const current = readCachedSettings(category, defaults);
-  writeCachedSettings(category, { ...current, ...values });
-
-  if (settingsTableUnavailable) return;
-
-  const userId = await requireUserId();
-
-  const rows = Object.entries(values).map(([key, value_json]) => ({
-    user_id: userId,
-    category,
-    key,
-    value_json,
-  }));
-
-  if (rows.length === 0) return;
-
-  const { error } = await withTimeout(
-    supabase
-      .from('user_settings')
-      .upsert(rows, { onConflict: 'user_id,category,key' }),
-  );
-
-  if (error) {
-    if (isMissingTableError(error)) {
-      settingsTableUnavailable = true;
-      console.warn('[settingsService] user_settings table missing; skipping category upsert.');
-      return;
-    }
-    throw error;
-  }
-}
-
-/**
- * Seed default settings for all known categories on first login.
- * Rows that already exist are left unchanged (ON CONFLICT DO NOTHING semantics
- * via upsert with ignoreDuplicates).
- */
-async function ensureDefaultSettings(): Promise<void> {
-  if (settingsTableUnavailable) return;
-
-  const userId = await requireUserId();
-  if (typeof localStorage !== 'undefined' && localStorage.getItem(seededKey(userId)) === '1') {
-    return;
-  }
-
-  const rows: Array<{ user_id: string; category: string; key: string; value_json: unknown }> = [];
-
-  for (const [category, defaults] of Object.entries(CATEGORY_DEFAULTS)) {
-    for (const [key, value_json] of Object.entries(defaults)) {
-      rows.push({ user_id: userId, category, key, value_json });
-    }
-  }
-
-  try {
-    const { error } = await withTimeout(
-      supabase
-        .from('user_settings')
-        .upsert(rows, {
-          onConflict:       'user_id,category,key',
-          ignoreDuplicates: true,   // existing rows are never overwritten
-        }),
-      2500,
-    );
-
-    if (error && isMissingTableError(error)) {
-      settingsTableUnavailable = true;
-      console.warn('[settingsService] user_settings table missing; default seeding skipped.');
-      return;
-    }
-
-    if (error && !isMissingTableError(error)) {
-      console.warn('[settingsService] ensureDefaultSettings error:', error);
-      return;
-    }
-
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(seededKey(userId), '1');
-    }
-  } catch (err) {
-    // Non-fatal — app should still function without default settings rows
-    console.warn('[settingsService] ensureDefaultSettings threw:', err);
-  }
-}
-
-/**
- * Convenience helpers for typed category access.
- */
-const general = {
-  get: () => getSettingsByCategory('general') as Promise<GeneralSettings>,
-  update: (key: keyof GeneralSettings, value: GeneralSettings[typeof key]) =>
-    upsertSetting('general', key, value),
-  save: (values: Partial<GeneralSettings>) =>
-    upsertCategory('general', values as Record<string, unknown>),
-};
-
-const unauthorizedPage = {
-  get: () => getSettingsByCategory('unauthorized_page') as Promise<UnauthorizedPageSettings>,
-  update: (key: keyof UnauthorizedPageSettings, value: UnauthorizedPageSettings[typeof key]) =>
-    upsertSetting('unauthorized_page', key, value),
-  save: (values: Partial<UnauthorizedPageSettings>) =>
-    upsertCategory('unauthorized_page', values as Record<string, unknown>),
-};
-
-const integrations = {
-  get: () => getSettingsByCategory('integrations') as Promise<IntegrationsSettings>,
-  update: (key: keyof IntegrationsSettings, value: IntegrationsSettings[typeof key]) =>
-    upsertSetting('integrations', key, value),
-  save: (values: Partial<IntegrationsSettings>) =>
-    upsertCategory('integrations', values as Record<string, unknown>),
-};
-
-// ─── Exported surface ─────────────────────────────────────────────────────────
 
 export const settingsService = {
-  // Generic API
-  getSettingsByCategory,
-  updateSetting,
-  upsertSetting,
-  upsertCategory,
-  ensureDefaultSettings,
-  getCachedSettingsByCategory: <K extends keyof SettingsMap>(category: K) =>
-    readCachedSettings(String(category), (CATEGORY_DEFAULTS[String(category)] ?? {}) as Record<string, unknown>) as SettingsMap[K],
+  getCachedSettingsByCategory(category: 'general' | 'integrations' | 'unauthorized_page') {
+    const cached = readCached();
+    return cached[category];
+  },
 
-  // Typed category shortcuts
-  general,
-  unauthorizedPage,
-  integrations,
+  async ensureDefaultSettings() {
+    const current = await loadProfileSettings();
+    await saveProfileSettings(current);
+  },
+
+  general: {
+    get: async () => (await loadProfileSettings()).general,
+    update: async <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => {
+      const current = await loadProfileSettings();
+      const next = {
+        ...current,
+        general: { ...current.general, [key]: value },
+      };
+      await saveProfileSettings(next);
+    },
+    save: async (values: Partial<GeneralSettings>) => {
+      const current = await loadProfileSettings();
+      const next = {
+        ...current,
+        general: { ...current.general, ...values },
+      };
+      await saveProfileSettings(next);
+    },
+  },
+
+  integrations: {
+    get: async () => (await loadProfileSettings()).integrations,
+    update: async <K extends keyof IntegrationsSettings>(key: K, value: IntegrationsSettings[K]) => {
+      const current = await loadProfileSettings();
+      const next = {
+        ...current,
+        integrations: { ...current.integrations, [key]: value },
+      };
+      await saveProfileSettings(next);
+    },
+    save: async (values: Partial<IntegrationsSettings>) => {
+      const current = await loadProfileSettings();
+      const next = {
+        ...current,
+        integrations: { ...current.integrations, ...values },
+      };
+      await saveProfileSettings(next);
+    },
+  },
+
+  unauthorized_page: {
+    get: async () => (await loadProfileSettings()).unauthorized_page,
+    update: async <K extends keyof UnauthorizedPageSettings>(key: K, value: UnauthorizedPageSettings[K]) => {
+      const current = await loadProfileSettings();
+      const next = {
+        ...current,
+        unauthorized_page: { ...current.unauthorized_page, [key]: value },
+      };
+      await saveProfileSettings(next);
+    },
+    save: async (values: Partial<UnauthorizedPageSettings>) => {
+      const current = await loadProfileSettings();
+      const next = {
+        ...current,
+        unauthorized_page: { ...current.unauthorized_page, ...values },
+      };
+      await saveProfileSettings(next);
+    },
+  },
 };

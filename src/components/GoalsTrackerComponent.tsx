@@ -36,6 +36,34 @@ function effectiveTrackingMode(goal: Goal): 'manual' | 'automatic' | 'hybrid' {
   return goal.manual_progress ? 'manual' : 'automatic';
 }
 
+function normalizeGoalEntries(value: unknown, goalId: string): GoalEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry, index) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const raw = entry as Record<string, unknown>;
+      const recordedAt =
+        typeof raw.recorded_at === 'string'
+          ? raw.recorded_at
+          : typeof raw.created_at === 'string'
+          ? raw.created_at
+          : null;
+      const valueNum = Number(raw.value);
+      if (!recordedAt || Number.isNaN(valueNum)) return null;
+      return {
+        id: typeof raw.id === 'string' ? raw.id : `${goalId}-${index}`,
+        goal_id: typeof raw.goal_id === 'string' ? raw.goal_id : goalId,
+        value: valueNum,
+        note: typeof raw.note === 'string' ? raw.note : undefined,
+        created_by: typeof raw.created_by === 'string' ? raw.created_by : undefined,
+        recorded_at: recordedAt,
+        created_at: typeof raw.created_at === 'string' ? raw.created_at : recordedAt,
+      } as GoalEntry;
+    })
+    .filter((entry): entry is GoalEntry => Boolean(entry))
+    .sort((a, b) => new Date(b.recorded_at ?? b.created_at ?? 0).getTime() - new Date(a.recorded_at ?? a.created_at ?? 0).getTime());
+}
+
 const TRACKING_BADGE: Record<string, { bg: string; label: string }> = {
   manual:    { bg: 'bg-slate-100 text-slate-600',    label: 'Manual'    },
   automatic: { bg: 'bg-emerald-100 text-emerald-700', label: 'Auto'      },
@@ -80,7 +108,13 @@ export default function GoalsTrackerComponent({ onAction }: GoalsTrackerProps) {
         .from('goals')
         .select('*')
         .order('created_at', { ascending: false });
-      if (!error && data) setGoals(data);
+      if (!error && data) {
+        setGoals(data);
+        const history = Object.fromEntries(
+          data.map((goal) => [goal.id, normalizeGoalEntries(goal.breakdown, goal.id)]),
+        );
+        setEntryHistory(history);
+      }
     } catch (err) {
       console.error('Failed to fetch goals:', err);
     }
@@ -88,13 +122,11 @@ export default function GoalsTrackerComponent({ onAction }: GoalsTrackerProps) {
   };
 
   const fetchEntries = async (goalId: string) => {
-    const { data } = await supabase
-      .from('goal_entries')
-      .select('*')
-      .eq('goal_id', goalId)
-      .order('created_at', { ascending: false })
-      .limit(8);
-    if (data) setEntryHistory(prev => ({ ...prev, [goalId]: data }));
+    const goal = goals.find((item) => item.id === goalId);
+    setEntryHistory(prev => ({
+      ...prev,
+      [goalId]: normalizeGoalEntries(goal?.breakdown, goalId).slice(0, 8),
+    }));
   };
 
   const toggleExpand = (goalId: string) => {
@@ -129,27 +161,35 @@ export default function GoalsTrackerComponent({ onAction }: GoalsTrackerProps) {
 
     if (isNaN(value)) { setLogging(false); return; }
 
-    const { error: entryError } = await supabase.from('goal_entries').insert([{
-      goal_id:    goal.id,
+    const newEntry: GoalEntry = {
+      id: crypto.randomUUID(),
+      goal_id: goal.id,
       value,
-      note:       logNote.trim() || null,
-      created_by: user?.id ?? null,
-    }]);
+      note: logNote.trim() || undefined,
+      created_by: user?.id ?? undefined,
+      recorded_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    };
+    const nextBreakdown = [newEntry, ...normalizeGoalEntries(goal.breakdown, goal.id)];
 
-    if (!entryError) {
-      await supabase
-        .from('goals')
-        .update({ current: value, updated_at: new Date().toISOString() })
-        .eq('id', goal.id);
+    const { error: goalError } = await supabase
+      .from('goals')
+      .update({
+        current: value,
+        breakdown: nextBreakdown,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', goal.id);
 
-      setGoals(gs => gs.map(g => g.id === goal.id ? { ...g, current: value } : g));
-      fetchEntries(goal.id);
+    if (!goalError) {
+      setGoals(gs => gs.map(g => g.id === goal.id ? { ...g, current: value, breakdown: nextBreakdown } : g));
+      setEntryHistory(prev => ({ ...prev, [goal.id]: nextBreakdown.slice(0, 8) }));
       setLogValue('');
       setLogDenominator('');
       setLogNote('');
       onAction?.('Progress logged');
     } else {
-      console.error('Failed to log entry:', entryError);
+      console.error('Failed to log entry:', goalError);
     }
     setLogging(false);
   };
@@ -405,7 +445,7 @@ export default function GoalsTrackerComponent({ onAction }: GoalsTrackerProps) {
               )}
             </div>
             <span className="shrink-0 text-[10px] text-slate-400 ml-2">
-              {entry.created_at.split('T')[0]}
+              {(entry.recorded_at ?? entry.created_at ?? '').split('T')[0]}
             </span>
           </div>
         ))}

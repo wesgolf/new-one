@@ -1,7 +1,7 @@
 # ARTIST OS — Full Codebase Audit
 **Date:** 2026-04-16  
 **Author:** GitHub Copilot (automated audit)  
-**Scope:** `/src`, `server.ts`, `supabase-schema.sql`, `public/`, `index.html`
+**Scope:** `/src`, `server.ts`, `supabase-baseline-v3.sql`, `public/`, `index.html`
 
 ---
 
@@ -214,7 +214,7 @@ Also calls SoundCloud and Spotify sync manually — loads tracks and inserts the
 
 - `Ideas.tsx` uses `useArtistData<Release>('releases')` — reads the `releases` table and filters by status `['idea','production','mastered','ready']`.
 - **No dedicated `ideas` table** — ideas are releases. `supabaseData.ts` has `fetchIdeas()` which tries `ideas` table then falls back to `releases`.
-- `ideas`, `idea_assets`, `idea_comments` tables are referenced in `supabaseData.ts` but **NOT defined in `supabase-schema.sql`**.
+- `ideas`, `idea_assets`, `idea_comments` tables are referenced in `supabaseData.ts` but were **not defined in the old `supabase-schema.sql`**.
 
 ---
 
@@ -261,8 +261,8 @@ Also calls SoundCloud and Spotify sync manually — loads tracks and inserts the
 
 | Table | Expected by | Schema status |
 |---|---|---|
-| `tasks` | `supabaseData.ts`, `Tasks.tsx` | ❌ NOT in `supabase-schema.sql` |
-| `ideas` | `supabaseData.fetchIdeas()` | ❌ NOT in `supabase-schema.sql` |
+| `tasks` | `supabaseData.ts`, `Tasks.tsx` | ❌ NOT in the old `supabase-schema.sql` |
+| `ideas` | `supabaseData.fetchIdeas()` | ❌ NOT in the old `supabase-schema.sql` |
 | `idea_assets` | `supabaseData.fetchIdeaAssets()` | ❌ NOT in schema |
 | `idea_comments` | `supabaseData.fetchIdeaComments()` | ❌ NOT in schema |
 | `goal_entries` | `supabaseData.fetchGoalEntries()` | ❌ NOT in schema |
@@ -367,7 +367,7 @@ For Netlify (or similar SPA CDN deploys), all routes must fall back to `index.ht
 |---|---|---|
 | Hardcoded passkey `wesmusic123` in source | **HIGH** | `App.tsx` `PasskeyGate` |
 | `process.env.GEMINI_API_KEY` exposed to browser bundle | **HIGH** | `aiEngine.ts`, `ArtistCoach.tsx`, `GoalsTrackerComponent.tsx` |
-| RLS disabled on all tables ("prototype" comment) | **HIGH** | `supabase-schema.sql` |
+| RLS disabled on all tables ("prototype" comment) | **HIGH** | old `supabase-schema.sql` |
 | Hardcoded Cloud Run redirect URI | **MEDIUM** | `server.ts` `SOUNDCLOUD_REDIRECT_URI` |
 | Spotify + SoundCloud tokens stored in `localStorage` (XSS risk) | **MEDIUM** | `lib/spotify.ts`, `hooks/useSoundCloud.ts` |
 | `Sidebar.tsx` loads avatar from external CDN (`picsum.photos`) | **LOW** | `Sidebar.tsx` |
@@ -433,7 +433,7 @@ Each phase ends with the **Debug Gate → Security Gate → Commit/Push** workfl
 **Goal:** `tasks`, `ideas`, `idea_assets`, `idea_comments`, `goal_entries`, `integration_accounts`, `sync_jobs` exist in Supabase.
 
 **Tasks:**
-- [ ] Add SQL `CREATE TABLE IF NOT EXISTS` blocks to `supabase-schema.sql` for each missing table.
+- [ ] Add SQL `CREATE TABLE IF NOT EXISTS` blocks to the active baseline schema for each missing table.
 - [ ] Run updated schema in Supabase SQL editor.
 - [ ] Verify `safeSelect` helper gracefully handles empty tables (already does via `isMissingTableError`).
 - [ ] Add `tasks` table; `Tasks.tsx` should resolve items from it rather than always falling back to `todos`.
@@ -465,7 +465,7 @@ Each phase ends with the **Debug Gate → Security Gate → Commit/Push** workfl
 
 **Tasks:**
 - [ ] Enable RLS on all tables in Supabase (`ALTER TABLE x ENABLE ROW LEVEL SECURITY`).
-- [ ] Uncomment and activate the policy blocks in `supabase-schema.sql`.
+- [ ] Uncomment and activate the policy blocks in the active baseline schema.
 - [ ] Add CORS origin check to `server.ts` POST routes.
 - [ ] Add rate limiting middleware to `/api/soundcloud/token` (e.g. `express-rate-limit`).
 - [ ] Replace `picsum.photos` fallbacks with a local SVG or Supabase Storage default asset.

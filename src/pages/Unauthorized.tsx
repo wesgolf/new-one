@@ -286,7 +286,7 @@ export function Unauthorized() {
   const location = useLocation();
   const { isAuthenticated, isLoading, role } = useCurrentUser();
   const [unauthorizedPageSettings, setUnauthorizedPageSettings] = useState<UnauthorizedPageSettings>(
-    () => settingsService.getCachedSettingsByCategory('unauthorized_page'),
+    () => settingsService.getCachedSettingsByCategory('unauthorized_page') ?? DEFAULT_UNAUTHORIZED_PAGE_SETTINGS,
   );
 
   // Where to go after successful login (respects original destination)
@@ -294,7 +294,7 @@ export function Unauthorized() {
 
   useEffect(() => {
     let cancelled = false;
-    void settingsService.unauthorizedPage.get()
+    void settingsService.unauthorized_page.get()
       .then((settings) => {
         if (!cancelled) setUnauthorizedPageSettings(settings);
       })

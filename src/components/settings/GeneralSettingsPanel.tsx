@@ -33,7 +33,7 @@ const LAYOUT_OPTIONS: { value: GeneralSettings['dashboard_layout']; label: strin
 export function GeneralSettingsPanel() {
   const [settings, setSettings] = useState<GeneralSettings>(loadCachedGeneralSettings());
   const [textNumber, setTextNumber] = useState(loadCachedGeneralSettings().sms_phone || '');
-  const [loading,  setLoading]  = useState(false);
+  const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState<string | null>(null);
   const [saving,   setSaving]   = useState<string | null>(null); // key currently saving
 
@@ -51,10 +51,10 @@ export function GeneralSettingsPanel() {
       if (userId) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('text_number')
+          .select('phone_number')
           .eq('id', userId)
           .maybeSingle();
-        const profileNumber = typeof profile?.text_number === 'string' ? profile.text_number : '';
+        const profileNumber = typeof profile?.phone_number === 'string' ? profile.phone_number : '';
         if (profileNumber) {
           setTextNumber(profileNumber);
           setSettings((prev) => ({ ...prev, sms_phone: profileNumber }));
@@ -104,7 +104,7 @@ export function GeneralSettingsPanel() {
       if (userId) {
         const { error: profileError } = await supabase
           .from('profiles')
-          .update({ text_number: normalizedValue, updated_at: new Date().toISOString() })
+          .update({ phone_number: normalizedValue, updated_at: new Date().toISOString() })
           .eq('id', userId);
         if (profileError) throw profileError;
       }

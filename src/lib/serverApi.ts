@@ -9,6 +9,11 @@ export function buildNetlifyFunctionPath(path: string) {
   return `/.netlify/functions/${trimLeadingSlash(path)}`;
 }
 
+function isLocalDevHost() {
+  const host = window.location.hostname;
+  return host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+}
+
 function isHtmlFallbackError(error: unknown) {
   if (error instanceof ApiContentTypeError) {
     return (
@@ -50,6 +55,18 @@ export async function fetchServerJsonWithFallback<T = unknown>(
   try {
     return await fetchJson<T>(primaryPath, options);
   } catch (error) {
+    if (isLocalDevHost() && shouldFallbackToFunction(error, primaryPath)) {
+      if (
+        error instanceof ApiHttpError ||
+        error instanceof ApiContentTypeError ||
+        error instanceof ApiNetworkError
+      ) {
+        throw new Error(
+          `Local API route ${primaryPath} was not reached. Start the Express app server with npm run dev instead of using a Vite-only server.`,
+        );
+      }
+    }
+
     if (!fallbackFunctionPath || !shouldFallbackToFunction(error, primaryPath)) {
       throw error;
     }

@@ -88,7 +88,7 @@ const handler: Handler = async (event) => {
   }
 
   // ── Search ──────────────────────────────────────────────────────────────────
-  // Uses the search_records() Postgres function defined in supabase-search-migration.sql.
+  // Uses the search_records() Postgres function expected by the current search layer.
   // Returns up to 20 results ranked by ts_rank descending.
   //
   // Future: replace this block with a fetch() to Meilisearch / Typesense /

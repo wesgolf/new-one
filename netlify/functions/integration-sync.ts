@@ -125,24 +125,26 @@ async function fetchPublicSoundCloudTracks(profileUrl: string, limit = 200) {
 
 async function fetchIntegrationSettings(sql: postgres.Sql<any>): Promise<IntegrationSettingsRecord[]> {
   const rows = await sql`
-    SELECT user_id, key, value_json
-    FROM user_settings
-    WHERE category = 'integrations'
-      AND key IN ('auto_sync', 'sync_interval', 'enabled_platforms')
+    SELECT
+      id AS user_id,
+      settings -> 'integrations' AS integrations
+    FROM profiles
   `;
 
   const grouped = new Map<string, Partial<IntegrationSettingsRecord>>();
   for (const row of rows) {
     const userId = String(row.user_id);
-    const current = grouped.get(userId) ?? { userId };
-    if (row.key === 'auto_sync') current.autoSync = Boolean(row.value_json);
-    if (row.key === 'sync_interval') current.syncInterval = Number(row.value_json) || 3600;
-    if (row.key === 'enabled_platforms' && Array.isArray(row.value_json)) {
-      current.enabledPlatforms = row.value_json.filter((value: unknown): value is Provider =>
-        value === 'zernio' || value === 'songstats' || value === 'soundcloud',
-      );
-    }
-    grouped.set(userId, current);
+    const raw = row.integrations && typeof row.integrations === 'object' ? row.integrations as Record<string, unknown> : {};
+    grouped.set(userId, {
+      userId,
+      autoSync: raw.auto_sync == null ? true : Boolean(raw.auto_sync),
+      syncInterval: Number(raw.sync_interval) || 3600,
+      enabledPlatforms: Array.isArray(raw.enabled_platforms)
+        ? raw.enabled_platforms.filter((value: unknown): value is Provider =>
+            value === 'zernio' || value === 'songstats' || value === 'soundcloud',
+          )
+        : [],
+    });
   }
 
   return [...grouped.values()].map((entry): IntegrationSettingsRecord => ({
@@ -432,11 +434,23 @@ export const handler = schedule('*/15 * * * *', async () => {
   const sql = postgres(databaseUrl, { ssl: 'require', max: 1 });
   try {
     const shape = await detectSyncShape(sql);
+    const releasesTableRows = await sql`
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = 'releases'
+      ) AS exists
+    `;
+    const hasReleasesTable = Boolean(releasesTableRows[0]?.exists);
     const users = await fetchIntegrationSettings(sql);
 
     for (const user of users) {
       for (const provider of user.enabledPlatforms) {
         if (provider === 'spotify') {
+          continue;
+        }
+        if (!hasReleasesTable && (provider === 'songstats' || provider === 'soundcloud')) {
           continue;
         }
         const lastSuccess = await getLastSuccessfulRunAt(sql, shape, user.userId, provider);

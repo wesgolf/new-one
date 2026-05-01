@@ -38,8 +38,8 @@ export interface SyncJob {
   created_at?: string;
 }
 
-export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'blocked';
-export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type TaskStatus = 'pending' | 'completed' | 'cancelled';
+export type TaskPriority = 'low' | 'medium' | 'high';
 
 export interface TaskRecord {
   id: string;
@@ -47,6 +47,8 @@ export interface TaskRecord {
   description?: string | null;
   status: TaskStatus;
   priority: TaskPriority;
+  user_id_assigned_by?: string | null;
+  user_id_assigned_to?: string | null;
   assigned_to?: string | null;
   created_by?: string | null;
   due_date?: string | null;
@@ -63,6 +65,7 @@ export interface IdeaRecord {
   id: string;
   title: string;
   description?: string | null;
+  notes?: string | null;
   status: string;
   is_collab?: boolean;
   is_public?: boolean;
@@ -73,9 +76,14 @@ export interface IdeaRecord {
   artist_name?: string | null;
   bpm?: number | null;
   key_sig?: string | null;
+  musical_key?: string | null;
   genre?: string | null;
   mood?: string | null;
   voice_memo_url?: string | null;
+  version_numbers?: number | null;
+  collaborators?: string[] | null;
+  file_urls?: any[] | null;
+  idea_comments?: any[] | null;
 }
 
 export type IdeaAssetType = 'audio' | 'link' | 'cover' | 'project_link';
@@ -108,16 +116,28 @@ export interface GoalRecord {
   id: string;
   title: string;
   description?: string | null;
+  category?: string | null;
+  priority?: string | null;
   goal_type: GoalType;
-  tracking_mode: GoalTrackingMode;
+  tracking_mode: GoalTrackingMode | 'manual' | 'derived' | 'hybrid';
+  target?: number | null;
+  current?: number | null;
   target_value?: number | null;
   current_value?: number | null;
   source_metric?: string | null;
+  metric_source?: string | null;
+  metric_key?: string | null;
   formula?: Record<string, any> | null;
-  unit?: string | null;
-  start_date?: string | null;
-  end_date?: string | null;
+  term?: string | null;
+  due_by?: string | null;
+  deadline?: string | null;
+  is_recurring?: boolean;
+  recurrence_pattern?: string | null;
+  recurrence_interval?: number | null;
+  status_indicator?: string | null;
   is_timeless?: boolean;
+  ai_analysis?: string | null;
+  ai_analysis_run?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -165,7 +185,7 @@ export interface ProfileSummary {
   full_name?: string | null;
   role?: string | null;
   email?: string | null;
-  text_number?: string | null;
+  phone_number?: string | null;
 }
 
 export interface ReleaseRecord {

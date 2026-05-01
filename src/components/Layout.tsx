@@ -3,13 +3,10 @@ import { Outlet, useLocation, NavLink } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   LayoutDashboard,
-  Music,
   Calendar as CalendarIcon,
-  BarChart3,
   Brain,
   MessageSquareMore,
   Sparkles,
-  Layers,
   Target,
   CheckSquare,
   ChevronDown,
@@ -17,6 +14,7 @@ import {
   X,
   LogOut,
   Settings,
+  FileText,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { GlobalSearch } from './GlobalSearch';
@@ -40,26 +38,24 @@ const TOP_NAV: NavGroup[] = [
     label: 'Music',
     children: [
       { label: 'Ideas & WIPs', path: '/ideas', icon: Sparkles, description: 'Tracks in progress' },
-      { label: 'Releases', path: '/releases', icon: Music, description: 'Published catalog' },
     ],
   },
   {
     label: 'Manage',
     children: [
-      { label: 'Content Engine', path: '/content', icon: Layers, description: 'Posts & scheduling' },
       { label: 'Calendar', path: '/calendar', icon: CalendarIcon, description: 'Events & deadlines' },
       { label: 'Goals', path: '/goals', icon: Target, description: 'Track milestones & targets' },
       { label: 'Tasks', path: '/tasks', icon: CheckSquare, description: 'To-do list & action items' },
+      { label: 'Reports', path: '/reports', icon: FileText, description: 'Saved reports' },
     ],
   },
-  { label: 'Analytics', path: '/analytics' },
   { label: 'Coach', path: '/coach' },
 ];
 
 const MOBILE_NAV = [
   { icon: LayoutDashboard, label: 'Hub', path: '/dashboard', end: true },
   { icon: Sparkles, label: 'Ideas', path: '/ideas' },
-  { icon: Music, label: 'Releases', path: '/releases' },
+  { icon: CalendarIcon, label: 'Calendar', path: '/calendar' },
   { icon: Brain, label: 'Coach', path: '/coach' },
 ];
 
@@ -153,8 +149,6 @@ function LayoutInner() {
   useEffect(() => {
     const cached = loadCachedGeneralSettings();
     applyGeneralSettings(cached);
-
-    settingsService.ensureDefaultSettings().catch(() => {});
 
     settingsService.general.get()
       .then((settings) => applyGeneralSettings(settings))

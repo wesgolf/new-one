@@ -60,7 +60,7 @@ interface CoachSessionRow {
   user_id: string;
   title: string;
   summary: string | null;
-  conversation_json: {
+  conversation: {
     id?: string;
     title?: string;
     summary?: string | null;
@@ -132,7 +132,7 @@ function serializeSession(session: ChatSession) {
 }
 
 function deserializeSession(row: CoachSessionRow): ChatSession {
-  const payload = row.conversation_json ?? {};
+  const payload = row.conversation ?? {};
   return {
     id: row.id,
     title: payload.title ?? row.title ?? 'New chat',
@@ -349,7 +349,7 @@ export function ArtistCoach() {
       user_id: userId,
       title: session.title,
       summary: session.summary,
-      conversation_json: serializeSession(session),
+      conversation: serializeSession(session),
       created_at: new Date(session.createdAt).toISOString(),
       updated_at: new Date(session.updatedAt).toISOString(),
     }));
@@ -439,7 +439,14 @@ export function ArtistCoach() {
       setResourceNotice({ type: 'error', message: `Knowledge load failed: ${error.message}` });
       return;
     }
-    if (data) setResources(data);
+    if (data) {
+      setResources(
+        (data as any[]).map((resource) => ({
+          ...resource,
+          url: resource.source_url ?? null,
+        })),
+      );
+    }
   };
 
   // ── Summary generation ────────────────────────────────────────────────────
@@ -637,7 +644,12 @@ export function ArtistCoach() {
       const { error } = await supabase.from('bot_resources').insert([{
         ...newResource,
         content: normalizedContent,
-        url: finalUrl,
+        source_url: finalUrl || null,
+        storage_path: finalUrl ? finalUrl.split('/').slice(-2).join('/') : null,
+        mime_type: selectedFile?.type ?? null,
+        parse_status: 'ready',
+        parse_error: null,
+        content_excerpt: normalizedContent.slice(0, 240),
         user_id: user.id,
       }]);
       if (error) throw error;
@@ -660,9 +672,17 @@ export function ArtistCoach() {
 
   const handleSaveEditResource = async (id: string) => {
     const user = await getCurrentAuthUser();
+    const payload: Record<string, unknown> = { ...editingResource };
+    if ('url' in payload) {
+      payload.source_url = payload.url ?? null;
+      delete payload.url;
+    }
+    if (typeof payload.content === 'string') {
+      payload.content_excerpt = payload.content.slice(0, 240);
+    }
     const { error } = await supabase
       .from('bot_resources')
-      .update(editingResource)
+      .update(payload)
       .eq('id', id)
       .eq('user_id', user?.id ?? '');
     if (!error) {

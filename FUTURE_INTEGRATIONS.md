@@ -172,7 +172,7 @@ publishing state sync. It writes to `content_posts`, updating `platform_status` 
 
 ## Database Schema
 
-All five tables have been added to `supabase-schema.sql`. Summary below — see the schema file
+All five tables were originally described in the old schema file. The active baseline is now `supabase-baseline-v3.sql`.
 for the full column definitions and index declarations.
 
 ### `playlist_events`
@@ -406,4 +406,3 @@ VITE_SUPABASE_ANON_KEY=
 | New: `CompetitorBenchmarkPanel` | 3 | Momentum chart, audience overlap |
 | New: `ReportHistoryPanel` | 5 | Past weekly reports list |
 | `sync_jobs` / Settings integrations page | All | Auth status, last-synced time per provider |
-

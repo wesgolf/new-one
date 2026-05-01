@@ -744,25 +744,22 @@ async function startServer() {
 
   async function fetchIntegrationSettings(sql: postgres.Sql<any>): Promise<IntegrationSettingsRecord[]> {
     const rows = await sql`
-      SELECT user_id, key, value_json
-      FROM user_settings
-      WHERE category = 'integrations'
-        AND key IN ('auto_sync', 'sync_interval', 'enabled_platforms')
+      SELECT
+        id AS user_id,
+        settings -> 'integrations' AS integrations
+      FROM profiles
     `;
 
     const grouped = new Map<string, Partial<IntegrationSettingsRecord>>();
     for (const row of rows) {
       const userId = String(row.user_id);
-      const current = grouped.get(userId) ?? { userId };
-      if (row.key === 'auto_sync') current.autoSync = Boolean(row.value_json);
-      if (row.key === 'sync_interval') {
-        const parsed = Number(row.value_json);
-        current.syncInterval = INTEGRATION_SYNC_INTERVALS.has(parsed) ? parsed : 3600;
-      }
-      if (row.key === 'enabled_platforms') {
-        current.enabledPlatforms = sanitizeEnabledPlatforms(row.value_json);
-      }
-      grouped.set(userId, current);
+      const raw = row.integrations && typeof row.integrations === 'object' ? row.integrations as Record<string, unknown> : {};
+      grouped.set(userId, {
+        userId,
+        autoSync: raw.auto_sync == null ? true : Boolean(raw.auto_sync),
+        syncInterval: INTEGRATION_SYNC_INTERVALS.has(Number(raw.sync_interval)) ? Number(raw.sync_interval) : 3600,
+        enabledPlatforms: sanitizeEnabledPlatforms(raw.enabled_platforms),
+      });
     }
 
     return [...grouped.values()]
@@ -1199,6 +1196,15 @@ async function startServer() {
     try {
       const shape = await detectSyncTableShape(sql);
       console.log('[integration scheduler] detected sync schema:', shape);
+      const releasesTableRows = await sql`
+        SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.tables
+          WHERE table_schema = 'public'
+            AND table_name = 'releases'
+        ) AS exists
+      `;
+      const hasReleasesTable = Boolean(releasesTableRows[0]?.exists);
       const users = await fetchIntegrationSettings(sql);
       console.log(`[integration scheduler] loaded ${users.length} user integration setting set(s)`);
 
@@ -1206,6 +1212,10 @@ async function startServer() {
         for (const provider of user.enabledPlatforms) {
           if (provider === 'spotify') {
             console.log('[integration scheduler] skipping spotify auto-sync; Spotify is client-authenticated and currently supports manual sync only.');
+            continue;
+          }
+          if (!hasReleasesTable && (provider === 'soundcloud' || provider === 'songstats')) {
+            console.log(`[integration scheduler] skipping ${provider} auto-sync; releases table is not part of the current schema phase.`);
             continue;
           }
           const lastSuccess = await getLastSuccessfulRunAt(sql, shape, user.userId, provider);

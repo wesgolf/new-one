@@ -78,7 +78,7 @@ async function buildContext(
   let charBudget = BUDGET_TOTAL_CHARS;
 
   // ── 1. Full-text search across all indexed tables ─────────────────────────
-  // search_records() is the Postgres RPC defined in supabase-search-migration.sql.
+  // search_records() is the Postgres RPC expected by the current search layer.
   // It queries: releases, ideas, content_items, goals, opportunities, inbox,
   // bot_resources — all indexed with tsvector + GIN.
   try {

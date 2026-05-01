@@ -1,8 +1,8 @@
 import React from 'react';
-import { Globe, Plug2, Radio, SlidersHorizontal } from 'lucide-react';
+import { Plug2, SlidersHorizontal } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
-export type SettingsSection = 'general' | 'integrations' | 'public_hub';
+export type SettingsSection = 'general' | 'integrations';
 
 interface NavItem {
   id: SettingsSection;
@@ -23,12 +23,6 @@ const NAV_ITEMS: NavItem[] = [
     label:       'Integrations',
     description: 'API providers',
     Icon:        Plug2,
-  },
-  {
-    id:          'public_hub',
-    label:       'Public Hub',
-    description: 'Public-facing artist page',
-    Icon:        Radio,
   },
 ];
 
