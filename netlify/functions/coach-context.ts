@@ -76,112 +76,159 @@ async function buildContext(
   const sources: string[] = [];
   const sections: string[] = [];
   let charBudget = BUDGET_TOTAL_CHARS;
+  const normalizedQuestion = question.toLowerCase();
+  const questionTerms = normalizedQuestion.split(/\s+/).filter(Boolean).slice(0, 6);
+  const compactText = (value: unknown, maxLength = BUDGET_SNIPPET_CHARS) => {
+    const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+    return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+  };
+  const matchesQuestion = (...values: unknown[]) => {
+    const haystack = values.map((value) => String(value ?? '').toLowerCase()).join(' ');
+    if (!haystack) return false;
+    if (haystack.includes(normalizedQuestion)) return true;
+    return questionTerms.some((term) => haystack.includes(term));
+  };
 
-  // ── 1. Full-text search across all indexed tables ─────────────────────────
-  // search_records() is the Postgres RPC expected by the current search layer.
-  // It queries: releases, ideas, content_items, goals, opportunities, inbox,
-  // bot_resources — all indexed with tsvector + GIN.
   try {
-    const { data: ftsRows, error: ftsErr } = await sb.rpc('search_records', {
-      query_text: question.slice(0, 500), // guard against huge payloads
-      uid,
-    });
+    const [profileRes, ideasRes, goalsRes, tasksRes, reportsRes] = await Promise.all([
+      sb.from('profiles').select('full_name, email, role').eq('id', uid).single(),
+      sb.from('ideas').select('title, status, next_action, bpm, key, notes, updated_at').eq('user_id', uid).order('updated_at', { ascending: false }).limit(6),
+      sb.from('goals').select('title, description, status_indicator, due_by, current, target').eq('user_id', uid).order('updated_at', { ascending: false }).limit(5),
+      sb.from('tasks').select('title, description, completed, due_date').or(`user_id_assigned_by.eq.${uid},user_id_assigned_to.eq.${uid}`).order('updated_at', { ascending: false }).limit(5),
+      sb.from('reports').select('title, report_date, report_content').eq('user_id', uid).order('report_date', { ascending: false }).limit(3),
+    ]);
 
-    if (!ftsErr && Array.isArray(ftsRows) && ftsRows.length > 0) {
-      const rows = ftsRows.slice(0, BUDGET_FTS_MAX_RESULTS);
-      const typesSeen = new Set<string>();
+    const profile = profileRes.data;
+    let block = `ARTIST PROFILE:\n- Name: ${profile?.full_name ?? profile?.email ?? 'the artist'}\n- Email: ${profile?.email ?? ''}\n- Role: ${profile?.role ?? 'artist'}\n`;
 
-      // Group by type so the context block is readable
-      const grouped: Record<string, typeof rows> = {};
-      for (const r of rows) {
-        grouped[r.record_type] = grouped[r.record_type] ?? [];
-        grouped[r.record_type].push(r);
-        typesSeen.add(r.record_type);
-      }
-
-      let ftsBlock = '';
-      for (const [type, items] of Object.entries(grouped)) {
-        const label = type.toUpperCase() + 'S';
-        const lines = items.map((r) => {
-          const snippet = (r.snippet as string ?? '').slice(0, BUDGET_SNIPPET_CHARS);
-          return snippet ? `- ${r.title}: ${snippet}` : `- ${r.title}`;
-        });
-        ftsBlock += `${label}:\n${lines.join('\n')}\n\n`;
-      }
-
-      const allowedChars = Math.min(BUDGET_TOTAL_CHARS - BUDGET_ANALYTICS_CHARS - BUDGET_CALENDAR_CHARS, charBudget);
-      if (ftsBlock.length > 0) {
-        sections.push(ftsBlock.slice(0, allowedChars));
-        charBudget -= Math.min(ftsBlock.length, allowedChars);
-        sources.push(...Array.from(typesSeen));
+    if ((ideasRes.data ?? []).length > 0) {
+      block += `\nRECENT IDEAS:\n`;
+      for (const idea of ideasRes.data ?? []) {
+        const meta = [idea.status, idea.next_action, idea.bpm ? `${idea.bpm} BPM` : null, idea.key].filter(Boolean).join(', ');
+        block += `- ${idea.title}${meta ? ` (${meta})` : ''}${idea.notes ? `: ${compactText(idea.notes, 80)}` : ''}\n`;
       }
     }
+
+    if ((goalsRes.data ?? []).length > 0) {
+      block += `\nACTIVE GOALS:\n`;
+      for (const goal of goalsRes.data ?? []) {
+        const meta = [goal.status_indicator, goal.due_by ? `due ${goal.due_by}` : null, goal.target ? `${goal.current ?? 0}/${goal.target}` : null].filter(Boolean).join(', ');
+        block += `- ${goal.title}${goal.description ? `: ${compactText(goal.description, 80)}` : ''}${meta ? ` (${meta})` : ''}\n`;
+      }
+    }
+
+    if ((tasksRes.data ?? []).length > 0) {
+      block += `\nRECENT TASKS:\n`;
+      for (const task of tasksRes.data ?? []) {
+        block += `- ${task.title} (${task.completed ?? 'pending'}${task.due_date ? `, due ${task.due_date}` : ''})${task.description ? `: ${compactText(task.description, 80)}` : ''}\n`;
+      }
+    }
+
+    if ((reportsRes.data ?? []).length > 0) {
+      block += `\nLATEST REPORTS:\n`;
+      for (const report of reportsRes.data ?? []) {
+        block += `- ${report.title}${report.report_date ? ` (${report.report_date})` : ''}${report.report_content ? `: ${compactText(report.report_content, 80)}` : ''}\n`;
+      }
+    }
+
+    sections.push(block.slice(0, 900));
+    charBudget -= Math.min(block.length, 900);
+    sources.push('profile');
   } catch (e) {
-    // Non-fatal — FTS may not yet be deployed; fall through to targeted fetches
-    console.warn('[coach-context] FTS unavailable, falling back to targeted queries:', (e as Error).message);
+    console.warn('[coach-context] profile summary skipped:', (e as Error).message);
   }
 
-  // ── 2. Analytics snapshots ────────────────────────────────────────────────
-  // report_snapshots stores weekly/monthly roll-up JSONB. We extract a brief
-  // summary (platform, period, top-level numeric fields) rather than the full blob.
   if (charBudget > 100) {
     try {
-      const { data: snaps } = await sb
-        .from('report_snapshots')
-        .select('period_type, period_start, period_end, platform, data')
-        .eq('user_id', uid)
-        .order('period_start', { ascending: false })
-        .limit(2);
-
-      if (snaps && snaps.length > 0) {
-        const lines = snaps.map((s) => {
-          const d = (s.data ?? {}) as Record<string, unknown>;
-          // Extract only numeric top-level keys from the JSONB blob (safe, no PII)
-          const stats = Object.entries(d)
-            .filter(([, v]) => typeof v === 'number')
-            .slice(0, 5)
-            .map(([k, v]) => `${k}: ${v}`)
-            .join(', ');
-          return `- ${s.platform ?? 'overall'} (${s.period_type} ${s.period_start}): ${stats || 'no numeric stats'}`;
-        });
-
-        const block = `ANALYTICS SNAPSHOTS:\n${lines.join('\n')}\n\n`;
-        sections.push(block.slice(0, BUDGET_ANALYTICS_CHARS));
-        charBudget -= Math.min(block.length, BUDGET_ANALYTICS_CHARS);
-        sources.push('analytics');
-      }
-    } catch (e) {
-      console.warn('[coach-context] analytics fetch skipped:', (e as Error).message);
-    }
-  }
-
-  // ── 3. Calendar events (shows + meetings) ─────────────────────────────────
-  // Fetch only upcoming events — past events are lower signal for planning.
-  if (charBudget > 100) {
-    const today = new Date().toISOString().slice(0, 10);
-    try {
-      const [showsRes, meetingsRes] = await Promise.all([
-        sb.from('shows')
-          .select('venue, date, status')
-          .eq('user_id', uid)
-          .gte('date', today)
-          .order('date', { ascending: true })
-          .limit(3),
-        sb.from('meetings')
-          .select('title, date, notes')
-          .eq('user_id', uid)
-          .gte('date', today)
-          .order('date', { ascending: true })
-          .limit(2),
+      const [ideaMatchesRes, goalMatchesRes, taskMatchesRes, resourceMatchesRes] = await Promise.all([
+        sb.from('ideas').select('title, status, next_action, notes').eq('user_id', uid).order('updated_at', { ascending: false }).limit(12),
+        sb.from('goals').select('title, description, status_indicator, due_by').eq('user_id', uid).order('updated_at', { ascending: false }).limit(10),
+        sb.from('tasks').select('title, description, completed, due_date').or(`user_id_assigned_by.eq.${uid},user_id_assigned_to.eq.${uid}`).order('updated_at', { ascending: false }).limit(12),
+        sb.from('bot_resources').select('title, category, content_excerpt, content').eq('user_id', uid).order('updated_at', { ascending: false }).limit(8),
       ]);
 
-      const calLines: string[] = [];
-      for (const s of showsRes.data ?? []) {
-        calLines.push(`- Show @ ${s.venue} on ${s.date} (${s.status})`);
+      const grouped: Record<string, string[]> = {};
+      const appendMatch = (type: string, title: unknown, snippet: unknown) => {
+        const safeTitle = String(title ?? '').trim();
+        if (!safeTitle) return;
+        grouped[type] = grouped[type] ?? [];
+        grouped[type].push(compactText(snippet) ? `- ${safeTitle}: ${compactText(snippet)}` : `- ${safeTitle}`);
+      };
+
+      for (const idea of ideaMatchesRes.data ?? []) {
+        if (matchesQuestion(idea.title, idea.notes, idea.status, idea.next_action)) {
+          appendMatch('idea', idea.title, [idea.status, idea.next_action, idea.notes].filter(Boolean).join(' · '));
+        }
       }
-      for (const m of meetingsRes.data ?? []) {
-        calLines.push(`- Meeting: ${m.title} on ${m.date}`);
+
+      for (const goal of goalMatchesRes.data ?? []) {
+        if (matchesQuestion(goal.title, goal.description, goal.status_indicator, goal.due_by)) {
+          appendMatch('goal', goal.title, [goal.status_indicator, goal.due_by, goal.description].filter(Boolean).join(' · '));
+        }
       }
+
+      for (const task of taskMatchesRes.data ?? []) {
+        if (matchesQuestion(task.title, task.description, task.completed, task.due_date)) {
+          appendMatch('task', task.title, [task.completed, task.due_date, task.description].filter(Boolean).join(' · '));
+        }
+      }
+
+      for (const resource of resourceMatchesRes.data ?? []) {
+        if (matchesQuestion(resource.title, resource.category, resource.content_excerpt, resource.content)) {
+          appendMatch('resource', resource.title ?? resource.category ?? 'Knowledge resource', [resource.category, resource.content_excerpt ?? resource.content].filter(Boolean).join(' · '));
+        }
+      }
+
+      if (Object.keys(grouped).length > 0) {
+        let block = '';
+        for (const [type, items] of Object.entries(grouped)) {
+          block += `${type.toUpperCase()}S:\n${items.slice(0, 3).join('\n')}\n\n`;
+          sources.push(type);
+        }
+
+        const allowedChars = Math.min(BUDGET_TOTAL_CHARS - BUDGET_ANALYTICS_CHARS - BUDGET_CALENDAR_CHARS, charBudget);
+        sections.push(block.slice(0, allowedChars));
+        charBudget -= Math.min(block.length, allowedChars);
+      }
+    } catch (e) {
+      console.warn('[coach-context] relevance scan skipped:', (e as Error).message);
+    }
+  }
+
+  if (charBudget > 100) {
+    try {
+      const { data: reports } = await sb
+        .from('reports')
+        .select('title, report_date, report_content')
+        .eq('user_id', uid)
+        .order('report_date', { ascending: false })
+        .limit(2);
+
+      if (reports && reports.length > 0) {
+        const lines = reports.map((report) => `- ${report.title}${report.report_date ? ` (${report.report_date})` : ''}${report.report_content ? `: ${compactText(report.report_content, 120)}` : ''}`);
+        const block = `REPORT SUMMARIES:\n${lines.join('\n')}\n\n`;
+        sections.push(block.slice(0, BUDGET_ANALYTICS_CHARS));
+        charBudget -= Math.min(block.length, BUDGET_ANALYTICS_CHARS);
+        sources.push('reports');
+      }
+    } catch (e) {
+      console.warn('[coach-context] reports fetch skipped:', (e as Error).message);
+    }
+  }
+
+  if (charBudget > 100) {
+    try {
+      const { data: upcoming } = await sb
+        .from('calendar_events')
+        .select('title, event_type, starts_at, ends_at, description')
+        .eq('user_id', uid)
+        .gte('starts_at', new Date().toISOString())
+        .order('starts_at', { ascending: true })
+        .limit(5);
+
+      const calLines = (upcoming ?? []).map((event) =>
+        `- ${event.title} (${event.event_type}, ${event.starts_at})${event.description ? `: ${compactText(event.description, 60)}` : ''}`,
+      );
 
       if (calLines.length > 0) {
         const block = `UPCOMING CALENDAR:\n${calLines.join('\n')}\n\n`;
@@ -194,24 +241,24 @@ async function buildContext(
     }
   }
 
-  // ── 4. Entity-pinned lookups (optional) ──────────────────────────────────
-  // If the caller passes specific entity IDs (e.g. the release the artist has
-  // open in the UI), fetch those records directly and prepend them.
   if (entityIds.length > 0 && charBudget > 100) {
     try {
-      const { data: pinned } = await sb
-        .from('releases')
-        .select('title, status, notes, release_date')
-        .eq('user_id', uid)
-        .in('id', entityIds.slice(0, 3)); // hard cap on IDs
+      const safeIds = entityIds.slice(0, 3);
+      const [pinnedIdeasRes, pinnedGoalsRes, pinnedTasksRes] = await Promise.all([
+        sb.from('ideas').select('title, status, next_action, notes').eq('user_id', uid).in('id', safeIds),
+        sb.from('goals').select('title, status_indicator, due_by, description').eq('user_id', uid).in('id', safeIds),
+        sb.from('tasks').select('title, completed, due_date, description').or(`user_id_assigned_by.eq.${uid},user_id_assigned_to.eq.${uid}`).in('id', safeIds),
+      ]);
 
-      if (pinned && pinned.length > 0) {
-        const lines = pinned.map((r) =>
-          `- ${r.title} (${r.status}, ${r.release_date ?? 'no date'})${r.notes ? ': ' + String(r.notes).slice(0, 100) : ''}`,
-        );
-        const block = `PINNED RELEASES:\n${lines.join('\n')}\n\n`;
-        sections.unshift(block.slice(0, 400)); // prepend — highest signal
-        sources.unshift('pinned_releases');
+      const lines = [
+        ...(pinnedIdeasRes.data ?? []).map((idea) => `- Idea: ${idea.title}${idea.status ? ` (${idea.status})` : ''}${idea.next_action ? ` · ${idea.next_action}` : ''}${idea.notes ? `: ${compactText(idea.notes, 80)}` : ''}`),
+        ...(pinnedGoalsRes.data ?? []).map((goal) => `- Goal: ${goal.title}${goal.status_indicator ? ` (${goal.status_indicator})` : ''}${goal.due_by ? ` · due ${goal.due_by}` : ''}${goal.description ? `: ${compactText(goal.description, 80)}` : ''}`),
+        ...(pinnedTasksRes.data ?? []).map((task) => `- Task: ${task.title}${task.completed ? ` (${task.completed})` : ''}${task.due_date ? ` · due ${task.due_date}` : ''}${task.description ? `: ${compactText(task.description, 80)}` : ''}`),
+      ];
+
+      if (lines.length > 0) {
+        sections.unshift(`PINNED RECORDS:\n${lines.join('\n')}\n\n`);
+        sources.unshift('pinned_records');
       }
     } catch (e) {
       console.warn('[coach-context] entity pinning skipped:', (e as Error).message);

@@ -63,8 +63,8 @@ export function parseAssistantIntent(input: string, pageContext: string): Parsed
   if (lower.includes('release')) {
     actions.push({
       type: 'navigate',
-      label: 'Open releases',
-      payload: { to: '/releases' },
+      label: 'Open ideas & WIPs',
+      payload: { to: '/ideas' },
     });
   }
 

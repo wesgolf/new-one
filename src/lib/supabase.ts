@@ -1,36 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl     = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON || import.meta.env.VITE_SUPABASE_PK;
+const supabaseAnonKey =
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  import.meta.env.VITE_SUPABASE_ANON ||
+  import.meta.env.VITE_SUPABASE_PK;
 const nativeFetch = globalThis.fetch.bind(globalThis);
 
-// ── Boot diagnostics (remove once auth is stable) ─────────────────────────
-console.group('[Supabase] Client init');
-console.log('URL present:',      !!supabaseUrl,     supabaseUrl ? supabaseUrl.slice(0, 40) + '…' : '❌ MISSING');
-console.log('Anon key present:', !!supabaseAnonKey, supabaseAnonKey ? supabaseAnonKey.slice(0, 20) + '…' : '❌ MISSING');
-console.log('Key type:',
-  supabaseAnonKey?.startsWith('eyJ')        ? '✅ JWT (correct)'      :
-  supabaseAnonKey?.startsWith('sb_publish') ? '⚠️  Publishable key (may not work for auth)' :
-  '❌ Unknown format',
-);
-console.groupEnd();
-
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('[Supabase] ❌ Missing env vars — auth will fail. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON to .env');
-}
-
-function summarizeBody(body: BodyInit | null | undefined) {
-  if (!body) return null;
-  if (typeof body === 'string') {
-    return body.length > 400 ? `${body.slice(0, 400)}…` : body;
-  }
-  if (body instanceof FormData) {
-    return '[FormData]';
-  }
-  if (body instanceof URLSearchParams) {
-    return body.toString();
-  }
-  return '[Body]';
+  console.error('[Supabase] Missing configuration. Set VITE_SUPABASE_URL and a Supabase public key env var.');
 }
 
 async function instrumentedSupabaseFetch(input: RequestInfo | URL, init?: RequestInit) {
@@ -54,44 +32,31 @@ async function instrumentedSupabaseFetch(input: RequestInfo | URL, init?: Reques
   }
 
   const method = (init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
-  const startedAt = performance.now();
-  const startedIso = new Date().toISOString();
-  const bodyPreview = summarizeBody(init?.body);
-  const relativeUrl = url.replace(supabaseUrl, '');
-
-  console.groupCollapsed(`[Supabase fetch] ${method} ${relativeUrl}`);
-  console.log('[Supabase fetch] Started at:', startedIso);
-  console.log('[Supabase fetch] Method:', method);
-  console.log('[Supabase fetch] URL:', url);
-  if (bodyPreview) {
-    console.log('[Supabase fetch] Body preview:', bodyPreview);
-  }
+  const relativePath = (() => {
+    try {
+      return new URL(url).pathname.replace(/^\/+/, '/');
+    } catch {
+      return url.replace(supabaseUrl, '').split('?')[0];
+    }
+  })();
 
   try {
     const response = await nativeFetch(input, init);
-    const durationMs = Math.round(performance.now() - startedAt);
-    const contentType = response.headers.get('content-type') ?? null;
-    console.log('[Supabase fetch] Status:', response.status, response.statusText);
-    console.log('[Supabase fetch] Duration ms:', durationMs);
-    console.log('[Supabase fetch] Content-Type:', contentType);
 
     if (!response.ok) {
+      const statusLine = `[Supabase] ${method} ${relativePath} -> ${response.status} ${response.statusText}`;
       try {
         const cloned = response.clone();
         const text = await cloned.text();
-        console.error('[Supabase fetch] Error response body:', text);
+        console.error(statusLine, text);
       } catch (error) {
-        console.error('[Supabase fetch] Could not read error response body:', error);
+        console.error(statusLine, error);
       }
     }
 
-    console.groupEnd();
     return response;
   } catch (error) {
-    const durationMs = Math.round(performance.now() - startedAt);
-    console.error('[Supabase fetch] Network failure after ms:', durationMs);
-    console.error('[Supabase fetch] Error:', error);
-    console.groupEnd();
+    console.error(`[Supabase] Network error ${method} ${relativePath}`, error);
     throw error;
   }
 }

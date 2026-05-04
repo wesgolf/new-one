@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { format, isPast, isToday, parseISO } from 'date-fns';
-import { AlertCircle, CheckCircle2, Circle, Clock, Filter, Plus, Search, User2 } from 'lucide-react';
-import { fetchTasks, safeProfiles, saveTask } from '../lib/supabaseData';
+import { AlertCircle, CheckCircle2, Circle, Clock, Filter, Plus, Search, Trash2, User2 } from 'lucide-react';
+import { deleteTask, fetchTasks, safeProfiles, saveTask } from '../lib/supabaseData';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import { usePermissions } from '../hooks/usePermissions';
 import { subscribeAssistantActions } from '../lib/commandBus';
 import type { ProfileSummary, TaskPriority, TaskRecord, TaskStatus } from '../types/domain';
 
 const STATUS_OPTIONS: TaskStatus[] = ['pending', 'completed', 'cancelled'];
+const EDITABLE_STATUS_OPTIONS: TaskStatus[] = ['pending', 'completed'];
 const PRIORITY_OPTIONS: TaskPriority[] = ['low', 'medium', 'high'];
 
 interface TaskModalProps {
@@ -18,9 +20,43 @@ interface TaskModalProps {
   onSaved: () => void;
 }
 
+function getProfileDisplayName(profile: ProfileSummary | null | undefined) {
+  if (!profile) return 'Unassigned';
+  return profile.full_name?.trim() || 'Unnamed user';
+}
+
+function getDueDateInputValue(value?: string | null) {
+  if (!value) return '';
+  return format(parseISO(value), 'yyyy-MM-dd');
+}
+
+function getDueTimeInputValue(value?: string | null) {
+  if (!value || !value.includes('T')) return '';
+  return format(parseISO(value), 'HH:mm');
+}
+
+function updateTaskDueDate(currentValue: string | null | undefined, nextDate: string, nextTime?: string) {
+  if (!nextDate) return null;
+  const timeValue = nextTime ?? getDueTimeInputValue(currentValue);
+  return timeValue ? `${nextDate}T${timeValue}` : nextDate;
+}
+
+function updateTaskDueTime(currentValue: string | null | undefined, nextTime: string) {
+  const dateValue = getDueDateInputValue(currentValue);
+  if (!dateValue) return null;
+  if (!nextTime) return dateValue;
+  return `${dateValue}T${nextTime}`;
+}
+
+function formatTaskDueLabel(value?: string | null) {
+  if (!value) return 'No due date';
+  const parsed = parseISO(value);
+  return value.includes('T') ? format(parsed, 'MMM d, h:mm a') : format(parsed, 'MMM d');
+}
+
 function TaskModal({ open, profiles, initialTask, onClose, onSaved }: TaskModalProps) {
   const [form, setForm] = useState<Partial<TaskRecord>>({
-    status: 'todo',
+    status: 'pending',
     priority: 'medium',
   });
   const [saving, setSaving] = useState(false);
@@ -85,7 +121,7 @@ function TaskModal({ open, profiles, initialTask, onClose, onSaved }: TaskModalP
             />
           </label>
 
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2">
             <label className="block">
               <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">Status</span>
               <select
@@ -93,7 +129,7 @@ function TaskModal({ open, profiles, initialTask, onClose, onSaved }: TaskModalP
                 onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as TaskStatus }))}
                 className="input-base"
               >
-                {STATUS_OPTIONS.map((status) => (
+                {EDITABLE_STATUS_OPTIONS.map((status) => (
                   <option key={status} value={status}>
                     {status.replace('_', ' ')}
                   </option>
@@ -115,16 +151,52 @@ function TaskModal({ open, profiles, initialTask, onClose, onSaved }: TaskModalP
                 ))}
               </select>
             </label>
+          </div>
 
-            <label className="block">
-              <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">Due date</span>
-              <input
-                type="datetime-local"
-                value={form.due_date ? form.due_date.slice(0, 10) : ''}
-                onChange={(event) => setForm((current) => ({ ...current, due_date: event.target.value || null }))}
-                className="input-base"
-              />
-            </label>
+          <div className="rounded-2xl border border-border bg-slate-50/80 p-4">
+            <div className="mb-3">
+              <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">Due</span>
+              <p className="mt-1 text-xs text-text-secondary">Choose a day, and optionally a time.</p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="block">
+                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">Date</span>
+                <input
+                  type="date"
+                  value={getDueDateInputValue(form.due_date)}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      due_date: updateTaskDueDate(current.due_date ?? null, event.target.value),
+                    }))
+                  }
+                  className="input-base"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-text-tertiary">Time</span>
+                <input
+                  type="time"
+                  value={getDueTimeInputValue(form.due_date)}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      due_date: updateTaskDueTime(current.due_date ?? null, event.target.value),
+                    }))
+                  }
+                  className="input-base"
+                  disabled={!getDueDateInputValue(form.due_date)}
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              className="mt-3 text-sm font-medium text-text-secondary transition hover:text-text-primary"
+              onClick={() => setForm((current) => ({ ...current, due_date: null }))}
+            >
+              Clear due date
+            </button>
           </div>
 
           <label className="block">
@@ -137,7 +209,7 @@ function TaskModal({ open, profiles, initialTask, onClose, onSaved }: TaskModalP
               <option value="">Unassigned</option>
               {profiles.map((profile) => (
                 <option key={profile.id} value={profile.id}>
-                  {profile.full_name || profile.email || profile.id}
+                  {getProfileDisplayName(profile)}
                 </option>
               ))}
             </select>
@@ -163,16 +235,21 @@ function TaskModal({ open, profiles, initialTask, onClose, onSaved }: TaskModalP
 export function Tasks() {
   const { authUser } = useCurrentUser();
   const { canCreateTasks, canEditTasks, canDeleteTasks } = usePermissions();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [assigneeFilter, setAssigneeFilter] = useState('all');
+  const [assigneeFilter, setAssigneeFilter] = useState('me');
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [dueFilter, setDueFilter] = useState<'all' | 'overdue' | 'today' | 'upcoming'>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Partial<TaskRecord> | null>(null);
+  const [highlightedTaskId, setHighlightedTaskId] = useState<string | null>(null);
+
+  const focusedTaskId = useMemo(() => new URLSearchParams(location.search).get('task'), [location.search]);
 
   const load = async () => {
     setLoading(true);
@@ -188,6 +265,14 @@ export function Tasks() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (!focusedTaskId) return;
+    setAssigneeFilter('all');
+    setStatusFilter('all');
+    setPriorityFilter('all');
+    setDueFilter('all');
+  }, [focusedTaskId]);
 
   useEffect(() => {
     return subscribeAssistantActions((action) => {
@@ -219,7 +304,9 @@ export function Tasks() {
       const matchesSearch =
         task.title.toLowerCase().includes(search.toLowerCase()) ||
         (task.description || '').toLowerCase().includes(search.toLowerCase());
-      const matchesAssignee = assigneeFilter === 'all' || task.assigned_to === assigneeFilter;
+      const matchesAssignee =
+        assigneeFilter === 'all' ||
+        (assigneeFilter === 'me' ? task.assigned_to === authUser?.id : task.assigned_to === assigneeFilter);
       const matchesStatus = statusFilter === 'all' || task.status === statusFilter;
       const matchesPriority = priorityFilter === 'all' || task.priority === priorityFilter;
 
@@ -235,7 +322,26 @@ export function Tasks() {
 
       return matchesSearch && matchesAssignee && matchesStatus && matchesPriority && matchesDue;
     });
-  }, [tasks, search, assigneeFilter, statusFilter, priorityFilter, dueFilter]);
+  }, [tasks, search, assigneeFilter, authUser?.id, statusFilter, priorityFilter, dueFilter]);
+
+  useEffect(() => {
+    if (!focusedTaskId || loading) return;
+    const taskExists = filteredTasks.some((task) => task.id === focusedTaskId);
+    if (!taskExists) return;
+
+    setHighlightedTaskId(focusedTaskId);
+    requestAnimationFrame(() => {
+      document.getElementById(`task-row-${focusedTaskId}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    });
+
+    const clearHighlightTimer = window.setTimeout(() => setHighlightedTaskId(null), 2800);
+    navigate('/tasks', { replace: true });
+
+    return () => window.clearTimeout(clearHighlightTimer);
+  }, [filteredTasks, focusedTaskId, loading, navigate]);
 
   const quickUpdateStatus = async (task: TaskRecord, status: TaskStatus) => {
     await saveTask({
@@ -244,6 +350,13 @@ export function Tasks() {
       completed_at: status === 'completed' ? new Date().toISOString() : null,
     });
     load();
+  };
+
+  const handleDeleteTask = async (task: TaskRecord) => {
+    const confirmed = window.confirm(`Delete "${task.title}"?`);
+    if (!confirmed) return;
+    await deleteTask(task.id);
+    await load();
   };
 
   return (
@@ -262,7 +375,7 @@ export function Tasks() {
           onClick={() => {
             setSelectedTask({
               assigned_to: authUser?.id || null,
-              status: 'todo',
+              status: 'pending',
               priority: 'medium',
             });
             setModalOpen(true);
@@ -286,10 +399,11 @@ export function Tasks() {
           />
         </label>
         <select className="input-base" value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)}>
+          <option value="me">Assigned to me</option>
           <option value="all">All assignees</option>
           {profiles.map((profile) => (
             <option key={profile.id} value={profile.id}>
-              {profile.full_name || profile.email || profile.id}
+              {getProfileDisplayName(profile)}
             </option>
           ))}
         </select>
@@ -349,8 +463,18 @@ export function Tasks() {
               <tbody className="divide-y divide-border">
                 {filteredTasks.map((task) => {
                   const assignee = task.assigned_to ? profileMap[task.assigned_to] : null;
+                  const isCompleted = task.status === 'completed';
+                  const isHighlighted = highlightedTaskId === task.id;
                   return (
-                    <tr key={task.id} className="align-top">
+                    <tr
+                      key={task.id}
+                      id={`task-row-${task.id}`}
+                      className={[
+                        'align-top scroll-mt-24 transition-colors',
+                        isCompleted ? 'bg-slate-50/70 text-text-secondary' : '',
+                        isHighlighted ? 'bg-brand-dim/70 ring-1 ring-brand/20' : '',
+                      ].join(' ')}
+                    >
                       <td className="px-6 py-5">
                         {canEditTasks ? (
                         <button
@@ -361,24 +485,47 @@ export function Tasks() {
                             setModalOpen(true);
                           }}
                         >
-                          <div className="font-semibold text-text-primary">{task.title}</div>
-                          {task.description && <p className="mt-1 text-sm text-text-secondary">{task.description}</p>}
+                          <div className={`font-semibold ${isCompleted ? 'text-text-secondary line-through' : 'text-text-primary'}`}>
+                            {task.title}
+                          </div>
+                          {task.description && (
+                            <p className={`mt-1 text-sm ${isCompleted ? 'text-text-muted line-through' : 'text-text-secondary'}`}>
+                              {task.description}
+                            </p>
+                          )}
                         </button>
                         ) : (
                           <div>
-                            <div className="font-semibold text-text-primary">{task.title}</div>
-                            {task.description && <p className="mt-1 text-sm text-text-secondary">{task.description}</p>}
+                            <div className={`font-semibold ${isCompleted ? 'text-text-secondary line-through' : 'text-text-primary'}`}>
+                              {task.title}
+                            </div>
+                            {task.description && (
+                              <p className={`mt-1 text-sm ${isCompleted ? 'text-text-muted line-through' : 'text-text-secondary'}`}>
+                                {task.description}
+                              </p>
+                            )}
                           </div>
                         )}
                       </td>
                       <td className="px-6 py-5 text-sm text-text-secondary">
                         <div className="inline-flex items-center gap-2">
                           <User2 className="h-4 w-4 text-text-tertiary" />
-                          {assignee?.full_name || assignee?.email || 'Unassigned'}
+                          {getProfileDisplayName(assignee)}
                         </div>
                       </td>
                       <td className="px-6 py-5">
-                        <span className="badge badge-primary">{task.status.replace('_', ' ')}</span>
+                        <span
+                          className={[
+                            'inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize',
+                            task.status === 'completed'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : task.status === 'cancelled'
+                                ? 'bg-slate-100 text-slate-500'
+                                : 'bg-brand-dim text-brand',
+                          ].join(' ')}
+                        >
+                          {task.status.replace('_', ' ')}
+                        </span>
                       </td>
                       <td className="px-6 py-5">
                         <span className={`badge ${task.priority === 'urgent' ? 'badge-error' : task.priority === 'high' ? 'badge-warning' : 'badge-primary'}`}>
@@ -388,30 +535,46 @@ export function Tasks() {
                       <td className="px-6 py-5 text-sm">
                         {task.due_date ? (() => {
                           const d = parseISO(task.due_date);
-                          const overdue = isPast(d) && !isToday(d) && task.status !== 'done';
-                          const today = isToday(d) && task.status !== 'done';
+                          const overdue = isPast(d) && !isToday(d) && task.status !== 'completed';
+                          const today = isToday(d) && task.status !== 'completed';
                           return (
-                            <span className={overdue ? 'text-red-600 font-semibold' : today ? 'text-amber-600 font-semibold' : 'text-text-secondary'}>
+                            <span
+                              className={[
+                                overdue
+                                  ? 'text-red-600 font-semibold'
+                                  : today
+                                    ? 'text-amber-600 font-semibold'
+                                    : 'text-text-secondary',
+                                isCompleted ? 'line-through opacity-70' : '',
+                              ].join(' ')}
+                            >
                               {overdue && <AlertCircle className="inline mr-1 h-3.5 w-3.5 -mt-px" />}
                               {today && <Clock className="inline mr-1 h-3.5 w-3.5 -mt-px" />}
-                              {format(d, 'MMM d, h:mm a')}
+                              {formatTaskDueLabel(task.due_date)}
                             </span>
                           );
-                        })() : <span className="text-text-muted">No due date</span>}
+                        })() : <span className="text-text-muted">{formatTaskDueLabel(task.due_date)}</span>}
                       </td>
                       <td className="px-6 py-5">
                         <div className="flex flex-wrap gap-2">
-                          {STATUS_OPTIONS.map((status) => (
+                          <button
+                            type="button"
+                            onClick={() => quickUpdateStatus(task, isCompleted ? 'pending' : 'completed')}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold ${isCompleted ? 'bg-slate-100 text-slate-700' : 'bg-slate-950 text-white'}`}
+                          >
+                            <CheckCircle2 className="mr-1 inline h-3 w-3" />
+                            {isCompleted ? 'Reopen' : 'Complete'}
+                          </button>
+                          {canDeleteTasks ? (
                             <button
-                              key={status}
                               type="button"
-                              onClick={() => quickUpdateStatus(task, status)}
-                              className={`rounded-full px-3 py-1 text-xs font-semibold ${task.status === status ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-700'}`}
+                              onClick={() => void handleDeleteTask(task)}
+                              className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700"
                             >
-                              {status === 'done' ? <CheckCircle2 className="mr-1 inline h-3 w-3" /> : null}
-                              {status.replace('_', ' ')}
+                              <Trash2 className="mr-1 inline h-3 w-3" />
+                              Delete
                             </button>
-                          ))}
+                          ) : null}
                         </div>
                       </td>
                     </tr>

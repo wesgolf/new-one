@@ -1,17 +1,16 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig, loadEnv} from 'vite';
+import {defineConfig} from 'vite';
+import { buildViteDefineEnv } from './env/loadPreferredEnv';
 
 export default defineConfig(({mode}) => {
-  const env = loadEnv(mode, '.', '');
+  const defineEnv = buildViteDefineEnv(mode, __dirname);
   return {
     appType: 'custom',
     plugins: [react(), tailwindcss()],
     define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL),
-      'process.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.VITE_SUPABASE_ANON_KEY),
+      ...defineEnv,
     },
     resolve: {
       alias: {

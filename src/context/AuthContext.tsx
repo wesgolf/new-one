@@ -7,13 +7,13 @@
  *    localStorage (or null in incognito / after sign-out).
  * 2. For every event (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, etc.) we
  *    receive a server-validated `session` object — no stale local state.
- * 3. When a valid session arrives we fetch the profile row from the DB.
+ * 3. When a valid session arrives we unlock routing immediately, then fetch
+ *    the profile row in the background.
  * 4. When the session is null (SIGNED_OUT / no session) we clear state.
  *
  * Why NOT calling getSession()/getUser() separately:
  * - Avoids a race between the direct call and the subscription callback.
- * - INITIAL_SESSION fires before any protected route renders, so isLoading
- *   is false by the time the router evaluates ProtectedRoute.
+ * - Protected routes only wait for auth session resolution, not profile I/O.
  */
 
 import React, { createContext, useState, useEffect, useCallback, ReactNode } from 'react';
@@ -46,7 +46,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  // Fetch the profile row for a given user. Called from the auth listener.
+  // Fetch the profile row for a given user. Called after auth resolution.
   const loadProfile = useCallback(async (user: User) => {
     try {
       const data = await getUserProfile(user.id);
@@ -76,16 +76,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     //
     // getSession() is a plain Promise — cancellable, StrictMode-safe, and
     // guaranteed to resolve even in incognito (returns null, no network needed).
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       if (cancelled) return;
       if (session?.user) {
         setAuthUser(session.user);
-        await loadProfile(session.user);
+        setIsLoading(false);
+        void loadProfile(session.user);
       } else {
         setAuthUser(null);
         setProfile(null);
+        setIsLoading(false);
       }
-      if (!cancelled) setIsLoading(false);
     }).catch(() => {
       if (!cancelled) setIsLoading(false);
     });
@@ -93,17 +94,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // ── Step 2: Subscribe to subsequent auth changes ──────────────────────────
     // Skip INITIAL_SESSION — initial state is already handled above.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (cancelled || event === 'INITIAL_SESSION') return;
         if (session?.user) {
           setAuthUser(session.user);
-          await loadProfile(session.user);
+          if (!cancelled) setIsLoading(false);
+          void loadProfile(session.user);
         } else {
           // SIGNED_OUT / TOKEN_REFRESH_FAILURE etc.
           setAuthUser(null);
           setProfile(null);
+          if (!cancelled) setIsLoading(false);
         }
-        if (!cancelled) setIsLoading(false);
       }
     );
 

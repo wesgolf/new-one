@@ -48,32 +48,21 @@ const LOGIN_TIMEOUT_MS = 15_000; // increased from 10 s to reduce false timeouts
 export const signInWithEmail = async (email: string, password: string) => {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-  console.group('[Auth] signInWithEmail attempt');
-  console.log('Email:', email);
-  console.log('Timeout budget:', LOGIN_TIMEOUT_MS, 'ms');
-  console.time('[Auth] signInWithEmail duration');
-
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
-      console.error('[Auth] ⏱ Request timed out after', LOGIN_TIMEOUT_MS, 'ms');
-      console.log('[Auth] Possible causes: wrong Supabase URL, network blocked, wrong anon key format');
       reject(new LoginError('timeout', 'Sign-in timed out. Check your connection and try again.'));
     }, LOGIN_TIMEOUT_MS);
   });
 
   try {
-    console.log('[Auth] Calling supabase.auth.signInWithPassword…');
     const { data, error } = await Promise.race([
       supabase.auth.signInWithPassword({ email, password }),
       timeoutPromise,
     ]);
 
-    console.timeEnd('[Auth] signInWithEmail duration');
-
     if (error) {
       const msg    = error.message?.toLowerCase() ?? '';
       const status = (error as any).status ?? 0;
-      console.error('[Auth] Supabase error response:', { message: error.message, status, code: (error as any).code });
 
       if (
         status === 400 ||
@@ -101,25 +90,17 @@ export const signInWithEmail = async (email: string, password: string) => {
       throw new LoginError('unknown', 'Sign-in failed. Please try again.');
     }
 
-    console.log('[Auth] ✅ Sign-in successful. User:', data?.user?.id);
-    console.groupEnd();
     return data;
   } catch (err) {
-    console.timeEnd('[Auth] signInWithEmail duration');
     if (err instanceof LoginError) {
-      console.error('[Auth] LoginError thrown:', err.code, err.message);
-      console.groupEnd();
       throw err;
     }
     // Fetch-level failure (offline, DNS, CORS, etc.)
     const raw = err as Error;
-    console.error('[Auth] Raw fetch-level error:', raw?.name, raw?.message, raw);
     const msg = raw?.message?.toLowerCase() ?? '';
     if (msg.includes('network') || msg.includes('fetch') || msg.includes('failed to fetch')) {
-      console.groupEnd();
       throw new LoginError('network_error', 'Network error — please check your connection and retry.');
     }
-    console.groupEnd();
     throw new LoginError('unknown', 'An unexpected error occurred. Please try again.');
   } finally {
     clearTimeout(timeoutId);
@@ -138,21 +119,13 @@ export const signOut = async () => {
  * Get the current authenticated user
  */
 export const getCurrentAuthUser = async () => {
-  console.groupCollapsed('[Auth] getCurrentAuthUser');
   // Use getSession only for routine client-side reads. It resolves from local
   // storage and avoids the extra /auth/v1/user validation request.
   const { data: sessionData } = await supabase.auth.getSession();
   const sessionUser = sessionData?.session?.user ?? null;
-  console.log('[Auth] Session present:', Boolean(sessionData?.session));
-  console.log('[Auth] Session user id:', sessionUser?.id ?? null);
   if (!sessionUser) {
-    console.warn('[Auth] No session user found. Returning null.');
-    console.groupEnd();
     return null;
   }
-
-  console.log('[Auth] Returning session user without extra network validation.');
-  console.groupEnd();
   return sessionUser;
 };
 

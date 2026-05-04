@@ -67,6 +67,7 @@ export interface IdeaRecord {
   description?: string | null;
   notes?: string | null;
   status: string;
+  next_action?: string | null;
   is_collab?: boolean;
   is_public?: boolean;
   user_id?: string | null;
@@ -84,6 +85,8 @@ export interface IdeaRecord {
   collaborators?: string[] | null;
   file_urls?: any[] | null;
   idea_comments?: any[] | null;
+  promoted_to_release_at?: string | null;
+  release_handoff?: Record<string, any> | null;
 }
 
 export type IdeaAssetType = 'audio' | 'link' | 'cover' | 'project_link';
@@ -101,6 +104,8 @@ export interface IdeaAsset {
 export interface IdeaComment {
   id: string;
   idea_id: string;
+  asset_id?: string | null;
+  version?: number | null;
   author_id?: string | null;
   body: string;
   timestamp_seconds?: number | null;

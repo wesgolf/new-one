@@ -77,12 +77,12 @@ export function GlobalAssistantDrawer() {
         } satisfies AssistantAction,
       },
       {
-        label: 'Open releases',
+        label: 'Open ideas',
         icon: Music2,
         action: {
           type: 'navigate',
-          label: 'Navigate to releases',
-          payload: { to: '/releases' },
+          label: 'Navigate to ideas',
+          payload: { to: '/ideas' },
         } satisfies AssistantAction,
       },
     ],
@@ -93,11 +93,21 @@ export function GlobalAssistantDrawer() {
   const ACTION_PAGE_MAP: Partial<Record<string, string>> = {
     create_task:           '/tasks',
     create_calendar_event: '/calendar',
-    open_content_scheduler:'/content',
-    open_release:          '/releases',
   };
 
   const runAction = (action: AssistantAction) => {
+    if (action.type === 'open_release') {
+      navigate('/ideas');
+      setOpen(false);
+      return;
+    }
+
+    if (action.type === 'open_content_scheduler') {
+      navigate('/calendar');
+      setOpen(false);
+      return;
+    }
+
     if (action.type === 'navigate' && action.payload?.to) {
       navigate(action.payload.to as string);
       setOpen(false);

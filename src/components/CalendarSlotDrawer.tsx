@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, CheckSquare, Loader2, Radio, Target, X } from 'lucide-react';
+import { Calendar, CheckSquare, Loader2, Target, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { supabase } from '../lib/supabase';
 
@@ -32,14 +32,6 @@ const TYPE_OPTIONS = [
     icon: CheckSquare,
     border: 'border-blue-100 bg-blue-50 hover:border-blue-300',
     iconClass: 'text-blue-600',
-  },
-  {
-    type: 'post' as const,
-    label: 'Scheduled post',
-    description: 'Deep-link into content scheduler',
-    icon: Radio,
-    border: 'border-orange-100 bg-orange-50 hover:border-orange-300',
-    iconClass: 'text-orange-600',
   },
   {
     type: 'goal' as const,
@@ -76,12 +68,7 @@ export function CalendarSlotDrawer({ open, date, time, prefillTitle, prefillType
   const reset = () => { setStep('choose'); setTitle(''); setError(null); };
   const handleClose = () => { reset(); onClose(); };
 
-  const handleTypeChoose = (type: 'event' | 'task' | 'post' | 'goal') => {
-    if (type === 'post') {
-      navigate('/content', { state: { prefillDate: date, prefillTime: time } });
-      handleClose();
-      return;
-    }
+  const handleTypeChoose = (type: 'event' | 'task' | 'goal') => {
     if (type === 'goal') {
       navigate('/goals', { state: { prefillDate: date, openCreate: true } });
       handleClose();
@@ -97,12 +84,15 @@ export function CalendarSlotDrawer({ open, date, time, prefillTitle, prefillType
     setError(null);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const { error: err } = await supabase.from('meetings').insert([{
-        title: title.trim(),
-        date,
-        time: selectedTime,
+      const startsAt = new Date(`${date}T${selectedTime}:00`);
+      const { error: err } = await supabase.from('calendar_events').insert([{
         user_id: user?.id ?? null,
+        title: title.trim(),
+        event_type: 'meeting',
+        starts_at: startsAt.toISOString(),
+        ends_at: null,
         created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       }]);
       if (err) throw err;
       reset();
@@ -123,9 +113,10 @@ export function CalendarSlotDrawer({ open, date, time, prefillTitle, prefillType
       const { error: err } = await supabase.from('tasks').insert([{
         title: title.trim(),
         due_date: `${date}T${selectedTime}:00`,
-        status: 'todo',
+        completed: 'pending',
         priority: 'medium',
-        created_by: user?.id ?? null,
+        user_id_assigned_by: user?.id ?? null,
+        user_id_assigned_to: user?.id ?? null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }]);

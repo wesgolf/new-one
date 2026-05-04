@@ -20,13 +20,12 @@
  *   npm run migrate
  */
 
-import 'dotenv/config';
-import dotenv from 'dotenv';
-dotenv.config({ path: '.env.local' });
-
 import postgres from 'postgres';
 import fs from 'fs';
 import path from 'path';
+import { applyPreferredEnvToProcessEnv } from '../env/loadPreferredEnv';
+
+applyPreferredEnvToProcessEnv(process.env.NODE_ENV, process.cwd());
 
 function readDatabaseUrlFromEnv(): string | null {
   const candidates = [

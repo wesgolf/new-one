@@ -1,137 +1,97 @@
 /**
- * dropboxService — Upload audio files to Dropbox and return public raw URLs.
- *
- * Requires VITE_DROPBOX_ACCESS_TOKEN in .env.
- * Get one from: https://www.dropbox.com/developers/apps
- *   → Create app → Permissions: files.content.write + sharing.write → Generate access token
- *
- * NOTE: This token is bundled into the client build (VITE_ prefix).
- * Suitable for a single-artist personal app. For multi-tenant, proxy
- * the upload through a server-side function to protect the token.
+ * Dropbox uploads are proxied through the local server so the browser does not
+ * need to hold a long-lived access token. The server can refresh Dropbox
+ * credentials when a refresh token is configured.
  */
 
-const DROPBOX_API = 'https://api.dropboxapi.com/2';
-const DROPBOX_CONTENT_API = 'https://content.dropboxapi.com/2';
-
-/** True when VITE_DROPBOX_ACCESS_TOKEN is present. */
-export const dropboxConfigured = () =>
-  !!(import.meta.env.VITE_DROPBOX_ACCESS_TOKEN as string | undefined);
-
-function getToken(): string {
-  return (import.meta.env.VITE_DROPBOX_ACCESS_TOKEN as string) ?? '';
-}
-
-/** Convert a Dropbox shared link (dl=0) to a direct-playback URL (raw=1). */
-function toRawUrl(sharedUrl: string): string {
-  return sharedUrl
-    .replace('www.dropbox.com', 'dl.dropboxusercontent.com')
-    .replace('?dl=0', '?raw=1')
-    .replace('?dl=1', '?raw=1');
-}
-
 export interface DropboxUploadResult {
-  /** Direct URL suitable for <audio src> and Supabase idea_assets.file_url */
   url: string;
-  /** Full Dropbox path, e.g. /Artist OS/Ideas/abc123/vocal.wav */
   path: string;
-  /** Dropbox shared link (human-friendly) */
   sharedLink: string;
 }
 
-/**
- * Upload an audio file to /Artist OS/Ideas/{ideaId}/{filename} in Dropbox,
- * create a shared link, and return a direct playback URL.
- */
+type DropboxServiceError = Error & { status?: number };
+
+function dropboxError(message: string, status?: number): DropboxServiceError {
+  return Object.assign(new Error(message), status ? { status } : {});
+}
+
+function isConfiguredFlag(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/** True when the app has enough Dropbox config to attempt the server-side flow. */
+export const dropboxConfigured = () =>
+  isConfiguredFlag(import.meta.env.VITE_DROPBOX_API_KEY) ||
+  isConfiguredFlag(import.meta.env.VITE_DROPBOX_ACCESS_TOKEN) ||
+  isConfiguredFlag(import.meta.env.VITE_DROPBOX_REFRESH_TOKEN);
+
+async function parseDropboxError(response: Response, fallback: string): Promise<DropboxServiceError> {
+  const text = await response.text().catch(() => '');
+
+  try {
+    const payload = JSON.parse(text) as {
+      error?: string;
+      message?: string;
+      error_summary?: string;
+    };
+    const message = payload.message || payload.error || payload.error_summary || fallback;
+    return dropboxError(message, response.status);
+  } catch {
+    return dropboxError(text || fallback, response.status);
+  }
+}
+
 export async function uploadAudioToDropbox(
   file: File,
   ideaId: string,
 ): Promise<DropboxUploadResult> {
   if (!dropboxConfigured()) {
-    throw new Error(
-      'Dropbox is not configured. Add VITE_DROPBOX_ACCESS_TOKEN to your .env file.\n' +
-        'Get a token at: https://www.dropbox.com/developers/apps',
+    throw dropboxError(
+      'Dropbox is not configured. Add Dropbox app credentials and a refresh token or valid access token.',
     );
   }
 
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const path = `/Artist OS/Ideas/${ideaId}/${safeName}`;
-  const apiArg = { path, mode: 'add', autorename: true, mute: false };
-
-  // ── 1. Upload file ─────────────────────────────────────────────────────────
-  const uploadRes = await fetch(`${DROPBOX_CONTENT_API}/files/upload`, {
+  const response = await fetch(`/api/dropbox/upload?ideaId=${encodeURIComponent(ideaId)}`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${getToken()}`,
-      'Content-Type': 'application/octet-stream',
-      'Dropbox-API-Arg': JSON.stringify(apiArg),
+      'Content-Type': file.type || 'application/octet-stream',
+      'X-Filename': encodeURIComponent(file.name),
     },
     body: file,
   });
 
-  if (!uploadRes.ok) {
-    const errText = await uploadRes.text().catch(() => '');
-    let errSummary = `Dropbox upload failed (${uploadRes.status}): ${uploadRes.statusText}`;
-    try { errSummary = JSON.parse(errText)?.error_summary ?? errSummary; } catch {}
-    throw new Error(errSummary);
+  if (!response.ok) {
+    throw await parseDropboxError(response, `Dropbox upload failed (${response.status})`);
   }
 
-  const uploadData = await uploadRes.json();
-  const uploadedPath: string = uploadData.path_display as string;
-
-  // ── 2. Create shared link ──────────────────────────────────────────────────
-  const linkRes = await fetch(`${DROPBOX_API}/sharing/create_shared_link_with_settings`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${getToken()}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      path: uploadedPath,
-      settings: { requested_visibility: { '.tag': 'public' } },
-    }),
-  });
-
-  // 409 = shared link already exists — extract existing URL from error body
-  if (linkRes.status === 409) {
-    const conflict = await linkRes.json().catch(() => ({}));
-    const existingUrl: string =
-      conflict?.error?.shared_link_already_exists?.metadata?.url ?? '';
-    return {
-      url: toRawUrl(existingUrl),
-      path: uploadedPath,
-      sharedLink: existingUrl,
-    };
-  }
-
-  if (!linkRes.ok) {
-    const errText = await linkRes.text().catch(() => '');
-    let errSummary = `Failed to create Dropbox shared link: ${linkRes.statusText}`;
-    try { errSummary = JSON.parse(errText)?.error_summary ?? errSummary; } catch {}
-    throw new Error(errSummary);
-  }
-
-  const linkData = await linkRes.json();
-  const sharedLink: string = linkData.url as string;
-
-  return {
-    url: toRawUrl(sharedLink),
-    path: uploadedPath,
-    sharedLink,
-  };
+  return response.json() as Promise<DropboxUploadResult>;
 }
 
-/**
- * Delete a file at the given Dropbox path (used when an idea is deleted).
- * Silently ignores 409 (path not found) errors.
- */
 export async function deleteDropboxFile(path: string): Promise<void> {
   if (!dropboxConfigured()) return;
-  await fetch(`${DROPBOX_API}/files/delete_v2`, {
+
+  const response = await fetch('/api/dropbox/delete', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${getToken()}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ path }),
   });
+
+  if (!response.ok) {
+    throw await parseDropboxError(response, `Dropbox delete failed (${response.status})`);
+  }
+}
+
+export function shouldFallbackFromDropbox(error: unknown): boolean {
+  const status = (error as { status?: number } | null)?.status;
+  if (status === 401 || status === 403 || status === 429) return false;
+
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error ?? '').toLowerCase();
+  if (message.includes('expired_access_token')) return false;
+  if (message.includes('refresh token')) return false;
+  if (message.includes('dropbox is not configured')) return false;
+
+  return false;
 }

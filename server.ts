@@ -1,11 +1,11 @@
-import "dotenv/config";
-import dotenv from "dotenv";
-dotenv.config({ path: ".env.local" });
 import express, { type Request, type Response } from "express";
 import http from "http";
 import path from "path";
 import axios from "axios";
 import postgres from "postgres";
+import { applyPreferredEnvToProcessEnv, buildViteDefineEnv } from "./env/loadPreferredEnv";
+
+applyPreferredEnvToProcessEnv(process.env.NODE_ENV, process.cwd());
 
 // Global error handlers for better production logging
 process.on('uncaughtException', (err) => {
@@ -93,6 +93,8 @@ async function startServer() {
   app.use('/api/notifications/sms/send', createRateLimiter('sms-send', 10, 15 * 60_000));
   app.use('/api/soundcloud/public-tracks', createRateLimiter('soundcloud-public', 40, 60_000));
   app.use('/api/soundcloud/scrape-tracks', createRateLimiter('soundcloud-scrape', 10, 15 * 60_000));
+  app.use('/api/ideas/audio-analysis', createRateLimiter('idea-audio-analysis', 10, 60_000));
+  app.use('/api/dropbox', createRateLimiter('dropbox', 20, 60_000));
 
   // ── API usage logger ───────────────────────────────────────────────────────
   // Logs every /api/* request with endpoint + response time. Helps track which
@@ -198,6 +200,276 @@ async function startServer() {
     } catch (err: any) {
       console.error('[audio-proxy] failed:', rawUrl, err.message);
       res.status(502).json({ error: 'Audio proxy error', message: err.message });
+    }
+  });
+
+  const DROPBOX_API = 'https://api.dropboxapi.com/2';
+  const DROPBOX_CONTENT_API = 'https://content.dropboxapi.com/2';
+  const DROPBOX_OAUTH_API = 'https://api.dropboxapi.com/oauth2/token';
+  const DROPBOX_APP_KEY =
+    process.env.DROPBOX_APP_KEY ??
+    process.env.VITE_DROPBOX_API_KEY ??
+    '';
+  const DROPBOX_APP_SECRET =
+    process.env.DROPBOX_APP_SECRET ??
+    process.env.VITE_DROPBOX_APP_SECRET ??
+    '';
+  const DROPBOX_REFRESH_TOKEN =
+    process.env.DROPBOX_REFRESH_TOKEN ??
+    process.env.VITE_DROPBOX_REFRESH_TOKEN ??
+    '';
+  const DROPBOX_ACCESS_TOKEN =
+    process.env.DROPBOX_ACCESS_TOKEN ??
+    process.env.VITE_DROPBOX_ACCESS_TOKEN ??
+    '';
+
+  type DropboxTokenCache = {
+    accessToken: string;
+    expiresAt: number;
+  };
+
+  let dropboxTokenCache: DropboxTokenCache | null = null;
+
+  function sanitizeDropboxFilename(filename: string): string {
+    return filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+  }
+
+  function toDropboxRawUrl(sharedUrl: string): string {
+    try {
+      const url = new URL(sharedUrl);
+      if (url.hostname === 'www.dropbox.com' || url.hostname === 'dropbox.com') {
+        url.hostname = 'dl.dropboxusercontent.com';
+      }
+      url.searchParams.delete('dl');
+      url.searchParams.set('raw', '1');
+      return url.toString();
+    } catch {
+      return sharedUrl;
+    }
+  }
+
+  function getDropboxErrorMessage(status: number, fallback: string, payload: any): string {
+    const summary =
+      payload?.message ||
+      payload?.error_summary ||
+      payload?.error?.error_summary ||
+      payload?.error?.['.tag'] ||
+      (typeof payload?.error === 'string' ? payload.error : '') ||
+      fallback;
+
+    if (status === 401 && String(summary).includes('expired_access_token')) {
+      return 'Dropbox access token expired. Add DROPBOX_REFRESH_TOKEN (preferred) or replace the current access token.';
+    }
+
+    return String(summary || fallback);
+  }
+
+  async function refreshDropboxAccessToken(): Promise<string> {
+    if (!DROPBOX_REFRESH_TOKEN || !DROPBOX_APP_KEY || !DROPBOX_APP_SECRET) {
+      throw new Error(
+        'Dropbox is missing refresh credentials. Set DROPBOX_REFRESH_TOKEN, DROPBOX_APP_KEY, and DROPBOX_APP_SECRET.',
+      );
+    }
+
+    const response = await fetch(DROPBOX_OAUTH_API, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: DROPBOX_REFRESH_TOKEN,
+        client_id: DROPBOX_APP_KEY,
+        client_secret: DROPBOX_APP_SECRET,
+      }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(getDropboxErrorMessage(response.status, 'Failed to refresh Dropbox token.', payload));
+    }
+
+    const accessToken = String(payload?.access_token ?? '').trim();
+    const expiresIn = Number(payload?.expires_in ?? 14400);
+    if (!accessToken) throw new Error('Dropbox token refresh succeeded without an access token.');
+
+    dropboxTokenCache = {
+      accessToken,
+      expiresAt: Date.now() + Math.max(60, expiresIn - 60) * 1000,
+    };
+
+    return accessToken;
+  }
+
+  async function getDropboxAccessToken(forceRefresh = false): Promise<string> {
+    if (!forceRefresh && dropboxTokenCache && Date.now() < dropboxTokenCache.expiresAt) {
+      return dropboxTokenCache.accessToken;
+    }
+
+    if (DROPBOX_REFRESH_TOKEN) {
+      return refreshDropboxAccessToken();
+    }
+
+    const token = DROPBOX_ACCESS_TOKEN.trim();
+    if (!token) {
+      throw new Error(
+        'Dropbox is not configured. Add DROPBOX_REFRESH_TOKEN with app credentials, or a valid DROPBOX_ACCESS_TOKEN.',
+      );
+    }
+
+    return token;
+  }
+
+  async function dropboxRequest(
+    input: string,
+    init: RequestInit,
+    allowRetry = true,
+  ): Promise<Response> {
+    const token = await getDropboxAccessToken();
+    const response = await fetch(input, {
+      ...init,
+      headers: {
+        ...(init.headers ?? {}),
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (response.status === 401 && DROPBOX_REFRESH_TOKEN && allowRetry) {
+      await getDropboxAccessToken(true);
+      return dropboxRequest(input, init, false);
+    }
+
+    return response;
+  }
+
+  app.post(
+    '/api/dropbox/upload',
+    express.raw({ type: '*/*', limit: '100mb' }),
+    async (req: Request, res: Response) => {
+      const ideaId = String(req.query.ideaId ?? '').trim();
+      const rawFilename = String(req.headers['x-filename'] ?? '').trim();
+      const body = req.body;
+
+      if (!ideaId) {
+        return res.status(400).json({ error: 'Missing ideaId query parameter.' });
+      }
+
+      if (!rawFilename) {
+        return res.status(400).json({ error: 'Missing X-Filename header.' });
+      }
+
+      if (!Buffer.isBuffer(body) || body.length === 0) {
+        return res.status(400).json({ error: 'Missing file body.' });
+      }
+
+      const filename = sanitizeDropboxFilename(decodeURIComponent(rawFilename));
+      const dropboxPath = `/Artist OS/Ideas/${ideaId}/${filename}`;
+
+      try {
+        const uploadResponse = await dropboxRequest(`${DROPBOX_CONTENT_API}/files/upload`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Dropbox-API-Arg': JSON.stringify({
+              path: dropboxPath,
+              mode: 'add',
+              autorename: true,
+              mute: false,
+            }),
+          },
+          body,
+        });
+
+        const uploadPayload = await uploadResponse.json().catch(() => ({}));
+        if (!uploadResponse.ok) {
+          return res.status(uploadResponse.status).json({
+            error: getDropboxErrorMessage(uploadResponse.status, 'Dropbox upload failed.', uploadPayload),
+          });
+        }
+
+        const uploadedPath = String(uploadPayload?.path_display ?? dropboxPath);
+        const sharedLinkResponse = await dropboxRequest(`${DROPBOX_API}/sharing/create_shared_link_with_settings`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            path: uploadedPath,
+            settings: { requested_visibility: { '.tag': 'public' } },
+          }),
+        });
+
+        if (sharedLinkResponse.status === 409) {
+          const conflict = await sharedLinkResponse.json().catch(() => ({}));
+          const existingUrl = String(
+            conflict?.error?.shared_link_already_exists?.metadata?.url ?? '',
+          );
+
+          return res.json({
+            url: toDropboxRawUrl(existingUrl),
+            path: uploadedPath,
+            sharedLink: existingUrl,
+          });
+        }
+
+        const linkPayload = await sharedLinkResponse.json().catch(() => ({}));
+        if (!sharedLinkResponse.ok) {
+          return res.status(sharedLinkResponse.status).json({
+            error: getDropboxErrorMessage(
+              sharedLinkResponse.status,
+              'Failed to create Dropbox shared link.',
+              linkPayload,
+            ),
+          });
+        }
+
+        const sharedLink = String(linkPayload?.url ?? '');
+        return res.json({
+          url: toDropboxRawUrl(sharedLink),
+          path: uploadedPath,
+          sharedLink,
+        });
+      } catch (error: any) {
+        console.error('[dropbox] upload failed:', error?.message ?? error);
+        return res.status(500).json({
+          error: error?.message ?? 'Dropbox upload failed.',
+        });
+      }
+    },
+  );
+
+  app.post('/api/dropbox/delete', async (req: Request, res: Response) => {
+    const filePath = String(req.body?.path ?? '').trim();
+    if (!filePath) {
+      return res.status(400).json({ error: 'Missing path.' });
+    }
+
+    try {
+      const response = await dropboxRequest(`${DROPBOX_API}/files/delete_v2`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ path: filePath }),
+      });
+
+      if (response.status === 409) {
+        return res.json({ deleted: false });
+      }
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return res.status(response.status).json({
+          error: getDropboxErrorMessage(response.status, 'Dropbox delete failed.', payload),
+        });
+      }
+
+      return res.json({ deleted: true });
+    } catch (error: any) {
+      console.error('[dropbox] delete failed:', error?.message ?? error);
+      return res.status(500).json({
+        error: error?.message ?? 'Dropbox delete failed.',
+      });
     }
   });
 
@@ -670,6 +942,7 @@ async function startServer() {
     skipped?: number;
   };
   type SyncTableShape = {
+    hasSyncJobs: boolean;
     providerColumn: 'provider' | 'platform';
     errorColumn: 'error_message' | 'error';
     hasJobType: boolean;
@@ -737,6 +1010,8 @@ async function startServer() {
           SET value = COALESCE(app_settings.value, '{}'::jsonb) || EXCLUDED.value,
               updated_at = NOW()
       `;
+    } catch (error: any) {
+      console.warn(`[integration scheduler] failed to persist ${provider} run time: ${error?.message ?? 'unknown error'}`);
     } finally {
       await sql.end();
     }
@@ -790,6 +1065,7 @@ async function startServer() {
 
     const columnSet = new Set(syncJobColumns.map((row) => String(row.column_name)));
     return {
+      hasSyncJobs: syncJobColumns.length > 0,
       providerColumn: columnSet.has('provider') ? 'provider' : 'platform',
       errorColumn: columnSet.has('error_message') ? 'error_message' : 'error',
       hasJobType: columnSet.has('job_type'),
@@ -827,26 +1103,31 @@ async function startServer() {
     userId: string,
     provider: IntegrationApiProvider,
   ) {
-    const columns = ['user_id', shape.providerColumn, 'status', 'started_at'];
-    const values: any[] = [userId, provider, 'running'];
+    const columns: string[] = [];
+    const placeholders: string[] = [];
+    const values: any[] = [];
+
+    const pushParam = (column: string, value: any, cast?: string) => {
+      columns.push(column);
+      values.push(value);
+      const index = values.length;
+      placeholders.push(cast ? `$${index}::${cast}` : `$${index}`);
+    };
+
+    pushParam('user_id', userId, 'uuid');
+    pushParam(shape.providerColumn, provider);
+    pushParam('status', 'running');
+
+    columns.push('started_at');
+    placeholders.push('NOW()');
 
     if (shape.hasJobType) {
-      columns.push('job_type');
-      values.push('auto_sync');
+      pushParam('job_type', 'auto_sync');
     }
 
     if (shape.hasMetadata) {
-      columns.push('metadata');
-      values.push({});
+      pushParam('metadata', {}, 'jsonb');
     }
-
-    const placeholders = columns.map((_, index) => {
-      const paramIndex = index + 1;
-      if (columns[index] === 'user_id') return `$${paramIndex}::uuid`;
-      if (columns[index] === 'started_at') return 'NOW()';
-      if (columns[index] === 'metadata') return `$${paramIndex}::jsonb`;
-      return `$${paramIndex}`;
-    });
 
     const rows = await sql.unsafe(
       `
@@ -1196,6 +1477,10 @@ async function startServer() {
     try {
       const shape = await detectSyncTableShape(sql);
       console.log('[integration scheduler] detected sync schema:', shape);
+      if (!shape.hasSyncJobs) {
+        console.warn('[integration scheduler] sync_jobs table missing; auto-sync disabled until migrations are applied.');
+        return;
+      }
       const releasesTableRows = await sql`
         SELECT EXISTS (
           SELECT 1
@@ -1271,6 +1556,105 @@ async function startServer() {
       res.json({ status: "Scrape run triggered" });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  const STEMSPLIT_API_KEY = process.env.STEMSPLIT_API_KEY || process.env.VITE_STEMSPLIT_API_KEY;
+  const STEMSPLIT_API_BASE = 'https://stemsplit.io/api/v1';
+
+  app.post('/api/ideas/audio-analysis', async (req: Request, res: Response) => {
+    if (!STEMSPLIT_API_KEY) {
+      return res.status(503).json({ error: 'STEMSPLIT_API_KEY is not configured on the server.' });
+    }
+
+    const sourceUrl = String((req.body as any)?.sourceUrl ?? '').trim();
+    if (!sourceUrl) {
+      return res.status(400).json({ error: 'sourceUrl is required' });
+    }
+
+    try {
+      const response = await axios.post(
+        `${STEMSPLIT_API_BASE}/jobs`,
+        {
+          sourceUrl,
+          outputType: 'VOCALS',
+          quality: 'FAST',
+          outputFormat: 'MP3',
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${STEMSPLIT_API_KEY}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          timeout: 30000,
+        },
+      );
+
+      const payload = response.data as any;
+      return res.status(200).json({
+        jobId: payload.id ?? null,
+        status: payload.status ?? null,
+        progress: payload.progress ?? null,
+        audioMetadata: payload.audioMetadata ?? null,
+      });
+    } catch (error: any) {
+      const status = error.response?.status || 500;
+      const message =
+        error.response?.data?.error?.message ||
+        error.response?.data?.message ||
+        error.message ||
+        'StemSplit job creation failed.';
+      return res.status(status).json({ error: 'StemSplit job creation failed', message });
+    }
+  });
+
+  app.get('/api/ideas/audio-analysis/:jobId', async (req: Request, res: Response) => {
+    if (!STEMSPLIT_API_KEY) {
+      return res.status(503).json({ error: 'STEMSPLIT_API_KEY is not configured on the server.' });
+    }
+
+    const jobId = String(req.params.jobId || '').trim();
+    if (!jobId) {
+      return res.status(400).json({ error: 'jobId is required' });
+    }
+
+    try {
+      const response = await axios.get(`${STEMSPLIT_API_BASE}/jobs/${encodeURIComponent(jobId)}`, {
+        headers: {
+          Authorization: `Bearer ${STEMSPLIT_API_KEY}`,
+          Accept: 'application/json',
+        },
+        timeout: 30000,
+      });
+
+      const payload = response.data as any;
+      const audioMetadata =
+        payload.audioMetadata ??
+        payload.analysis ??
+        payload.input?.audioMetadata ??
+        null;
+
+      return res.status(200).json({
+        jobId: payload.id ?? jobId,
+        status: payload.status ?? null,
+        progress: payload.progress ?? null,
+        audioMetadata: audioMetadata
+          ? {
+              bpm: Number(audioMetadata.bpm ?? audioMetadata.tempo ?? 0) || null,
+              key: String(audioMetadata.key ?? audioMetadata.musicalKey ?? '').trim() || null,
+            }
+          : null,
+        message: payload.errorMessage ?? null,
+      });
+    } catch (error: any) {
+      const status = error.response?.status || 500;
+      const message =
+        error.response?.data?.error?.message ||
+        error.response?.data?.message ||
+        error.message ||
+        'StemSplit job lookup failed.';
+      return res.status(status).json({ error: 'StemSplit job lookup failed', message });
     }
   });
 
@@ -1737,7 +2121,6 @@ async function startServer() {
 
     // ── Shared budget constants ──────────────────────────────────────────────
     const BUDGET_PROFILE   = 800;
-    const BUDGET_FTS_MAX   = 10;
     const BUDGET_SNIPPET   = 150;
     const BUDGET_ANALYTICS = 500;
     const BUDGET_CALENDAR  = 400;
@@ -1747,14 +2130,29 @@ async function startServer() {
     const sources:  string[] = [];
     let charBudget = BUDGET_TOTAL;
     const t0 = Date.now();
+    const normalizedQuestion = question.toLowerCase();
+    const questionTerms = normalizedQuestion.split(/\s+/).filter(Boolean).slice(0, 6);
 
-    // 0. Artist profile + recent releases, goals, tasks (always included first)
+    const compactText = (value: unknown, maxLength = BUDGET_SNIPPET) => {
+      const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+      return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+    };
+
+    const matchesQuestion = (...values: unknown[]) => {
+      const haystack = values.map((value) => String(value ?? '').toLowerCase()).join(' ');
+      if (!haystack) return false;
+      if (haystack.includes(normalizedQuestion)) return true;
+      return questionTerms.some((term) => haystack.includes(term));
+    };
+
+    // 0. Artist profile + recent ideas, goals, tasks, reports (always included first)
     try {
-      const [profileRes, releasesRes, goalsRes, tasksRes] = await Promise.all([
+      const [profileRes, ideasRes, goalsRes, tasksRes, reportsRes] = await Promise.all([
         sb.from('profiles').select('full_name, email, role').eq('id', user.id).single(),
-        sb.from('releases').select('title, status, release_date').eq('user_id', user.id).order('created_at', { ascending: false }).limit(6),
-        sb.from('goals').select('title, description, status').eq('user_id', user.id).order('created_at', { ascending: false }).limit(5),
-        sb.from('tasks').select('title, status, due_date').eq('user_id', user.id).order('created_at', { ascending: false }).limit(5),
+        sb.from('ideas').select('title, status, next_action, bpm, key, notes, updated_at').eq('user_id', user.id).order('updated_at', { ascending: false }).limit(6),
+        sb.from('goals').select('title, description, status_indicator, due_by, current, target').eq('user_id', user.id).order('updated_at', { ascending: false }).limit(5),
+        sb.from('tasks').select('title, description, completed, due_date').or(`user_id_assigned_by.eq.${user.id},user_id_assigned_to.eq.${user.id}`).order('updated_at', { ascending: false }).limit(5),
+        sb.from('reports').select('title, report_date, report_content').eq('user_id', user.id).order('report_date', { ascending: false }).limit(3),
       ]);
 
       const profile = profileRes.data;
@@ -1768,22 +2166,38 @@ async function startServer() {
 
       let block = `ARTIST PROFILE:\n- Name: ${name}\n- Email: ${user.email ?? ''}\n- Role: ${profile?.role ?? 'artist'}\n`;
 
-      const releases = releasesRes.data ?? [];
-      if (releases.length > 0) {
-        block += `\nRECENT RELEASES:\n`;
-        for (const r of releases) block += `- ${r.title} (${r.status}${r.release_date ? ', ' + r.release_date : ''})\n`;
+      const ideas = ideasRes.data ?? [];
+      if (ideas.length > 0) {
+        block += `\nRECENT IDEAS:\n`;
+        for (const idea of ideas) {
+          const ideaMeta = [idea.status, idea.next_action, idea.bpm ? `${idea.bpm} BPM` : null, idea.key].filter(Boolean).join(', ');
+          block += `- ${idea.title}${ideaMeta ? ` (${ideaMeta})` : ''}${idea.notes ? `: ${compactText(idea.notes, 80)}` : ''}\n`;
+        }
       }
 
       const goals = goalsRes.data ?? [];
       if (goals.length > 0) {
         block += `\nACTIVE GOALS:\n`;
-        for (const g of goals) block += `- ${g.title}${g.description ? ': ' + String(g.description).slice(0, 80) : ''} (${g.status ?? 'active'})\n`;
+        for (const g of goals) {
+          const goalMeta = [g.status_indicator, g.due_by ? `due ${g.due_by}` : null, g.target ? `${g.current ?? 0}/${g.target}` : null].filter(Boolean).join(', ');
+          block += `- ${g.title}${g.description ? `: ${compactText(g.description, 80)}` : ''}${goalMeta ? ` (${goalMeta})` : ''}\n`;
+        }
       }
 
       const tasks = tasksRes.data ?? [];
       if (tasks.length > 0) {
         block += `\nRECENT TASKS:\n`;
-        for (const t of tasks) block += `- ${t.title} (${t.status ?? 'pending'}${t.due_date ? ', due ' + t.due_date : ''})\n`;
+        for (const t of tasks) {
+          block += `- ${t.title} (${t.completed ?? 'pending'}${t.due_date ? `, due ${t.due_date}` : ''})${t.description ? `: ${compactText(t.description, 80)}` : ''}\n`;
+        }
+      }
+
+      const reports = reportsRes.data ?? [];
+      if (reports.length > 0) {
+        block += `\nLATEST REPORTS:\n`;
+        for (const report of reports) {
+          block += `- ${report.title}${report.report_date ? ` (${report.report_date})` : ''}${report.report_content ? `: ${compactText(report.report_content, 80)}` : ''}\n`;
+        }
       }
 
       block += '\n';
@@ -1792,26 +2206,51 @@ async function startServer() {
       sources.unshift('profile');
     } catch (e) { console.warn('[coach/context] profile skipped:', (e as Error).message); }
 
-    // 1. FTS via search_records() RPC
+    // 1. Current-schema relevance scan across ideas, goals, tasks, and knowledge
     try {
-      const { data: ftsRows, error: ftsErr } = await sb.rpc('search_records', {
-        query_text: String(question).slice(0, 500),
-        uid: user.id,
-      });
-      if (!ftsErr && Array.isArray(ftsRows) && ftsRows.length > 0) {
-        const rows = ftsRows.slice(0, BUDGET_FTS_MAX);
-        const grouped: Record<string, typeof rows> = {};
-        for (const r of rows) {
-          grouped[r.record_type] = grouped[r.record_type] ?? [];
-          grouped[r.record_type].push(r);
+      const [ideaMatchesRes, goalMatchesRes, taskMatchesRes, resourceMatchesRes] = await Promise.all([
+        sb.from('ideas').select('title, status, next_action, notes').eq('user_id', user.id).order('updated_at', { ascending: false }).limit(12),
+        sb.from('goals').select('title, description, status_indicator, due_by').eq('user_id', user.id).order('updated_at', { ascending: false }).limit(10),
+        sb.from('tasks').select('title, description, completed, due_date').or(`user_id_assigned_by.eq.${user.id},user_id_assigned_to.eq.${user.id}`).order('updated_at', { ascending: false }).limit(12),
+        sb.from('bot_resources').select('title, category, content_excerpt, content').eq('user_id', user.id).order('updated_at', { ascending: false }).limit(8),
+      ]);
+
+      const grouped: Record<string, string[]> = {};
+      const appendMatch = (type: string, title: unknown, snippet: unknown) => {
+        const safeTitle = String(title ?? '').trim();
+        if (!safeTitle) return;
+        grouped[type] = grouped[type] ?? [];
+        grouped[type].push(compactText(snippet) ? `- ${safeTitle}: ${compactText(snippet)}` : `- ${safeTitle}`);
+      };
+
+      for (const idea of ideaMatchesRes.data ?? []) {
+        if (matchesQuestion(idea.title, idea.notes, idea.status, idea.next_action)) {
+          appendMatch('idea', idea.title, [idea.status, idea.next_action, idea.notes].filter(Boolean).join(' · '));
         }
+      }
+
+      for (const goal of goalMatchesRes.data ?? []) {
+        if (matchesQuestion(goal.title, goal.description, goal.status_indicator, goal.due_by)) {
+          appendMatch('goal', goal.title, [goal.status_indicator, goal.due_by, goal.description].filter(Boolean).join(' · '));
+        }
+      }
+
+      for (const task of taskMatchesRes.data ?? []) {
+        if (matchesQuestion(task.title, task.description, task.completed, task.due_date)) {
+          appendMatch('task', task.title, [task.completed, task.due_date, task.description].filter(Boolean).join(' · '));
+        }
+      }
+
+      for (const resource of resourceMatchesRes.data ?? []) {
+        if (matchesQuestion(resource.title, resource.category, resource.content_excerpt, resource.content)) {
+          appendMatch('resource', resource.title ?? resource.category ?? 'Knowledge resource', [resource.category, resource.content_excerpt ?? resource.content].filter(Boolean).join(' · '));
+        }
+      }
+
+      if (Object.keys(grouped).length > 0) {
         let block = '';
         for (const [type, items] of Object.entries(grouped)) {
-          const lines = items.map((r) => {
-            const snip = ((r.snippet as string) ?? '').slice(0, BUDGET_SNIPPET);
-            return snip ? `- ${r.title}: ${snip}` : `- ${r.title}`;
-          });
-          block += `${type.toUpperCase()}S:\n${lines.join('\n')}\n\n`;
+          block += `${type.toUpperCase()}S:\n${items.slice(0, 3).join('\n')}\n\n`;
           sources.push(type);
         }
         const allowed = Math.max(0, charBudget - BUDGET_ANALYTICS - BUDGET_CALENDAR);
@@ -1819,43 +2258,43 @@ async function startServer() {
         charBudget -= Math.min(block.length, allowed);
       }
     } catch (e) {
-      console.warn('[coach/context] FTS unavailable:', (e as Error).message);
+      console.warn('[coach/context] relevance scan skipped:', (e as Error).message);
     }
 
-    // 2. Analytics snapshots
+    // 2. Recent reports
     if (charBudget > 100) {
       try {
-        const { data: snaps } = await sb
-          .from('report_snapshots')
-          .select('period_type, period_start, platform, data')
+        const { data: reports } = await sb
+          .from('reports')
+          .select('title, report_date, report_content')
           .eq('user_id', user.id)
-          .order('period_start', { ascending: false })
+          .order('report_date', { ascending: false })
           .limit(2);
-        if (snaps && snaps.length > 0) {
-          const lines = snaps.map((s) => {
-            const d = (s.data ?? {}) as Record<string, unknown>;
-            const stats = Object.entries(d).filter(([, v]) => typeof v === 'number').slice(0, 5).map(([k, v]) => `${k}: ${v}`).join(', ');
-            return `- ${s.platform ?? 'overall'} (${s.period_type} ${s.period_start}): ${stats || 'no stats'}`;
-          });
-          const block = `ANALYTICS SNAPSHOTS:\n${lines.join('\n')}\n\n`;
+        if (reports && reports.length > 0) {
+          const lines = reports.map((report) => `- ${report.title}${report.report_date ? ` (${report.report_date})` : ''}${report.report_content ? `: ${compactText(report.report_content, 120)}` : ''}`);
+          const block = `REPORT SUMMARIES:\n${lines.join('\n')}\n\n`;
           sections.push(block.slice(0, BUDGET_ANALYTICS));
           charBudget -= Math.min(block.length, BUDGET_ANALYTICS);
-          sources.push('analytics');
+          sources.push('reports');
         }
-      } catch (e) { console.warn('[coach/context] analytics skipped:', (e as Error).message); }
+      } catch (e) { console.warn('[coach/context] reports skipped:', (e as Error).message); }
     }
 
     // 3. Upcoming calendar
     if (charBudget > 100) {
-      const today = new Date().toISOString().slice(0, 10);
+      const nowIso = new Date().toISOString();
       try {
-        const [showsRes, meetRes] = await Promise.all([
-          sb.from('shows').select('venue, date, status').eq('user_id', user.id).gte('date', today).order('date').limit(3),
-          sb.from('meetings').select('title, date').eq('user_id', user.id).gte('date', today).order('date').limit(2),
-        ]);
+        const { data: upcoming } = await sb
+          .from('calendar_events')
+          .select('title, event_type, starts_at, ends_at, description')
+          .eq('user_id', user.id)
+          .gte('starts_at', nowIso)
+          .order('starts_at', { ascending: true })
+          .limit(5);
         const calLines: string[] = [];
-        for (const s of showsRes.data ?? []) calLines.push(`- Show @ ${s.venue} on ${s.date} (${s.status})`);
-        for (const m of meetRes.data ?? [])  calLines.push(`- Meeting: ${m.title} on ${m.date}`);
+        for (const event of upcoming ?? []) {
+          calLines.push(`- ${event.title} (${event.event_type}, ${event.starts_at})${event.description ? `: ${compactText(event.description, 60)}` : ''}`);
+        }
         if (calLines.length > 0) {
           const block = `UPCOMING CALENDAR:\n${calLines.join('\n')}\n\n`;
           sections.push(block.slice(0, BUDGET_CALENDAR));
@@ -1869,11 +2308,19 @@ async function startServer() {
     const safeIds = Array.isArray(entityIds) ? (entityIds as unknown[]).filter((x): x is string => typeof x === 'string').slice(0, 3) : [];
     if (safeIds.length > 0 && charBudget > 100) {
       try {
-        const { data: pinned } = await sb.from('releases').select('title, status, notes, release_date').eq('user_id', user.id).in('id', safeIds);
-        if (pinned && pinned.length > 0) {
-          const lines = pinned.map((r) => `- ${r.title} (${r.status}, ${r.release_date ?? 'no date'})${r.notes ? ': ' + String(r.notes).slice(0, 100) : ''}`);
-          sections.unshift(`PINNED RELEASES:\n${lines.join('\n')}\n\n`);
-          sources.unshift('pinned_releases');
+        const [pinnedIdeasRes, pinnedGoalsRes, pinnedTasksRes] = await Promise.all([
+          sb.from('ideas').select('title, status, next_action, notes').eq('user_id', user.id).in('id', safeIds),
+          sb.from('goals').select('title, status_indicator, due_by, description').eq('user_id', user.id).in('id', safeIds),
+          sb.from('tasks').select('id, title, completed, due_date, description').or(`user_id_assigned_by.eq.${user.id},user_id_assigned_to.eq.${user.id}`).in('id', safeIds),
+        ]);
+        const lines = [
+          ...(pinnedIdeasRes.data ?? []).map((idea) => `- Idea: ${idea.title}${idea.status ? ` (${idea.status})` : ''}${idea.next_action ? ` · ${idea.next_action}` : ''}${idea.notes ? `: ${compactText(idea.notes, 80)}` : ''}`),
+          ...(pinnedGoalsRes.data ?? []).map((goal) => `- Goal: ${goal.title}${goal.status_indicator ? ` (${goal.status_indicator})` : ''}${goal.due_by ? ` · due ${goal.due_by}` : ''}${goal.description ? `: ${compactText(goal.description, 80)}` : ''}`),
+          ...(pinnedTasksRes.data ?? []).map((task) => `- Task: ${task.title}${task.completed ? ` (${task.completed})` : ''}${task.due_date ? ` · due ${task.due_date}` : ''}${task.description ? `: ${compactText(task.description, 80)}` : ''}`),
+        ];
+        if (lines.length > 0) {
+          sections.unshift(`PINNED RECORDS:\n${lines.join('\n')}\n\n`);
+          sources.unshift('pinned_records');
         }
       } catch (e) { console.warn('[coach/context] entity pinning skipped:', (e as Error).message); }
     }
@@ -2237,8 +2684,10 @@ Respond with valid JSON only.`;
       // before Express ever sees the request — bypassing all our route handlers.
       // With 'custom', Vite only handles HMR + module transforms; Express owns routing.
       const vite = await createViteServer({
+        envFile: false,
         server: { middlewareMode: true, hmr: { server: httpServer } },
         appType: "custom",
+        define: buildViteDefineEnv(process.env.NODE_ENV, process.cwd()),
       });
       app.use((req, res, next) => {
         if (req.path.startsWith('/api/')) {

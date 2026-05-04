@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Music, FileText, Users, Target, Calendar, ArrowRight, Loader2, Lightbulb, StickyNote } from 'lucide-react';
+import { Search, X, Music, FileText, Users, Target, Calendar, ArrowRight, Loader2, Lightbulb, StickyNote, CheckSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
@@ -10,9 +10,12 @@ type DisplayResult = SearchResult & { icon: React.ElementType; path: string; lab
 const TYPE_META: Record<SearchRecordType, { icon: React.ElementType; path: string; label: string }> = {
   release:     { icon: Music,      path: '/ideas',   label: 'Release' },
   idea:        { icon: Lightbulb,  path: '/ideas',   label: 'Idea' },
-  content:     { icon: Calendar,   path: '/content', label: 'Content' },
+  content:     { icon: Calendar,   path: '',         label: 'Content' },
   goal:        { icon: Target,     path: '/goals',   label: 'Goal' },
-  opportunity: { icon: Users,      path: '/network', label: 'Contact' },
+  task:        { icon: CheckSquare,path: '/tasks',   label: 'Task' },
+  event:       { icon: Calendar,   path: '/calendar',label: 'Event' },
+  report:      { icon: FileText,   path: '/reports', label: 'Report' },
+  opportunity: { icon: Users,      path: '',         label: 'Contact' },
   note:        { icon: StickyNote, path: '/ideas',   label: 'Note' },
   resource:    { icon: FileText,   path: '/coach',   label: 'Resource' },
 };
@@ -54,7 +57,7 @@ export function GlobalSearch({ compact = false }: GlobalSearchProps) {
         const combined: DisplayResult[] = raw.map(r => ({
           ...r,
           ...(TYPE_META[r.record_type] ?? { icon: FileText, path: '/', label: r.record_type }),
-        }));
+        })).filter((item) => item.path);
         setResults(combined);
       } catch (err) {
         console.error('[GlobalSearch] search error:', err);
@@ -127,7 +130,7 @@ export function GlobalSearch({ compact = false }: GlobalSearchProps) {
                 {isLoading ? (
                   <div className="flex flex-col items-center justify-center py-12 gap-3">
                     <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
-                    <p className="text-sm text-slate-500 font-medium">Indexing your ecosystem...</p>
+                    <p className="text-sm text-slate-500 font-medium">Searching your workspace...</p>
                   </div>
                 ) : results.length > 0 ? (
                   <div className="space-y-1">
@@ -188,7 +191,7 @@ export function GlobalSearch({ compact = false }: GlobalSearchProps) {
                     <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Select</span>
                   </div>
                 </div>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Postgres FTS · Artist OS</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Workspace search · Artist OS</p>
               </div>
             </motion.div>
           </div>

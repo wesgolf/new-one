@@ -38,6 +38,44 @@ create table if not exists public.integrations (
   unique (user_id, platform)
 );
 
+create table if not exists public.app_settings (
+  key text primary key,
+  value jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
+create table if not exists public.sync_jobs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  provider text not null,
+  job_type text not null default 'full_sync',
+  status text not null default 'queued' check (status in ('queued', 'running', 'success', 'failed')),
+  started_at timestamptz,
+  completed_at timestamptz,
+  error_message text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+create table if not exists public.integration_accounts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  provider text not null,
+  connection_status text not null default 'pending' check (connection_status in ('connected', 'disconnected', 'expired', 'error', 'pending', 'unknown')),
+  account_display_name text,
+  access_token text,
+  refresh_token text,
+  token_expires_at timestamptz,
+  last_synced_at timestamptz,
+  last_sync_status text check (last_sync_status in ('queued', 'running', 'success', 'failed')),
+  last_error text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  unique (user_id, provider)
+);
+
 create table if not exists public.coach_sessions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -157,9 +195,12 @@ create table if not exists public.ideas (
   user_id uuid not null references auth.users(id) on delete cascade,
   title text not null,
   status text,
+  next_action text,
   bpm integer,
   key text,
   notes text,
+  promoted_to_release_at timestamptz,
+  release_handoff jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now()),
   version_numbers integer not null default 1,
@@ -169,12 +210,26 @@ create table if not exists public.ideas (
   file_urls jsonb not null default '[]'::jsonb
 );
 
+alter table public.ideas add column if not exists next_action text;
+alter table public.ideas add column if not exists promoted_to_release_at timestamptz;
+alter table public.ideas add column if not exists release_handoff jsonb not null default '{}'::jsonb;
+
 create index if not exists profiles_role_idx on public.profiles (role);
 create index if not exists profiles_last_seen_at_idx on public.profiles (last_seen_at desc);
 
 create index if not exists integrations_user_id_idx on public.integrations (user_id);
 create index if not exists integrations_status_idx on public.integrations (status);
 create index if not exists integrations_last_processed_at_idx on public.integrations (last_processed_at desc);
+
+create index if not exists sync_jobs_user_id_idx on public.sync_jobs (user_id);
+create index if not exists sync_jobs_provider_idx on public.sync_jobs (provider);
+create index if not exists sync_jobs_status_idx on public.sync_jobs (status);
+create index if not exists sync_jobs_created_at_idx on public.sync_jobs (created_at desc);
+
+create index if not exists integration_accounts_user_id_idx on public.integration_accounts (user_id);
+create index if not exists integration_accounts_provider_idx on public.integration_accounts (provider);
+create index if not exists integration_accounts_last_sync_status_idx on public.integration_accounts (last_sync_status);
+create index if not exists integration_accounts_last_synced_at_idx on public.integration_accounts (last_synced_at desc);
 
 create index if not exists coach_sessions_user_id_idx on public.coach_sessions (user_id);
 create index if not exists coach_sessions_updated_at_idx on public.coach_sessions (updated_at desc);
@@ -211,6 +266,16 @@ for each row execute function public.set_updated_at();
 drop trigger if exists integrations_set_updated_at on public.integrations;
 create trigger integrations_set_updated_at
 before update on public.integrations
+for each row execute function public.set_updated_at();
+
+drop trigger if exists app_settings_set_updated_at on public.app_settings;
+create trigger app_settings_set_updated_at
+before update on public.app_settings
+for each row execute function public.set_updated_at();
+
+drop trigger if exists integration_accounts_set_updated_at on public.integration_accounts;
+create trigger integration_accounts_set_updated_at
+before update on public.integration_accounts
 for each row execute function public.set_updated_at();
 
 drop trigger if exists coach_sessions_set_updated_at on public.coach_sessions;
@@ -275,6 +340,9 @@ grant select, insert, update, delete on all tables in schema public to service_r
 
 alter table public.profiles enable row level security;
 alter table public.integrations enable row level security;
+alter table public.app_settings enable row level security;
+alter table public.sync_jobs enable row level security;
+alter table public.integration_accounts enable row level security;
 alter table public.coach_sessions enable row level security;
 alter table public.goals enable row level security;
 alter table public.tasks enable row level security;
@@ -283,10 +351,19 @@ alter table public.reports enable row level security;
 alter table public.calendar_events enable row level security;
 alter table public.ideas enable row level security;
 
+insert into storage.buckets (id, name, public)
+values ('idea-assets', 'idea-assets', true)
+on conflict (id) do update
+set name = excluded.name,
+    public = excluded.public;
+
 drop policy if exists "profiles_select_own" on public.profiles;
 drop policy if exists "profiles_insert_own" on public.profiles;
 drop policy if exists "profiles_update_own" on public.profiles;
 drop policy if exists "integrations_all_own" on public.integrations;
+drop policy if exists "app_settings_authenticated_all" on public.app_settings;
+drop policy if exists "sync_jobs_all_own" on public.sync_jobs;
+drop policy if exists "integration_accounts_all_own" on public.integration_accounts;
 drop policy if exists "coach_sessions_all_own" on public.coach_sessions;
 drop policy if exists "goals_all_own" on public.goals;
 drop policy if exists "tasks_select_related" on public.tasks;
@@ -297,6 +374,10 @@ drop policy if exists "bot_resources_all_own" on public.bot_resources;
 drop policy if exists "reports_all_own" on public.reports;
 drop policy if exists "calendar_events_all_own" on public.calendar_events;
 drop policy if exists "ideas_all_own" on public.ideas;
+drop policy if exists "idea_assets_select_own" on storage.objects;
+drop policy if exists "idea_assets_insert_own" on storage.objects;
+drop policy if exists "idea_assets_update_own" on storage.objects;
+drop policy if exists "idea_assets_delete_own" on storage.objects;
 
 create policy "profiles_select_own"
 on public.profiles
@@ -319,6 +400,27 @@ with check (auth.uid() = id);
 
 create policy "integrations_all_own"
 on public.integrations
+for all
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+create policy "app_settings_authenticated_all"
+on public.app_settings
+for all
+to authenticated
+using (true)
+with check (true);
+
+create policy "sync_jobs_all_own"
+on public.sync_jobs
+for all
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+create policy "integration_accounts_all_own"
+on public.integration_accounts
 for all
 to authenticated
 using (auth.uid() = user_id)
@@ -390,3 +492,43 @@ for all
 to authenticated
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
+
+create policy "idea_assets_select_own"
+on storage.objects
+for select
+to authenticated
+using (
+  bucket_id = 'idea-assets'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+);
+
+create policy "idea_assets_insert_own"
+on storage.objects
+for insert
+to authenticated
+with check (
+  bucket_id = 'idea-assets'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+);
+
+create policy "idea_assets_update_own"
+on storage.objects
+for update
+to authenticated
+using (
+  bucket_id = 'idea-assets'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+)
+with check (
+  bucket_id = 'idea-assets'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+);
+
+create policy "idea_assets_delete_own"
+on storage.objects
+for delete
+to authenticated
+using (
+  bucket_id = 'idea-assets'
+  and (storage.foldername(name))[1] = (select auth.uid()::text)
+);

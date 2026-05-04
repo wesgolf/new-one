@@ -39,6 +39,28 @@ function mapTaskRow(row: any): TaskRecord {
   };
 }
 
+function normalizeTaskDueDate(value: unknown): string | null {
+  if (value == null) return null;
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) {
+    return new Date(raw).toISOString();
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return raw;
+  }
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString();
+  }
+
+  return raw;
+}
+
 function normalizeIdeaAssets(value: unknown, ideaId: string): IdeaAsset[] {
   if (!Array.isArray(value)) return [];
 
@@ -46,10 +68,11 @@ function normalizeIdeaAssets(value: unknown, ideaId: string): IdeaAsset[] {
     .map((asset, index) => {
       if (!asset || typeof asset !== 'object') return null;
       const raw = asset as Record<string, any>;
+      const normalizedUrl = normalizeIdeaAssetUrl(raw.file_url ?? raw.url ?? '');
       return {
         id: String(raw.id ?? `${ideaId}-asset-${index}`),
         idea_id: ideaId,
-        file_url: String(raw.file_url ?? raw.url ?? ''),
+        file_url: normalizedUrl,
         file_path: raw.file_path ?? raw.path ?? null,
         asset_type: raw.asset_type ?? raw.file_type ?? 'audio',
         metadata: raw.metadata ?? {
@@ -63,6 +86,29 @@ function normalizeIdeaAssets(value: unknown, ideaId: string): IdeaAsset[] {
     .filter((asset): asset is IdeaAsset => Boolean(asset?.file_url));
 }
 
+function normalizeIdeaAssetUrl(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+
+  try {
+    const url = new URL(raw);
+    if (url.hostname === 'www.dropbox.com' || url.hostname === 'dropbox.com') {
+      url.hostname = 'dl.dropboxusercontent.com';
+      url.searchParams.delete('dl');
+      url.searchParams.set('raw', '1');
+      return url.toString();
+    }
+    if (url.hostname === 'dl.dropboxusercontent.com') {
+      url.searchParams.delete('dl');
+      url.searchParams.set('raw', '1');
+      return url.toString();
+    }
+    return url.toString();
+  } catch {
+    return raw;
+  }
+}
+
 function normalizeIdeaComments(value: unknown, ideaId: string): IdeaComment[] {
   if (!Array.isArray(value)) return [];
 
@@ -73,6 +119,8 @@ function normalizeIdeaComments(value: unknown, ideaId: string): IdeaComment[] {
       return {
         id: String(raw.id ?? `${ideaId}-comment-${index}`),
         idea_id: ideaId,
+        asset_id: raw.asset_id ?? raw.audio_asset_id ?? null,
+        version: raw.version != null ? Number(raw.version) || null : null,
         author_id: raw.author_id ?? raw.contributor_id ?? null,
         author_name: raw.author_name ?? raw.contributor_name ?? null,
         body: String(raw.body ?? raw.comment ?? ''),
@@ -92,6 +140,7 @@ function mapIdeaRow(row: any): IdeaRecord {
     description: row.notes ?? null,
     notes: row.notes ?? null,
     status: row.status ?? 'demo',
+    next_action: row.next_action ?? 'needs_feedback',
     bpm: row.bpm ?? null,
     key_sig: row.key ?? null,
     musical_key: row.key ?? null,
@@ -100,6 +149,8 @@ function mapIdeaRow(row: any): IdeaRecord {
     is_collab: Boolean(row.is_collab),
     file_urls: Array.isArray(row.file_urls) ? row.file_urls : [],
     idea_comments: Array.isArray(row.idea_comments) ? row.idea_comments : [],
+    promoted_to_release_at: row.promoted_to_release_at ?? null,
+    release_handoff: row.release_handoff ?? {},
     created_at: row.created_at ?? null,
     updated_at: row.updated_at ?? null,
     share_slug: row.id,
@@ -187,7 +238,7 @@ export async function saveTask(task: Partial<TaskRecord>) {
     description: task.description ?? null,
     priority: task.priority ?? 'medium',
     completed: task.status ?? 'pending',
-    due_date: task.due_date ? String(task.due_date).slice(0, 10) : null,
+    due_date: normalizeTaskDueDate(task.due_date),
     completed_at: task.status === 'completed' ? (task.completed_at ?? new Date().toISOString()) : null,
     user_id_assigned_by: task.user_id_assigned_by ?? task.created_by ?? user?.id ?? null,
     user_id_assigned_to: task.user_id_assigned_to ?? task.assigned_to ?? user?.id ?? null,
@@ -208,6 +259,11 @@ export async function saveTask(task: Partial<TaskRecord>) {
   const { data, error } = await supabase.from('tasks').insert([payload]).select().single();
   if (error) throw error;
   return mapTaskRow(data);
+}
+
+export async function deleteTask(taskId: string) {
+  const { error } = await supabase.from('tasks').delete().eq('id', taskId);
+  if (error) throw error;
 }
 
 export async function fetchIdeas(): Promise<IdeaRecord[]> {
@@ -248,9 +304,12 @@ export async function saveIdea(idea: Partial<IdeaRecord>) {
     user_id: idea.user_id ?? user?.id ?? null,
     title: idea.title ?? '',
     status: idea.status ?? 'demo',
+    next_action: idea.next_action ?? 'needs_feedback',
     bpm: idea.bpm ?? null,
     key: idea.musical_key ?? idea.key_sig ?? null,
     notes: idea.notes ?? idea.description ?? null,
+    promoted_to_release_at: idea.promoted_to_release_at ?? null,
+    release_handoff: idea.release_handoff ?? {},
     version_numbers: idea.version_numbers ?? 1,
     collaborators: Array.isArray(idea.collaborators) ? idea.collaborators : [],
     idea_comments: Array.isArray(idea.idea_comments) ? idea.idea_comments : [],
@@ -279,6 +338,15 @@ export async function saveIdeaComment(comment: Partial<IdeaComment>) {
   if (!comment.idea_id) throw new Error('idea_id is required');
 
   const user = await getCurrentAuthUser();
+  let authorName = comment.author_name ?? null;
+  if (!authorName && user?.id) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('full_name,email')
+      .eq('id', user.id)
+      .maybeSingle();
+    authorName = profile?.full_name ?? profile?.email ?? null;
+  }
   const { data: idea, error: fetchError } = await supabase
     .from('ideas')
     .select('idea_comments')
@@ -289,9 +357,11 @@ export async function saveIdeaComment(comment: Partial<IdeaComment>) {
 
   const nextComment = {
     id: comment.id ?? crypto.randomUUID(),
+    asset_id: comment.asset_id ?? null,
+    version: comment.version ?? null,
     body: comment.body ?? '',
     author_id: comment.author_id ?? user?.id ?? null,
-    author_name: comment.author_name ?? null,
+    author_name: authorName,
     timestamp_seconds: comment.timestamp_seconds ?? null,
     created_at: comment.created_at ?? new Date().toISOString(),
   };
@@ -375,7 +445,7 @@ export async function saveIdeaAsset(asset: Partial<IdeaAsset>) {
 
   const nextAsset = {
     id: asset.id ?? crypto.randomUUID(),
-    file_url: asset.file_url ?? '',
+    file_url: normalizeIdeaAssetUrl(asset.file_url ?? ''),
     file_path: asset.file_path ?? null,
     asset_type: asset.asset_type ?? 'audio',
     metadata: asset.metadata ?? null,
@@ -384,14 +454,102 @@ export async function saveIdeaAsset(asset: Partial<IdeaAsset>) {
 
   const existing = Array.isArray(idea?.file_urls) ? idea.file_urls : [];
   const next = [...existing, nextAsset];
+  const audioVersionCount = next.filter((entry) => {
+    if (!entry || typeof entry !== 'object') return false;
+    const raw = entry as Record<string, any>;
+    return (raw.asset_type ?? raw.file_type ?? 'audio') === 'audio';
+  }).length;
 
   const { error } = await supabase
     .from('ideas')
-    .update({ file_urls: next, updated_at: new Date().toISOString() })
+    .update({
+      file_urls: next,
+      version_numbers: audioVersionCount || 1,
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', asset.idea_id);
 
   if (error) throw error;
   return nextAsset as IdeaAsset;
+}
+
+export async function updateIdeaAsset(
+  ideaId: string,
+  assetId: string,
+  updates: Partial<IdeaAsset> & { metadata?: Record<string, any> | null },
+) {
+  const { data: idea, error: fetchError } = await supabase
+    .from('ideas')
+    .select('file_urls')
+    .eq('id', ideaId)
+    .maybeSingle();
+
+  if (fetchError) throw fetchError;
+
+  const existing = Array.isArray(idea?.file_urls) ? idea.file_urls : [];
+  const next = existing.map((entry) => {
+    if (!entry || typeof entry !== 'object') return entry;
+    const raw = entry as Record<string, any>;
+    if (String(raw.id ?? '') !== assetId) return entry;
+
+    return {
+      ...raw,
+      ...(updates.file_url ? { file_url: normalizeIdeaAssetUrl(updates.file_url) } : {}),
+      ...(updates.file_path !== undefined ? { file_path: updates.file_path } : {}),
+      ...(updates.asset_type ? { asset_type: updates.asset_type } : {}),
+      metadata:
+        updates.metadata === undefined
+          ? raw.metadata ?? null
+          : {
+              ...(raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : {}),
+              ...(updates.metadata ?? {}),
+            },
+    };
+  });
+
+  const { error } = await supabase
+    .from('ideas')
+    .update({ file_urls: next, updated_at: new Date().toISOString() })
+    .eq('id', ideaId);
+
+  if (error) throw error;
+
+  return normalizeIdeaAssets(next, ideaId).find((asset) => asset.id === assetId) ?? null;
+}
+
+export async function updateIdeaAudioMetadata({
+  ideaId,
+  assetId,
+  bpm,
+  musicalKey,
+}: {
+  ideaId: string;
+  assetId?: string | null;
+  bpm?: number | null;
+  musicalKey?: string | null;
+}) {
+  const updatePayload: Record<string, any> = {
+    bpm: bpm ?? null,
+    key: musicalKey ?? null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from('ideas')
+    .update(updatePayload)
+    .eq('id', ideaId);
+
+  if (error) throw error;
+
+  if (assetId) {
+    await updateIdeaAsset(ideaId, assetId, {
+      metadata: {
+        analysis_bpm: bpm ?? null,
+        analysis_key: musicalKey ?? null,
+        analysis_updated_at: new Date().toISOString(),
+      },
+    });
+  }
 }
 
 export async function deleteIdea(id: string) {
