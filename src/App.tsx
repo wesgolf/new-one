@@ -17,6 +17,9 @@ import { NotFound } from './pages/NotFound';
 import { useReminders } from './hooks/useReminders';
 import { SchemaPlaceholder } from './components/SchemaPlaceholder';
 import { Reports } from './pages/Reports';
+import { SocialAnalytics } from './pages/SocialAnalytics';
+import { MusicAnalytics } from './pages/MusicAnalytics';
+import { PostSchedule } from './pages/PostSchedule';
 
 function AppShell() {
   useReminders();
@@ -59,6 +62,9 @@ export default function App() {
         <Route path="/coach" element={<ErrorBoundary><ArtistCoach /></ErrorBoundary>} />
         <Route path="/tasks" element={<ErrorBoundary><Tasks /></ErrorBoundary>} />
         <Route path="/reports" element={<ErrorBoundary><Reports /></ErrorBoundary>} />
+        <Route path="/connectors/social-analytics" element={<ErrorBoundary><SocialAnalytics /></ErrorBoundary>} />
+        <Route path="/connectors/music-analytics" element={<ErrorBoundary><MusicAnalytics /></ErrorBoundary>} />
+        <Route path="/connectors/post-schedule" element={<ErrorBoundary><PostSchedule /></ErrorBoundary>} />
         <Route path="/settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
         <Route path="*" element={<NotFound />} />
       </Route>

@@ -15,6 +15,10 @@ import {
   LogOut,
   Settings,
   FileText,
+  BarChart2,
+  Music2,
+  Video,
+  Plug,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { GlobalSearch } from './GlobalSearch';
@@ -50,6 +54,14 @@ const TOP_NAV: NavGroup[] = [
     ],
   },
   { label: 'Coach', path: '/coach' },
+  {
+    label: 'Connectors',
+    children: [
+      { label: 'Social Analytics', path: '/connectors/social-analytics', icon: BarChart2, description: 'Instagram, TikTok, YouTube & more' },
+      { label: 'Music Analytics', path: '/connectors/music-analytics', icon: Music2, description: 'Streams, listeners & royalties' },
+      { label: 'Post & Schedule', path: '/connectors/post-schedule', icon: Video, description: 'Schedule Reels across platforms' },
+    ],
+  },
 ];
 
 const MOBILE_NAV = [
