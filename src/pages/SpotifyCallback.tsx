@@ -10,15 +10,6 @@ export function SpotifyCallback() {
   useEffect(() => {
     const complete = () => {
       const returnPath = consumeSpotifyReturnPath();
-      if (window.opener && !window.opener.closed) {
-        try {
-          window.opener.postMessage({ type: 'spotify-auth-success', returnPath }, window.location.origin);
-        } catch (error) {
-          console.warn('Failed to notify opener about Spotify auth success:', error);
-        }
-        window.close();
-        return;
-      }
       navigate(returnPath || '/settings', { replace: true });
     };
 

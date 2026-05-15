@@ -139,6 +139,7 @@ function mapIdeaRow(row: any): IdeaRecord {
     title: row.title,
     description: row.notes ?? null,
     notes: row.notes ?? null,
+    manager_notes: row.manager_notes ?? null,
     status: row.status ?? 'demo',
     next_action: row.next_action ?? 'needs_feedback',
     bpm: row.bpm ?? null,
@@ -308,6 +309,7 @@ export async function saveIdea(idea: Partial<IdeaRecord>) {
     bpm: idea.bpm ?? null,
     key: idea.musical_key ?? idea.key_sig ?? null,
     notes: idea.notes ?? idea.description ?? null,
+    manager_notes: idea.manager_notes ?? null,
     promoted_to_release_at: idea.promoted_to_release_at ?? null,
     release_handoff: idea.release_handoff ?? {},
     version_numbers: idea.version_numbers ?? 1,
@@ -631,19 +633,67 @@ export async function fetchSyncJobs() {
 }
 
 export async function fetchReleases(): Promise<ReleaseRecord[]> {
-  return [];
+  const { data, error } = await supabase
+    .from('releases')
+    .select('*')
+    .order('release_date', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as ReleaseRecord[];
 }
 
 export async function fetchReleaseList(): Promise<ReleaseRecord[]> {
-  return [];
+  return fetchReleases();
 }
 
 export async function fetchPublicHubReleases(): Promise<ReleaseRecord[]> {
   return [];
 }
 
-export async function fetchReleaseById() {
-  return null;
+export async function fetchReleaseById(id: string): Promise<ReleaseRecord | null> {
+  const { data, error } = await supabase
+    .from('releases')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (error) return null;
+  return data as ReleaseRecord;
+}
+
+export async function fetchReleaseSnapshots(releaseId: string) {
+  const { data, error } = await supabase
+    .from('release_analytics_snapshots')
+    .select('snapped_at, sc_plays, sc_likes, sc_reposts, sc_downloads, sp_streams, sp_popularity, youtube_views, apple_streams')
+    .eq('release_id', releaseId)
+    .order('snapped_at', { ascending: true });
+  if (error) return [];
+  return data ?? [];
+}
+
+export async function fetchCatalogWeeklyTotals(): Promise<{ spotify: number; soundcloud: number; youtube: number }> {
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  // Get the most recent snapshot per release that is at least 7 days old
+  const { data, error } = await supabase
+    .from('release_analytics_snapshots')
+    .select('release_id, sp_streams, sc_plays, youtube_views, snapped_at')
+    .lte('snapped_at', weekAgo)
+    .order('snapped_at', { ascending: false });
+  if (error || !data) return { spotify: 0, soundcloud: 0, youtube: 0 };
+  // Keep only the most recent snapshot per release (already desc order)
+  const seen = new Set<string>();
+  const rows = data.filter(r => { if (seen.has(r.release_id)) return false; seen.add(r.release_id); return true; });
+  return rows.reduce((acc, r) => ({
+    spotify:    acc.spotify    + (r.sp_streams    ?? 0),
+    soundcloud: acc.soundcloud + (r.sc_plays       ?? 0),
+    youtube:    acc.youtube    + (r.youtube_views  ?? 0),
+  }), { spotify: 0, soundcloud: 0, youtube: 0 });
+}
+
+export async function saveReleaseMetadata(id: string, patch: Partial<{ assets: any; credits: any; promotion: any; notes: string; bpm: number; musical_key: string; artist_name: string }>) {
+  const { error } = await supabase
+    .from('releases')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
 }
 
 export async function uploadReleaseArtwork() {

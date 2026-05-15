@@ -13,7 +13,7 @@ import { ARTIST_INFO } from '../../constants';
 import { env } from '../../lib/envConfig';
 import { fetchArtistStats } from '../../lib/songstatsService';
 import { fetchServerJsonWithFallback } from '../../lib/serverApi';
-import { getSpotifyToken, redirectToSpotifyAuth } from '../../lib/spotify';
+import { fetchArtistTracks, getSpotifyToken, redirectToSpotifyAuth } from '../../lib/spotify';
 import { SettingsCard, SettingsFieldRow, SettingsLoadingSkeleton, SettingsSectionHeader } from './SettingsPrimitives';
 
 // ─── Platform metadata ────────────────────────────────────────────────────────
@@ -41,6 +41,10 @@ const PROVIDER_META: Record<
     label: 'Spotify',
     shortDescription: 'Catalog sync',
   },
+  chartmetric: {
+    label: 'Chartmetric',
+    shortDescription: 'Cross-platform track intelligence',
+  },
 };
 
 const ALL_PLATFORMS = Object.keys(PROVIDER_META) as IntegrationPlatformKey[];
@@ -64,6 +68,7 @@ const INITIAL_PULL_STATE: Record<IntegrationPlatformKey, ManualPullState> = {
   songstats: { status: 'idle', message: null, ranAt: null },
   soundcloud: { status: 'idle', message: null, ranAt: null },
   spotify: { status: 'idle', message: null, ranAt: null },
+  chartmetric: { status: 'idle', message: null, ranAt: null },
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -96,10 +101,11 @@ export function IntegrationsSettingsPanel() {
       const rows = integrationRowsResult.data ?? [];
       const lookup = Object.fromEntries(rows.map((row) => [row.platform, row])) as Record<string, any>;
       setPullState({
-        zernio: { status: 'idle', message: lookup.zernio?.last_error ?? null, ranAt: lookup.zernio?.last_processed_at ?? null },
-        songstats: { status: 'idle', message: lookup.songstats?.last_error ?? null, ranAt: lookup.songstats?.last_processed_at ?? null },
-        soundcloud: { status: 'idle', message: lookup.soundcloud?.last_error ?? null, ranAt: lookup.soundcloud?.last_processed_at ?? null },
-        spotify: { status: 'idle', message: lookup.spotify?.last_error ?? null, ranAt: lookup.spotify?.last_processed_at ?? null },
+        zernio:       { status: 'idle', message: lookup.zernio?.last_error ?? null,       ranAt: lookup.zernio?.last_processed_at ?? null },
+        songstats:    { status: 'idle', message: lookup.songstats?.last_error ?? null,    ranAt: lookup.songstats?.last_processed_at ?? null },
+        soundcloud:   { status: 'idle', message: lookup.soundcloud?.last_error ?? null,   ranAt: lookup.soundcloud?.last_processed_at ?? null },
+        spotify:      { status: 'idle', message: lookup.spotify?.last_error ?? null,      ranAt: lookup.spotify?.last_processed_at ?? null },
+        chartmetric:  { status: 'idle', message: lookup.chartmetric?.last_error ?? null,  ranAt: lookup.chartmetric?.last_processed_at ?? null },
       });
     } catch (err: any) {
       setError(err?.message ?? 'Failed to load integration settings');
@@ -201,26 +207,68 @@ export function IntegrationsSettingsPanel() {
           console.log('[Integrations][SoundCloud] Public track count:', tracks.length);
         }
 
-        message = `Fetched ${tracks.length} tracks.`;
+        if (tracks.length > 0) {
+          const { data: { session } } = await supabase.auth.getSession();
+          const jwt = session?.access_token;
+          if (jwt) {
+            await fetch('/api/integrations/soundcloud/sync-releases', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+              body: JSON.stringify({ tracks }),
+            });
+          }
+        }
+        message = `Synced ${tracks.length} tracks to releases.`;
       }
 
       if (platform === 'spotify') {
         const token = await getSpotifyToken();
-        console.log('[Integrations][Spotify] Access token present:', Boolean(token));
         if (!token) {
           redirectToSpotifyAuth();
-          throw new Error('Opened Spotify auth popup. Finish login, then run Pull now again.');
+          throw new Error('Connect Spotify first, then run Pull now again.');
         }
 
-        const artistIds = ARTIST_INFO.spotify_ids
-          .map((value) => String(value || '').trim())
-          .filter(Boolean);
-        console.log('[Integrations][Spotify] Resolved artist IDs from config:', artistIds);
-        if (!artistIds.length) {
-          throw new Error('Missing Spotify artist ID. Set VITE_SPOTIFY_ARTIST_ID / VITE_SPOTIFY_ARTIST_ID_2, or VITE_SPOTIFY_IDS in env.');
+        const artistIds = [
+          import.meta.env.VITE_SPOTIFY_ARTIST_ID,
+          import.meta.env.VITE_SPOTIFY_ARTIST_ID_2,
+          ...(import.meta.env.VITE_SPOTIFY_IDS ?? '').split(','),
+        ].map((id: string) => id?.trim()).filter(Boolean) as string[];
+
+        if (!artistIds.length) throw new Error('No Spotify artist ID configured. Set VITE_SPOTIFY_ARTIST_ID in your env.');
+
+        const tracks: any[] = [];
+        for (const artistId of artistIds) {
+          const fetched = await fetchArtistTracks(artistId);
+          tracks.push(...fetched);
         }
 
-        message = `Spotify authentication succeeded for ${artistIds.length} artist ID${artistIds.length === 1 ? '' : 's'}.`;
+        if (tracks.length > 0) {
+          const { data: { session } } = await supabase.auth.getSession();
+          const jwt = session?.access_token;
+          if (jwt) {
+            await fetch('/api/integrations/spotify/sync-releases', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+              body: JSON.stringify({ tracks }),
+            });
+          }
+        }
+        message = `Synced ${tracks.length} Spotify tracks to releases.`;
+      }
+
+      if (platform === 'chartmetric') {
+        const { data: { session } } = await supabase.auth.getSession();
+        const jwt = session?.access_token;
+        if (!jwt) throw new Error('Not authenticated.');
+        const res = await fetch('/api/integrations/chartmetric/sync-releases', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error ?? 'Chartmetric sync failed.');
+        const updated = (result.results ?? []).filter((r: any) => r.status === 'updated').length;
+        const notFound = (result.results ?? []).filter((r: any) => r.status === 'not_found').length;
+        message = `Synced ${updated} tracks via Chartmetric.${notFound ? ` ${notFound} had no ISRC match.` : ''}`;
       }
 
       const ranAt = new Date().toISOString();

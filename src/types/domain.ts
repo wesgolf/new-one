@@ -66,6 +66,7 @@ export interface IdeaRecord {
   title: string;
   description?: string | null;
   notes?: string | null;
+  manager_notes?: string | null;
   status: string;
   next_action?: string | null;
   is_collab?: boolean;
@@ -211,6 +212,25 @@ export interface ReleaseRecord {
     likes?: number | null;
     reposts?: number | null;
     comments?: number | null;
+    downloads?: number | null;
+    duration_ms?: number | null;
+    genre?: string | null;
+    tags?: string[] | null;
+    description?: string | null;
+    waveform_url?: string | null;
+    label_name?: string | null;
+    sc_id?: number | null;
+    isrc?: string | null;
+    p_line?: string | null;
+    c_line?: string | null;
+  } | null;
+  spotify_stats?: {
+    popularity?: number | null;
+    explicit?: boolean | null;
+    preview_url?: string | null;
+    duration_ms?: number | null;
+    isrc?: string | null;
+    album_name?: string | null;
   } | null;
   youtube_stats?: {
     views?: number | null;
@@ -243,6 +263,36 @@ export interface ReleaseRecord {
       likes?: number | null;
       comments?: number | null;
     } | null;
+  } | null;
+  assets?: {
+    master_url?: string | null;
+    stems_url?: string | null;
+    artwork_source_url?: string | null;
+    radio_edit_url?: string | null;
+    instrumental_url?: string | null;
+    session_url?: string | null;
+    short_form_url?: string | null;
+    hypeddit_url?: string | null;
+    free_download_url?: string | null;
+  } | null;
+  credits?: {
+    vocalist?: string | null;
+    co_producer?: string | null;
+    co_writer?: string | null;
+    mixing?: string | null;
+    mastering?: string | null;
+    featured?: string | null;
+    publisher?: string | null;
+    pro?: string | null;
+    label?: string | null;
+    splits?: string | null;
+  } | null;
+  promotion?: {
+    submitHub_url?: string | null;
+    pr_links?: string | null;
+    radio_support?: string | null;
+    campaign_notes?: string | null;
+    hypeddit_url?: string | null;
   } | null;
 }
 
@@ -433,7 +483,7 @@ export const DEFAULT_UNAUTHORIZED_PAGE_SETTINGS: UnauthorizedPageSettings = {
 
 // ── integrations ──────────────────────────────────────────────────────────────
 
-export type IntegrationPlatformKey = 'zernio' | 'songstats' | 'soundcloud' | 'spotify';
+export type IntegrationPlatformKey = 'zernio' | 'songstats' | 'soundcloud' | 'spotify' | 'chartmetric';
 
 export interface IntegrationsSettings {
   auto_sync:          boolean;
@@ -444,7 +494,7 @@ export interface IntegrationsSettings {
 export const DEFAULT_INTEGRATIONS_SETTINGS: IntegrationsSettings = {
   auto_sync:         true,
   sync_interval:     3600,
-  enabled_platforms: ['zernio', 'songstats', 'soundcloud', 'spotify'],
+  enabled_platforms: ['zernio', 'songstats', 'soundcloud', 'spotify', 'chartmetric'],
 };
 
 /** Convenience map from category → typed value */

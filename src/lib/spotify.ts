@@ -84,9 +84,7 @@ export async function redirectToSpotifyAuth() {
   });
 
   const authUrl = `https://accounts.spotify.com/authorize?${params.toString()}`;
-  
-  // Use window.open for better compatibility with iframes and popups
-  window.open(authUrl, 'spotify-auth', 'width=800,height=600');
+  window.location.href = authUrl;
 }
 
 export function consumeSpotifyReturnPath() {
@@ -141,16 +139,49 @@ export async function handleSpotifyCallback(code: string) {
   }
 }
 
-export async function getSpotifyToken() {
+async function refreshSpotifyToken(): Promise<string | null> {
+  const refreshToken = localStorage.getItem('spotify_refresh_token');
+  if (!refreshToken || !CLIENT_ID) return null;
+
+  try {
+    const response = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: CLIENT_ID,
+      }),
+    });
+
+    if (!response.ok) {
+      localStorage.removeItem('spotify_access_token');
+      localStorage.removeItem('spotify_refresh_token');
+      localStorage.removeItem('spotify_token_expiry');
+      return null;
+    }
+
+    const data = await response.json();
+    localStorage.setItem('spotify_access_token', data.access_token);
+    localStorage.setItem('spotify_token_expiry', (Date.now() + data.expires_in * 1000).toString());
+    if (data.refresh_token) {
+      localStorage.setItem('spotify_refresh_token', data.refresh_token);
+    }
+    return data.access_token;
+  } catch {
+    return null;
+  }
+}
+
+export async function getSpotifyToken(): Promise<string | null> {
   const token = localStorage.getItem('spotify_access_token');
   const expiry = localStorage.getItem('spotify_token_expiry');
 
   if (!token || !expiry) return null;
 
-  if (Date.now() > parseInt(expiry)) {
-    // Token expired, would need refresh logic here
-    // For now, just return null to force re-auth
-    return null;
+  // Refresh 60s before expiry so we never serve a stale token
+  if (Date.now() > parseInt(expiry) - 60_000) {
+    return refreshSpotifyToken();
   }
 
   return token;
@@ -276,66 +307,44 @@ export async function fetchArtistTracks(artistId: string) {
     allTracks.push(...tracksWithAlbum);
   }
 
-  // 3. Fetch audio features in bulk (max 100 per request)
-  const trackIds = allTracks.map(t => t.id);
-  const audioFeatures: any[] = [];
-  
-  for (let i = 0; i < trackIds.length; i += 100) {
-    const ids = trackIds.slice(i, i + 100).join(',');
-    console.log('[Spotify API] Requesting audio features batch:', {
-      batchIndex: i / 100,
-      count: trackIds.slice(i, i + 100).length,
-      ids: trackIds.slice(i, i + 100),
-    });
+  // Enrich with full track objects to get popularity, ISRC, preview_url, explicit
+  const fullTrackMap: Record<string, any> = {};
+  const trackIds = allTracks.map((t: any) => t.id);
+  for (let i = 0; i < trackIds.length; i += 50) {
+    const ids = trackIds.slice(i, i + 50).join(',');
     try {
-      const featuresData = await spotifyFetch(`/audio-features?ids=${ids}`);
-      console.log('[Spotify API] Audio features payload summary:', {
-        returned: Array.isArray(featuresData?.audio_features) ? featuresData.audio_features.length : 0,
-        sample: Array.isArray(featuresData?.audio_features)
-          ? featuresData.audio_features.slice(0, 5).map((feature: any) => ({
-              id: feature?.id ?? null,
-              tempo: feature?.tempo ?? null,
-              key: feature?.key ?? null,
-              mode: feature?.mode ?? null,
-              energy: feature?.energy ?? null,
-              danceability: feature?.danceability ?? null,
-            }))
-          : [],
-      });
-      audioFeatures.push(...(featuresData.audio_features || []));
+      const data = await spotifyFetch(`/tracks?ids=${ids}`);
+      const tracks = Array.isArray(data?.tracks) ? data.tracks : [];
+      for (const t of tracks) {
+        if (t?.id) fullTrackMap[t.id] = t;
+      }
     } catch (error: any) {
-      console.warn('[Spotify API] Audio features batch failed; continuing without audio features for this batch.', {
-        ids: trackIds.slice(i, i + 100),
-        message: error?.message ?? null,
-        note: 'Spotify catalog sync will continue because audio features are not persisted yet.',
-      });
+      console.warn('[Spotify API] Full track batch failed.', error?.message ?? null);
     }
   }
 
-  // 4. Combine data
-  const enrichedTracks = allTracks.map(track => {
-    const features = audioFeatures.find(f => f && f.id === track.id);
+  const enrichedTracks = allTracks.map((track: any) => {
+    const full = fullTrackMap[track.id] ?? {};
     return {
       ...track,
-      audio_features: features
+      popularity:   full.popularity  ?? null,
+      preview_url:  full.preview_url ?? track.preview_url ?? null,
+      explicit:     full.explicit    ?? track.explicit    ?? false,
+      duration_ms:  full.duration_ms ?? track.duration_ms ?? null,
+      isrc:         full.external_ids?.isrc ?? null,
     };
   });
 
   console.log('[Spotify API] Final enriched track summary:', {
     totalTracks: enrichedTracks.length,
-    sample: enrichedTracks.slice(0, 5).map((track: any) => ({
-      id: track?.id ?? null,
-      name: track?.name ?? null,
-      album: track?.album?.name ?? null,
-      spotify_url: track?.external_urls?.spotify ?? null,
-      audio_features: track?.audio_features
-        ? {
-            tempo: track.audio_features.tempo ?? null,
-            key: track.audio_features.key ?? null,
-            energy: track.audio_features.energy ?? null,
-            danceability: track.audio_features.danceability ?? null,
-          }
-        : null,
+    sample: enrichedTracks.slice(0, 3).map((track: any) => ({
+      id: track?.id,
+      name: track?.name,
+      popularity: track?.popularity,
+      explicit: track?.explicit,
+      isrc: track?.isrc,
+      duration_ms: track?.duration_ms,
+      preview_url: track?.preview_url ? 'yes' : null,
     })),
   });
   console.groupEnd();

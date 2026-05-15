@@ -4,23 +4,50 @@ import { saveIdea, saveIdeaAsset, uploadIdeaAudio } from '../lib/supabaseData';
 import { analyzeIdeaAudioInBackground } from '../lib/ideaAudioAnalysis';
 import { dropboxConfigured, shouldFallbackFromDropbox, uploadAudioToDropbox } from '../services/dropboxService';
 import { useCurrentUser } from '../hooks/useCurrentUser';
+import { useCurrentUserRole } from '../hooks/useCurrentUserRole';
 import { cn } from '../lib/utils';
 import type { IdeaRecord } from '../types/domain';
 
-const STATUSES = [
-  { value: 'demo',        label: 'Demo'        },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'review',      label: 'Review'      },
-  { value: 'done',        label: 'Done'        },
+const STAGES = [
+  { value: 'demo',             label: 'Demo'             },
+  { value: 'in_progress',      label: 'In Progress'      },
+  { value: 'review',           label: 'Review'           },
+  { value: 'release_planning', label: 'Release Planning' },
+  { value: 'done',             label: 'Done'             },
 ] as const;
 
-const NEXT_ACTIONS = [
-  { value: 'needs_feedback', label: 'Needs feedback' },
-  { value: 'needs_rewrite', label: 'Needs rewrite' },
-  { value: 'ready_to_promote', label: 'Ready to promote' },
-  { value: 'release_planning', label: 'Release planning' },
-  { value: 'archive', label: 'Archive' },
-] as const;
+const SUBSTAGES: Record<string, { value: string; label: string }[]> = {
+  demo: [
+    { value: 'needs_vocals',        label: 'Needs vocals'         },
+    { value: 'needs_arrangement',   label: 'Needs arrangement'    },
+    { value: 'needs_development',   label: 'Needs development'    },
+    { value: 'just_vibe_checking',  label: 'Just vibe checking'   },
+  ],
+  in_progress: [
+    { value: 'needs_vocals',        label: 'Needs vocals'         },
+    { value: 'needs_mix_feedback',  label: 'Needs mix feedback'   },
+    { value: 'needs_rewrite',       label: 'Needs rewrite'        },
+    { value: 'waiting_on_collab',   label: 'Waiting on collab'    },
+    { value: 'in_mixing',           label: 'In mixing'            },
+  ],
+  review: [
+    { value: 'needs_mix_feedback',  label: 'Needs mix feedback'   },
+    { value: 'needs_master',        label: 'Needs master'         },
+    { value: 'waiting_on_collab',   label: 'Waiting on collab'    },
+    { value: 'revisions_needed',    label: 'Revisions needed'     },
+    { value: 'approved',            label: 'Approved'             },
+  ],
+  release_planning: [
+    { value: 'needs_artwork',       label: 'Needs artwork'        },
+    { value: 'needs_release_date',  label: 'Needs release date'   },
+    { value: 'waiting_on_collab',   label: 'Waiting on collab'    },
+    { value: 'ready_to_release',    label: 'Ready to release'     },
+  ],
+  done: [
+    { value: 'released',            label: 'Released'             },
+    { value: 'archived',            label: 'Archived'             },
+  ],
+};
 
 const MAX_AUDIO_MB = 50;
 
@@ -38,11 +65,13 @@ interface IdeaFormModalProps {
 
 export function IdeaFormModal({ open, idea, existingAudioCount = 0, onClose, onSaved }: IdeaFormModalProps) {
   const { authUser, profile } = useCurrentUser();
+  const { isManager } = useCurrentUserRole();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [title, setTitle] = useState('');
   const [titleError, setTitleError] = useState(false);
   const [description, setDescription] = useState('');
+  const [managerNotes, setManagerNotes] = useState('');
   const [status, setStatus] = useState<string>('demo');
   const [nextAction, setNextAction] = useState<string>('needs_feedback');
   const [isCollab, setIsCollab] = useState(false);
@@ -61,8 +90,10 @@ export function IdeaFormModal({ open, idea, existingAudioCount = 0, onClose, onS
     setTitle(idea?.title ?? '');
     setTitleError(false);
     setDescription(idea?.description ?? '');
-    setStatus(idea?.status ?? 'demo');
-    setNextAction(idea?.next_action ?? 'needs_feedback');
+    setManagerNotes(idea?.manager_notes ?? '');
+    const s = idea?.status ?? 'demo';
+    setStatus(s);
+    setNextAction(idea?.next_action ?? SUBSTAGES[s]?.[0]?.value ?? '');
     setIsCollab(idea?.is_collab ?? false);
     setAudioFile(null);
     setVersionNote('');
@@ -119,6 +150,7 @@ export function IdeaFormModal({ open, idea, existingAudioCount = 0, onClose, onS
         ...((idea?.id ?? persistedIdeaId) ? { id: idea?.id ?? persistedIdeaId ?? undefined } : {}),
         title: title.trim(),
         description: description.trim() || null,
+        manager_notes: managerNotes.trim() || null,
         status,
         next_action: nextAction,
         is_collab: isCollab,
@@ -279,30 +311,49 @@ export function IdeaFormModal({ open, idea, existingAudioCount = 0, onClose, onS
             )}
           </section>
 
-          <section className="space-y-2">
-            <label className={labelCls}>
-              Notes <span className="normal-case font-normal text-slate-400">(optional)</span>
-            </label>
-            <textarea
-              rows={2}
-              placeholder="Concept, references, mood, vibe..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className={cn(inputCls, 'resize-none')}
-            />
+          <section className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <label className={labelCls}>
+                Artist Notes <span className="normal-case font-normal text-slate-400">(optional)</span>
+              </label>
+              <textarea
+                rows={3}
+                placeholder="Concept, references, mood, vibe..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className={cn(inputCls, 'resize-none')}
+              />
+            </div>
+            {isManager && (
+              <div className="space-y-2">
+                <label className={labelCls}>
+                  Manager Notes <span className="normal-case font-normal text-slate-400">(optional)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Internal notes, next steps, priorities..."
+                  value={managerNotes}
+                  onChange={(e) => setManagerNotes(e.target.value)}
+                  className={cn(inputCls, 'resize-none')}
+                />
+              </div>
+            )}
           </section>
 
-          <section className="grid gap-4 sm:grid-cols-2">
+          <section className="space-y-3">
             <div>
-              <label className={labelCls}>Status</label>
-              <div className="grid grid-cols-2 gap-2">
-                {STATUSES.map((s) => (
+              <label className={labelCls}>Stage</label>
+              <div className="grid grid-cols-5 gap-2">
+                {STAGES.map((s) => (
                   <button
                     key={s.value}
                     type="button"
-                    onClick={() => setStatus(s.value)}
+                    onClick={() => {
+                      setStatus(s.value);
+                      setNextAction(SUBSTAGES[s.value]?.[0]?.value ?? '');
+                    }}
                     className={cn(
-                      'rounded-2xl border px-3 py-3 text-left text-xs font-semibold transition-all',
+                      'rounded-2xl border px-3 py-3 text-center text-xs font-semibold transition-all',
                       status === s.value
                         ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm'
                         : 'border-border bg-slate-50 text-slate-500 hover:border-slate-300 hover:bg-white hover:text-slate-700',
@@ -314,18 +365,24 @@ export function IdeaFormModal({ open, idea, existingAudioCount = 0, onClose, onS
               </div>
             </div>
             <div>
-              <label className={labelCls}>Next Action</label>
-              <select
-                value={nextAction}
-                onChange={(e) => setNextAction(e.target.value)}
-                className={inputCls}
-              >
-                {NEXT_ACTIONS.map((action) => (
-                  <option key={action.value} value={action.value}>
-                    {action.label}
-                  </option>
+              <label className={labelCls}>What&apos;s blocking this?</label>
+              <div className="flex flex-wrap gap-2">
+                {(SUBSTAGES[status] ?? []).map((sub) => (
+                  <button
+                    key={sub.value}
+                    type="button"
+                    onClick={() => setNextAction(sub.value)}
+                    className={cn(
+                      'rounded-full border px-4 py-1.5 text-xs font-semibold transition-all',
+                      nextAction === sub.value
+                        ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm'
+                        : 'border-border bg-slate-50 text-slate-500 hover:border-slate-300 hover:bg-white hover:text-slate-700',
+                    )}
+                  >
+                    {sub.label}
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
           </section>
 

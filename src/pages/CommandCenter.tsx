@@ -35,14 +35,14 @@ function StatCard({
   Icon: React.ComponentType<{ className?: string }>;
 }) {
   return (
-    <div className="rounded-2xl border border-border bg-white p-5 shadow-sm">
+    <div className="glass-card rounded-2xl p-5 cursor-default group transition-all duration-200">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">{label}</p>
-          <p className="mt-2 text-3xl font-bold text-text-primary">{value}</p>
-          <p className="mt-2 text-sm text-text-secondary">{detail}</p>
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-text-muted">{label}</p>
+          <p className="mt-2 text-3xl font-heading font-bold text-text-primary">{value}</p>
+          <p className="mt-2 text-sm text-text-secondary leading-snug">{detail}</p>
         </div>
-        <div className="rounded-xl bg-slate-100 p-2.5 text-slate-700">
+        <div className="rounded-xl bg-brand-dim p-2.5 text-brand transition-colors duration-200 group-hover:bg-brand group-hover:text-white">
           <Icon className="h-5 w-5" />
         </div>
       </div>
@@ -60,9 +60,9 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-border bg-white shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
-        <h2 className="text-base font-semibold text-text-primary">{title}</h2>
+    <section className="glass-card rounded-2xl overflow-hidden">
+      <div className="flex items-center justify-between gap-3 border-b border-border/60 px-5 py-4">
+        <h2 className="text-base font-heading font-semibold text-text-primary">{title}</h2>
         {action}
       </div>
       <div className="p-5">{children}</div>
@@ -194,13 +194,13 @@ export function CommandCenter() {
           action={<NavLink to="/calendar" className="text-sm font-semibold text-brand hover:underline">Open calendar</NavLink>}
         >
           {loading ? (
-            <p className="text-sm text-text-secondary">Loading events…</p>
+            <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="skeleton h-14" />)}</div>
           ) : upcomingEvents.length === 0 ? (
             <p className="text-sm text-text-secondary">No calendar events yet.</p>
           ) : (
             <div className="space-y-3">
               {upcomingEvents.map((event) => (
-                <div key={event.id} className="rounded-xl border border-border bg-slate-50 px-4 py-3">
+                <div key={event.id} className="rounded-xl border border-border/60 bg-background/60 px-4 py-3 transition-colors duration-150 hover:bg-background cursor-default">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-medium text-text-primary">{event.title}</p>
@@ -225,7 +225,7 @@ export function CommandCenter() {
           action={<NavLink to="/ideas" className="text-sm font-semibold text-brand hover:underline">Open ideas</NavLink>}
         >
           {loading ? (
-            <p className="text-sm text-text-secondary">Loading ideas…</p>
+            <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="skeleton h-14" />)}</div>
           ) : recentIdeas.length === 0 ? (
             <p className="text-sm text-text-secondary">No ideas captured yet.</p>
           ) : (

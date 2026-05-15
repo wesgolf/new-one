@@ -7,3 +7,7 @@ coverage/
 .env*
 !.env.example
 .browser-sessions/
+.claude/
+.claude/
+analytics.db
+raw_analytics/

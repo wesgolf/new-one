@@ -1,20 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, Loader2, Pencil, Plus, Sparkles, Trash2, Wand2 } from 'lucide-react';
+import { Loader2, Pencil, Plus, Trash2, Wand2 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import {
   describeMetric,
-  evaluateGoalComputation,
-  evaluateGoalMetric,
   getGoalMetricDefinitions,
-  loadGoalMetricSnapshot,
   suggestGoalSetupFromPrompt,
 } from '../lib/goalMetrics';
 import {
   isGoalFormulaDefinition,
   type GoalFormulaDefinition,
   type GoalFormulaOperator,
-  type GoalMetricSnapshot,
 } from '../lib/goalFormulaEngine';
 
 type GoalRow = {
@@ -161,16 +157,12 @@ function GoalEditor({
   open,
   initialValue,
   prefillDate,
-  metricSnapshot,
-  metricsLoading,
   onClose,
   onSaved,
 }: {
   open: boolean;
   initialValue: GoalRow | null;
   prefillDate?: string | null;
-  metricSnapshot: GoalMetricSnapshot;
-  metricsLoading: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -179,6 +171,7 @@ function GoalEditor({
   const [helperMessage, setHelperMessage] = useState<string | null>(null);
 
   const metricDefinitions = useMemo(() => getGoalMetricDefinitions(), []);
+  const formula = useMemo(() => buildFormulaFromForm(form), [form]);
 
   useEffect(() => {
     if (!open) return;
@@ -223,16 +216,8 @@ function GoalEditor({
   const update = <K extends keyof GoalFormState>(key: K, value: GoalFormState[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
 
-  const formula = useMemo(() => buildFormulaFromForm(form), [form]);
-  const metricPreview = useMemo(() => evaluateGoalMetric(form.metric_key, metricSnapshot), [form.metric_key, metricSnapshot]);
-  const calculationPreview = useMemo(
-    () => evaluateGoalComputation(form.tracking_strategy, metricSnapshot, form.metric_key, formula),
-    [form.tracking_strategy, metricSnapshot, form.metric_key, formula],
-  );
-
   const isMilestoneGoal = form.goal_type === 'milestone';
-  const usesLiveMetric = form.tracking_strategy !== 'manual';
-  const resolvedCurrent = usesLiveMetric ? calculationPreview.current : Number(form.current || 0);
+  const resolvedCurrent = Number(form.current || 0);
 
   const applyHelperSuggestion = () => {
     const suggestion = suggestGoalSetupFromPrompt(form.helper_prompt);
@@ -406,7 +391,7 @@ function GoalEditor({
               </div>
 
               {form.tracking_strategy === 'single_metric' ? (
-                <div className="mt-4 space-y-4">
+                <div className="mt-4 space-y-3">
                   <label className="block">
                     <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-text-tertiary">Metric</span>
                     <select
@@ -422,21 +407,19 @@ function GoalEditor({
                       ))}
                     </select>
                   </label>
-                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-text-secondary">
-                    {metricsLoading ? 'Loading live metrics…' : metricPreview.explanation}
-                  </div>
+                  <p className="text-xs text-text-secondary">Progress will update automatically when platform stats sync.</p>
                 </div>
               ) : null}
 
               {form.tracking_strategy === 'calculated' ? (
                 <div className="mt-4 space-y-4">
-                  <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-blue-700">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
                       <Wand2 className="h-4 w-4" />
                       Quick formula helper
                     </div>
-                    <p className="mt-1 text-xs text-blue-700/80">
-                      Describe the goal in plain English, for example “Instagram followers to following ratio”.
+                    <p className="mt-1 text-xs text-text-secondary">
+                      Describe the goal in plain English, for example "Instagram followers to following ratio".
                     </p>
                     <div className="mt-3 flex gap-2">
                       <input
@@ -449,61 +432,35 @@ function GoalEditor({
                         Suggest
                       </button>
                     </div>
-                    {helperMessage ? (
-                      <p className="mt-2 text-xs text-blue-700">{helperMessage}</p>
-                    ) : null}
+                    {helperMessage && <p className="mt-2 text-xs text-text-secondary">{helperMessage}</p>}
                   </div>
-
                   <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr]">
                     <label className="block">
                       <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-text-tertiary">Left metric</span>
-                      <select
-                        className="input-base"
-                        value={form.formula_left_metric}
-                        onChange={(event) => update('formula_left_metric', event.target.value)}
-                      >
+                      <select className="input-base" value={form.formula_left_metric} onChange={(event) => update('formula_left_metric', event.target.value)}>
                         {metricDefinitions.map((metric) => (
-                          <option key={metric.id} value={metric.id}>
-                            {metric.label}
-                          </option>
+                          <option key={metric.id} value={metric.id}>{metric.label}</option>
                         ))}
                       </select>
                     </label>
-
                     <label className="block">
                       <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-text-tertiary">Operator</span>
-                      <select
-                        className="input-base min-w-[130px]"
-                        value={form.formula_operator}
-                        onChange={(event) => update('formula_operator', event.target.value as GoalFormulaOperator)}
-                      >
+                      <select className="input-base min-w-[130px]" value={form.formula_operator} onChange={(event) => update('formula_operator', event.target.value as GoalFormulaOperator)}>
                         {FORMULA_OPERATORS.map((operator) => (
-                          <option key={operator.value} value={operator.value}>
-                            {operator.label}
-                          </option>
+                          <option key={operator.value} value={operator.value}>{operator.label}</option>
                         ))}
                       </select>
                     </label>
-
                     <label className="block">
                       <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-text-tertiary">Right metric</span>
-                      <select
-                        className="input-base"
-                        value={form.formula_right_metric}
-                        onChange={(event) => update('formula_right_metric', event.target.value)}
-                      >
+                      <select className="input-base" value={form.formula_right_metric} onChange={(event) => update('formula_right_metric', event.target.value)}>
                         {metricDefinitions.map((metric) => (
-                          <option key={metric.id} value={metric.id}>
-                            {metric.label}
-                          </option>
+                          <option key={metric.id} value={metric.id}>{metric.label}</option>
                         ))}
                       </select>
                     </label>
                   </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-text-secondary">
-                    {metricsLoading ? 'Loading live metrics…' : calculationPreview.explanation}
-                  </div>
+                  <p className="text-xs text-text-secondary">Progress will update automatically when platform stats sync.</p>
                 </div>
               ) : null}
             </div>
@@ -514,34 +471,11 @@ function GoalEditor({
                   <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-text-tertiary">
                     {form.tracking_strategy === 'calculated' && form.formula_operator === 'divide' ? 'Target ratio' : 'Target'}
                   </span>
-                  <input
-                    className="input-base"
-                    type="number"
-                    step="any"
-                    value={form.target}
-                    onChange={(event) => update('target', event.target.value)}
-                    placeholder={form.tracking_strategy === 'calculated' && form.formula_operator === 'divide' ? '3' : '10000'}
-                  />
+                  <input className="input-base" type="number" step="any" value={form.target} onChange={(event) => update('target', event.target.value)} placeholder={form.tracking_strategy === 'calculated' && form.formula_operator === 'divide' ? '3' : '10000'} />
                 </label>
-
                 <label>
-                  <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-text-tertiary">
-                    {form.tracking_strategy === 'manual' ? 'Current progress' : 'Current value preview'}
-                  </span>
-                  {form.tracking_strategy === 'manual' ? (
-                    <input
-                      className="input-base"
-                      type="number"
-                      step="any"
-                      value={form.current}
-                      onChange={(event) => update('current', event.target.value)}
-                      placeholder="0"
-                    />
-                  ) : (
-                    <div className="rounded-xl border border-border bg-slate-50 px-4 py-3 text-sm text-text-primary">
-                      {metricsLoading ? 'Loading live metrics…' : calculationPreview.formatted ?? calculationPreview.explanation}
-                    </div>
-                  )}
+                  <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-text-tertiary">Current progress</span>
+                  <input className="input-base" type="number" step="any" value={form.current} onChange={(event) => update('current', event.target.value)} placeholder="0" />
                 </label>
               </div>
             ) : (
@@ -606,20 +540,11 @@ function GoalEditor({
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-3 border-t border-border bg-white px-6 py-4">
-            <div className="text-xs text-text-secondary">
-              {metricSnapshot.loadedSources.length > 0
-                ? `Live metrics ready from ${metricSnapshot.loadedSources.join(', ')}`
-                : 'No live metrics configured yet'}
-            </div>
-            <div className="flex items-center gap-3">
-              <button type="button" className="btn-secondary" onClick={onClose}>
-                Cancel
-              </button>
-              <button type="submit" className="btn-primary" disabled={saving}>
-                {saving ? 'Saving…' : 'Save goal'}
-              </button>
-            </div>
+          <div className="flex items-center justify-end gap-3 border-t border-border bg-white px-6 py-4">
+            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={saving}>
+              {saving ? 'Saving…' : 'Save goal'}
+            </button>
           </div>
         </form>
       </div>
@@ -632,13 +557,6 @@ export function GoalTracker() {
   const navigate = useNavigate();
   const [goals, setGoals] = useState<GoalRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [metricsLoading, setMetricsLoading] = useState(true);
-  const [metricSnapshot, setMetricSnapshot] = useState<GoalMetricSnapshot>({
-    values: {},
-    loadedSources: [],
-    errors: [],
-    fetchedAt: null,
-  });
   const [error, setError] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<GoalRow | null>(null);
@@ -673,19 +591,9 @@ export function GoalTracker() {
     }
   }, []);
 
-  const loadMetrics = useCallback(async () => {
-    setMetricsLoading(true);
-    try {
-      const snapshot = await loadGoalMetricSnapshot();
-      setMetricSnapshot(snapshot);
-    } finally {
-      setMetricsLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    void Promise.all([loadGoals(), loadMetrics()]);
-  }, [loadGoals, loadMetrics]);
+    void loadGoals();
+  }, [loadGoals]);
 
   useEffect(() => {
     const routeState = location.state as { openCreate?: boolean; prefillDate?: string } | null;
@@ -700,59 +608,12 @@ export function GoalTracker() {
   const goalsWithProgress = useMemo(
     () =>
       goals.map((goal) => {
-        const strategy = getTrackingStrategy(goal);
-        const formula = deriveFormulaFromGoal(goal);
-        const computed = evaluateGoalComputation(strategy, metricSnapshot, goal.metric_key, formula);
-        const currentValue = strategy === 'manual' ? goal.current : computed.current ?? goal.current;
+        const currentValue = goal.current ?? 0;
         const progress = goal.target > 0 ? Math.min((currentValue / goal.target) * 100, 100) : 0;
-        return {
-          ...goal,
-          currentValue,
-          progress,
-          computation: computed,
-          strategy,
-        };
+        return { ...goal, currentValue, progress };
       }),
-    [goals, metricSnapshot],
+    [goals],
   );
-
-  useEffect(() => {
-    if (!metricSnapshot.fetchedAt) return;
-
-    const updates = goalsWithProgress.filter((goal) => {
-      if (goal.strategy === 'manual') return false;
-      if (goal.computation.current == null) return false;
-      return Math.abs((goal.current ?? 0) - goal.computation.current) > 0.0001;
-    });
-
-    if (updates.length === 0) return;
-
-    let cancelled = false;
-    void (async () => {
-      await Promise.allSettled(
-        updates.map((goal) =>
-          supabase.from('goals').update({
-            current: goal.computation.current,
-            updated_at: new Date().toISOString(),
-          }).eq('id', goal.id),
-        ),
-      );
-
-      if (cancelled) return;
-      setGoals((current) =>
-        current.map((goal) => {
-          const update = updates.find((candidate) => candidate.id === goal.id);
-          return update && update.computation.current != null
-            ? { ...goal, current: update.computation.current }
-            : goal;
-        }),
-      );
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [goalsWithProgress, metricSnapshot.fetchedAt]);
 
   const deleteGoal = async (goalId: string) => {
     const { error } = await supabase.from('goals').delete().eq('id', goalId);
@@ -770,18 +631,6 @@ export function GoalTracker() {
           <p className="mt-2 max-w-2xl text-text-secondary">
             Track manual goals, connect live metrics, or build formulas like followers ÷ following without writing raw JSON.
           </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-text-secondary">
-            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1">
-              <Activity className="h-3.5 w-3.5" />
-              {metricsLoading ? 'Loading live metrics…' : metricSnapshot.loadedSources.length > 0 ? `Live metrics: ${metricSnapshot.loadedSources.join(', ')}` : 'Live metrics unavailable'}
-            </span>
-            {metricSnapshot.errors[0] ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-amber-700">
-                <Sparkles className="h-3.5 w-3.5" />
-                {metricSnapshot.errors[0]}
-              </span>
-            ) : null}
-          </div>
         </div>
         <button
           type="button"
@@ -857,12 +706,6 @@ export function GoalTracker() {
                   <div>Due: <span className="font-medium text-text-primary">{goal.due_by ? new Date(goal.due_by).toLocaleString() : 'None'}</span></div>
                   <div>Metric: <span className="font-medium text-text-primary">{describeMetric(goal.metric_key || '')?.label ?? goal.metric_source ?? 'Manual'}</span></div>
                 </div>
-                {goal.strategy !== 'manual' ? (
-                  <div className="rounded-xl border border-border bg-slate-50 px-4 py-3 text-sm text-text-secondary">
-                    <p className="font-medium text-text-primary">Live calculation</p>
-                    <p className="mt-1">{goal.computation.explanation}</p>
-                  </div>
-                ) : null}
                 {goal.ai_analysis && (
                   <div className="rounded-xl border border-border bg-slate-50 px-4 py-3 text-sm text-text-secondary">
                     <p className="font-medium text-text-primary">AI analysis</p>
@@ -879,13 +722,8 @@ export function GoalTracker() {
         open={editorOpen}
         initialValue={editingGoal}
         prefillDate={prefillDate}
-        metricSnapshot={metricSnapshot}
-        metricsLoading={metricsLoading}
-        onClose={() => {
-          setEditorOpen(false);
-          setPrefillDate(null);
-        }}
-        onSaved={() => void Promise.all([loadGoals(), loadMetrics()])}
+        onClose={() => { setEditorOpen(false); setPrefillDate(null); }}
+        onSaved={() => void loadGoals()}
       />
     </div>
   );

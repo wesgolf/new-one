@@ -438,6 +438,65 @@ async function startServer() {
     },
   );
 
+  // Generic post-media upload — stores to /Artist OS/Posts/<filename>
+  app.post(
+    '/api/dropbox/upload-post-media',
+    express.raw({ type: '*/*', limit: '500mb' }),
+    async (req: Request, res: Response) => {
+      const rawFilename = String(req.headers['x-filename'] ?? '').trim();
+      const body = req.body;
+
+      if (!rawFilename) return res.status(400).json({ error: 'Missing X-Filename header.' });
+      if (!Buffer.isBuffer(body) || body.length === 0) return res.status(400).json({ error: 'Missing file body.' });
+
+      const filename = sanitizeDropboxFilename(decodeURIComponent(rawFilename));
+      const dropboxPath = `/Artist OS/Posts/${Date.now()}-${filename}`;
+
+      try {
+        const uploadResponse = await dropboxRequest(`${DROPBOX_CONTENT_API}/files/upload`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Dropbox-API-Arg': JSON.stringify({ path: dropboxPath, mode: 'add', autorename: true, mute: false }),
+          },
+          body,
+        });
+
+        const uploadPayload = await uploadResponse.json().catch(() => ({}));
+        if (!uploadResponse.ok) {
+          return res.status(uploadResponse.status).json({
+            error: getDropboxErrorMessage(uploadResponse.status, 'Dropbox upload failed.', uploadPayload),
+          });
+        }
+
+        const uploadedPath = String(uploadPayload?.path_display ?? dropboxPath);
+        const sharedLinkResponse = await dropboxRequest(`${DROPBOX_API}/sharing/create_shared_link_with_settings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: uploadedPath, settings: { requested_visibility: { '.tag': 'public' } } }),
+        });
+
+        if (sharedLinkResponse.status === 409) {
+          const conflict = await sharedLinkResponse.json().catch(() => ({}));
+          const existingUrl = String(conflict?.error?.shared_link_already_exists?.metadata?.url ?? '');
+          return res.json({ url: toDropboxRawUrl(existingUrl), path: uploadedPath });
+        }
+
+        const linkPayload = await sharedLinkResponse.json().catch(() => ({}));
+        if (!sharedLinkResponse.ok) {
+          return res.status(sharedLinkResponse.status).json({
+            error: getDropboxErrorMessage(sharedLinkResponse.status, 'Failed to create Dropbox shared link.', linkPayload),
+          });
+        }
+
+        return res.json({ url: toDropboxRawUrl(String(linkPayload?.url ?? '')), path: uploadedPath });
+      } catch (error: any) {
+        console.error('[dropbox] post-media upload failed:', error?.message ?? error);
+        return res.status(500).json({ error: error?.message ?? 'Dropbox upload failed.' });
+      }
+    },
+  );
+
   app.post('/api/dropbox/delete', async (req: Request, res: Response) => {
     const filePath = String(req.body?.path ?? '').trim();
     if (!filePath) {
@@ -539,14 +598,35 @@ async function startServer() {
         });
 
         const collection = Array.isArray(tracksResponse.data?.collection) ? tracksResponse.data.collection : [];
+        if (collection.length > 0) {
+          const sample = collection[0];
+          console.log('[SoundCloud scraper] Sample track raw fields:', {
+            title: sample?.title,
+            artwork_url: sample?.artwork_url,
+            user_avatar: sample?.user?.avatar_url,
+            keys: Object.keys(sample ?? {}),
+          });
+        }
         return collection.map((track: any) => ({
           title: String(track?.title ?? '').trim(),
           permalink_url: String(track?.permalink_url ?? '').trim(),
           created_at: track?.created_at ?? null,
+          release_date: track?.release_date ?? null,
           playback_count: Number(track?.playback_count ?? 0),
           likes_count: Number(track?.likes_count ?? track?.favoritings_count ?? 0),
           reposts_count: Number(track?.reposts_count ?? 0),
           comment_count: Number(track?.comment_count ?? 0),
+          download_count: Number(track?.download_count ?? 0),
+          duration: Number(track?.duration ?? 0),
+          genre: track?.genre ?? null,
+          tag_list: track?.tag_list ?? null,
+          description: track?.description ?? null,
+          waveform_url: track?.waveform_url ?? null,
+          label_name: track?.label_name ?? null,
+          publisher_metadata: track?.publisher_metadata ?? null,
+          sc_id: track?.id ?? null,
+          artwork_url: track?.artwork_url ?? track?.user?.avatar_url ?? null,
+          user: track?.user ?? null,
         })).filter((track: any) => track.title && track.permalink_url);
       }
     }
@@ -737,61 +817,70 @@ async function startServer() {
           continue;
         }
 
-        const releaseDate = toDateString(t?.created_at) ?? null;
+        const releaseDate = toDateString(t?.release_date ?? t?.created_at) ?? null;
+        const rawArtwork = t?.artwork_url ?? t?.user?.avatar_url ?? null;
+        const artworkUrl = rawArtwork ? String(rawArtwork).replace(/-large\./, '-t500x500.') : null;
         const distribution = sql.json({ soundcloud_url: permalinkUrl });
         const performance = sql.json({ streams: { soundcloud: Number(t?.playback_count ?? 0) || 0 } });
+
+        // Parse genre tags from space-separated tag_list string
+        const rawTags = typeof t?.tag_list === 'string' ? t.tag_list : '';
+        const tags = rawTags.match(/"[^"]+"|[^\s]+/g)?.map((s: string) => s.replace(/^"|"$/g, '')) ?? [];
+
         const soundcloudStats = sql.json({
-          plays:    Number(t?.playback_count ?? 0) || 0,
-          likes:    Number(t?.likes_count ?? t?.favoritings_count ?? 0) || 0,
-          reposts:  Number(t?.reposts_count ?? 0) || 0,
-          comments: Number(t?.comment_count ?? 0) || 0,
+          plays:          Number(t?.playback_count ?? 0) || 0,
+          likes:          Number(t?.likes_count ?? t?.favoritings_count ?? 0) || 0,
+          reposts:        Number(t?.reposts_count ?? 0) || 0,
+          comments:       Number(t?.comment_count ?? 0) || 0,
+          downloads:      Number(t?.download_count ?? 0) || 0,
+          duration_ms:    Number(t?.duration ?? 0) || 0,
+          genre:          t?.genre ?? null,
+          tags,
+          description:    t?.description ?? null,
+          waveform_url:   t?.waveform_url ?? null,
+          label_name:     t?.label_name ?? null,
+          sc_id:          t?.sc_id ?? null,
+          isrc:           t?.publisher_metadata?.isrc ?? null,
+          p_line:         t?.publisher_metadata?.p_line ?? null,
+          c_line:         t?.publisher_metadata?.c_line ?? null,
         });
 
         try {
-          const existing = await sql`
-            SELECT id
-            FROM releases
-            WHERE user_id = ${user.id}::uuid
-              AND (
-                (soundcloud_track_id IS NOT NULL AND soundcloud_track_id = ${permalinkUrl})
-                OR (distribution->>'soundcloud_url' = ${permalinkUrl})
-                OR (title = ${title})
-              )
-            LIMIT 1
+          const upserted = await sql`
+            INSERT INTO releases (user_id, title, status, release_date, soundcloud_track_id, cover_art_url, distribution, performance, soundcloud_stats, created_at, updated_at)
+            VALUES (
+              ${user.id}::uuid,
+              ${title},
+              'released',
+              ${releaseDate}::date,
+              ${permalinkUrl},
+              ${artworkUrl},
+              ${distribution},
+              ${performance},
+              ${soundcloudStats},
+              NOW(),
+              NOW()
+            )
+            ON CONFLICT (soundcloud_track_id) DO UPDATE SET
+              cover_art_url    = COALESCE(EXCLUDED.cover_art_url, releases.cover_art_url),
+              distribution     = COALESCE(releases.distribution, '{}'::jsonb) || EXCLUDED.distribution,
+              performance      = COALESCE(releases.performance,  '{}'::jsonb) || EXCLUDED.performance,
+              soundcloud_stats = EXCLUDED.soundcloud_stats,
+              release_date     = COALESCE(releases.release_date, EXCLUDED.release_date),
+              status           = COALESCE(releases.status, 'released'),
+              updated_at       = NOW()
+            RETURNING id, (xmax = 0) AS inserted
           `;
-
-          if (existing.length > 0) {
-            const id = existing[0].id as string;
-            await sql`
-              UPDATE releases
-              SET
-                soundcloud_track_id = ${permalinkUrl},
-                distribution    = COALESCE(distribution, '{}'::jsonb) || ${distribution},
-                performance     = COALESCE(performance,  '{}'::jsonb) || ${performance},
-                soundcloud_stats = ${soundcloudStats},
-                release_date    = COALESCE(release_date, ${releaseDate}::date),
-                status          = COALESCE(status, 'released'),
-                updated_at      = NOW()
-              WHERE id = ${id}::uuid
-            `;
-            updated += 1;
-          } else {
-            await sql`
-              INSERT INTO releases (user_id, title, status, release_date, soundcloud_track_id, distribution, performance, soundcloud_stats, created_at, updated_at)
-              VALUES (
-                ${user.id}::uuid,
-                ${title},
-                'released',
-                ${releaseDate}::date,
-                ${permalinkUrl},
-                ${distribution},
-                ${performance},
-                ${soundcloudStats},
-                NOW(),
-                NOW()
-              )
-            `;
+          const row = upserted[0];
+          if (row.inserted) {
             created += 1;
+          } else {
+            updated += 1;
+            // Log snapshot for streams-over-time charting
+            await sql`
+              INSERT INTO release_analytics_snapshots (release_id, sc_plays, sc_likes, sc_reposts, sc_comments, sc_downloads)
+              VALUES (${row.id}::uuid, ${Number(t?.playback_count ?? 0)}, ${Number(t?.likes_count ?? 0)}, ${Number(t?.reposts_count ?? 0)}, ${Number(t?.comment_count ?? 0)}, ${Number(t?.download_count ?? 0)})
+            `.catch(() => {});
           }
         } catch (e: any) {
           skipped += 1;
@@ -808,6 +897,82 @@ async function startServer() {
 
     console.log(`[soundcloud/sync] uid=${user.id.slice(0, 8)}… created=${created} updated=${updated} skipped=${skipped} errors=${errors.length}`);
     res.json({ created, updated, skipped, errors: errors.slice(0, 20) });
+  });
+
+  app.post('/api/integrations/spotify/sync-releases', async (req: Request, res: Response) => {
+    const authHeader = String(req.headers['authorization'] ?? '');
+    if (!authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'Missing Authorization header' });
+    const token = authHeader.slice(7);
+
+    const databaseUrl = readDatabaseUrlFromEnv();
+    if (!databaseUrl) return res.status(503).json({ error: 'DATABASE_URL is not configured.' });
+
+    const SUPABASE_URL_SERVER  = process.env.SUPABASE_URL  ?? process.env.VITE_SUPABASE_URL  ?? '';
+    const SUPABASE_ANON_SERVER = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON ?? process.env.VITE_SUPABASE_PK ?? '';
+    if (!SUPABASE_URL_SERVER || !SUPABASE_ANON_SERVER) return res.status(500).json({ error: 'Supabase not configured.' });
+
+    const tracks = (req.body as any)?.tracks;
+    if (!Array.isArray(tracks) || tracks.length === 0) return res.status(400).json({ error: 'Body must include tracks: []' });
+
+    const { createClient: createSbClient } = await import('@supabase/supabase-js');
+    const sb = createSbClient(SUPABASE_URL_SERVER, SUPABASE_ANON_SERVER, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+      auth: { persistSession: false },
+    });
+
+    const { data: { user }, error: authErr } = await sb.auth.getUser(token);
+    if (authErr || !user) return res.status(401).json({ error: 'Invalid or expired token' });
+
+    const sql = postgres(databaseUrl, { ssl: 'require', max: 1 });
+    let created = 0; let updated = 0; let skipped = 0;
+
+    try {
+      for (const t of tracks.slice(0, 500)) {
+        const title = (t?.name ?? t?.title ?? '').trim();
+        const spotifyId = (t?.id ?? '').trim();
+        const spotifyUrl = t?.external_urls?.spotify ?? t?.spotify_url ?? null;
+        const releaseDate = t?.album?.release_date ?? t?.release_date ?? null;
+        const artwork = t?.album?.images?.[0]?.url ?? t?.artwork ?? null;
+        const albumName = t?.album?.name ?? null;
+
+        if (!title || !spotifyId) { skipped++; continue; }
+
+        const distribution = sql.json({ spotify_url: spotifyUrl });
+        const performance  = sql.json({ streams: { spotify: 0 } });
+        const spotifyStats = sql.json({
+          popularity:  t?.popularity  ?? null,
+          explicit:    t?.explicit    ?? false,
+          preview_url: t?.preview_url ?? null,
+          duration_ms: t?.duration_ms ?? null,
+          isrc:        t?.isrc        ?? null,
+          album_name:  albumName,
+        });
+
+        const upserted = await sql`
+          INSERT INTO releases (user_id, title, status, release_date, spotify_track_id, cover_art_url, distribution, performance, spotify_stats, isrc, created_at, updated_at)
+          VALUES (${user.id}::uuid, ${title}, 'released', ${releaseDate}::date, ${spotifyId}, ${artwork}, ${distribution}, ${performance}, ${spotifyStats}, ${t?.isrc ?? null}, NOW(), NOW())
+          ON CONFLICT (spotify_track_id) DO UPDATE SET
+            distribution  = COALESCE(releases.distribution, '{}'::jsonb) || EXCLUDED.distribution,
+            cover_art_url = COALESCE(releases.cover_art_url, EXCLUDED.cover_art_url),
+            release_date  = COALESCE(releases.release_date, EXCLUDED.release_date),
+            spotify_stats = EXCLUDED.spotify_stats,
+            isrc          = COALESCE(releases.isrc, EXCLUDED.isrc),
+            status        = COALESCE(releases.status, 'released'),
+            updated_at    = NOW()
+          RETURNING id, (xmax = 0) AS inserted
+        `;
+        const row = upserted[0];
+        await sql`
+          INSERT INTO release_analytics_snapshots (release_id, sp_popularity, sp_streams)
+          VALUES (${row.id}::uuid, ${t?.popularity ?? null}, ${null})
+        `.catch(() => {});
+        if (row.inserted) { created++; } else { updated++; }
+      }
+    } finally {
+      await sql.end();
+    }
+
+    res.json({ created, updated, skipped });
   });
 
   app.get('/api/soundcloud/public-tracks', async (req, res) => {
@@ -847,12 +1012,16 @@ async function startServer() {
         <html>
           <body>
             <script>
-              window.opener.postMessage({ 
-                type: 'SOUNDCLOUD_AUTH_ERROR', 
-                error: "${error}", 
-                description: "${error_description || ''}" 
-              }, '*');
-              window.close();
+              if (window.opener && !window.opener.closed) {
+                window.opener.postMessage({
+                  type: 'SOUNDCLOUD_AUTH_ERROR',
+                  error: "${error}",
+                  description: "${error_description || ''}"
+                }, '*');
+                window.close();
+              } else {
+                window.location.href = '/settings?soundcloud_error=1';
+              }
             </script>
             <p>Authentication failed: ${error_description || error}. Closing window...</p>
           </body>
@@ -864,12 +1033,16 @@ async function startServer() {
       <html>
         <body>
           <script>
-            window.opener.postMessage({ 
-              type: 'SOUNDCLOUD_AUTH_CODE', 
-              code: "${code}", 
-              state: "${state}" 
-            }, '*');
-            window.close();
+            if (window.opener && !window.opener.closed) {
+              window.opener.postMessage({
+                type: 'SOUNDCLOUD_AUTH_CODE',
+                code: "${code}",
+                state: "${state}"
+              }, '*');
+              window.close();
+            } else {
+              window.location.href = '/soundcloud-callback?code=${code}&state=${state}&fallback=1';
+            }
           </script>
           <p>Authentication successful! Closing window...</p>
         </body>
@@ -1673,6 +1846,11 @@ async function startServer() {
     const queryParams = req.query as Record<string, string>;
     // Ensure source_ids is always set — Songstats returns HTTP 300 without it on catalog/stats endpoints
     if (!queryParams.source_ids) queryParams.source_ids = 'all';
+    // artists/stats requires limit + offset params
+    if (upstreamPath.includes('/artists/stats')) {
+      if (!queryParams.limit)  queryParams.limit  = '100';
+      if (!queryParams.offset) queryParams.offset = '0';
+    }
     const query = new URLSearchParams(queryParams).toString();
     const url = `${SONGSTATS_API_BASE}${upstreamPath}${query ? '?' + query : ''}`;
     try {
@@ -2670,6 +2848,562 @@ Respond with valid JSON only.`;
       console.error('Failed to initialize integration API scheduler:', err);
     }
   }, 7000);
+
+  // ── Chartmetric ───────────────────────────────────────────────────────────
+  const CHARTMETRIC_REFRESH_TOKEN = process.env.CHARTMETRIC_REFRESH_TOKEN;
+  const CHARTMETRIC_ARTIST_ID = process.env.CHARTMETRIC_ARTIST_ID ?? '10492902';
+
+  const nodeFetch: typeof globalThis.fetch = globalThis.fetch;
+
+  // ── Spotify client-credentials helper ────────────────────────────────────
+  const SPOTIFY_CLIENT_ID     = process.env.VITE_SPOTIFY_CLIENT_ID ?? '';
+  const SPOTIFY_CLIENT_SECRET = process.env.VITE_SPOTIFY_CLIENT_SECRET ?? '';
+  let _spotifyToken: string | null = null;
+  let _spotifyTokenExpiry = 0;
+
+  async function getSpotifyToken(): Promise<string | null> {
+    if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) return null;
+    if (_spotifyToken && Date.now() < _spotifyTokenExpiry) return _spotifyToken;
+    try {
+      const r = await nodeFetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Authorization: 'Basic ' + Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString('base64'),
+        },
+        body: 'grant_type=client_credentials',
+      });
+      if (!r.ok) return null;
+      const data: any = await r.json();
+      _spotifyToken = data.access_token ?? null;
+      _spotifyTokenExpiry = Date.now() + (data.expires_in ?? 3600) * 1000 - 60_000;
+      return _spotifyToken;
+    } catch { return null; }
+  }
+
+  // GET /api/spotify/audio-features/:trackId
+  app.get('/api/spotify/audio-features/:trackId', async (req: Request, res: Response) => {
+    const { trackId } = req.params;
+    const token = await getSpotifyToken();
+    if (!token) return res.status(503).json({ error: 'Spotify client credentials not configured' });
+    try {
+      const r = await nodeFetch(`https://api.spotify.com/v1/audio-features/${trackId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!r.ok) return res.status(r.status).json({ error: `Spotify ${r.status}` });
+      const data: any = await r.json();
+      // Key map: 0=C,1=C#,2=D,3=D#,4=E,5=F,6=F#,7=G,8=G#,9=A,10=A#,11=B
+      const KEY_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+      const keyName = data.key >= 0 ? KEY_NAMES[data.key] : null;
+      const modeName = data.mode === 1 ? 'Major' : data.mode === 0 ? 'Minor' : null;
+      res.json({
+        bpm:          data.tempo != null ? Math.round(data.tempo) : null,
+        key:          keyName,
+        mode:         modeName,
+        key_display:  keyName && modeName ? `${keyName} ${modeName}` : null,
+        time_signature: data.time_signature ?? null,
+        energy:       data.energy ?? null,
+        danceability: data.danceability ?? null,
+        valence:      data.valence ?? null,
+        loudness:     data.loudness ?? null,
+        speechiness:  data.speechiness ?? null,
+        acousticness: data.acousticness ?? null,
+        instrumentalness: data.instrumentalness ?? null,
+        liveness:     data.liveness ?? null,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  async function getChartmetricToken(): Promise<string | null> {
+    if (!CHARTMETRIC_REFRESH_TOKEN) return null;
+    try {
+      const r = await nodeFetch('https://api.chartmetric.com/api/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshtoken: CHARTMETRIC_REFRESH_TOKEN }),
+      });
+      if (!r.ok) return null;
+      const data: any = await r.json();
+      return data.token ?? null;
+    } catch { return null; }
+  }
+
+  async function cmFetch(path: string, token: string): Promise<any> {
+    const r = await nodeFetch(`https://api.chartmetric.com${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) throw new Error(`Chartmetric ${r.status}: ${path}`);
+    return r.json();
+  }
+
+  // GET /api/chartmetric/track?isrc=XXXX  — fetch track metadata by ISRC
+  app.get('/api/chartmetric/track', async (req: Request, res: Response) => {
+    const { isrc } = req.query as { isrc?: string };
+    if (!isrc) return res.status(400).json({ error: 'isrc required' });
+    const token = await getChartmetricToken();
+    if (!token) return res.status(503).json({ error: 'Chartmetric not configured' });
+    try {
+      // Search by ISRC to get track ID + album metadata (UPC, label)
+      const searchData = await cmFetch(`/api/search?q=${encodeURIComponent(isrc)}&type=tracks`, token);
+      const tracks: any[] = searchData?.obj?.tracks ?? [];
+      const match = tracks.find((t: any) => t.isrc === isrc) ?? tracks[0];
+      if (!match?.id) return res.json({ track: null });
+
+      // Fetch full track metadata for health/stage/genre
+      const meta = await cmFetch(`/api/track/${match.id}`, token);
+      const obj = meta?.obj ?? meta;
+      const album = match.album?.[0] ?? {};
+
+      const cm_stat = obj.cm_statistics ?? {};
+      const combined = {
+        cm_track_id: match.id,
+        name: match.name,
+        isrc: match.isrc,
+        upc: album.upc ?? null,
+        label_name: album.label ?? obj.label_name ?? null,
+        release_date: album.release_date ?? obj.release_date ?? null,
+        genres: (match.genres ?? obj.genres ?? []).map((g: any) => typeof g === 'string' ? g : g.name),
+        moods: (obj.moods ?? []).map((m: any) => typeof m === 'string' ? m : m.name),
+        tags: obj.tags ?? null,
+        explicit: obj.explicit ?? false,
+        duration_ms: obj.duration_ms ?? null,
+        songwriters: obj.songwriters ?? null,
+        career_health: obj.career_health ?? null,
+        track_stage: obj.track_stage ?? null,
+        image_url: match.image_url ?? null,
+        // cm_statistics latest values
+        sp_streams: cm_stat.sp_streams ?? null,
+        sp_popularity: cm_stat.sp_popularity ?? null,
+        num_sp_playlists: cm_stat.num_sp_playlists ?? null,
+        num_sp_editorial_playlists: cm_stat.num_sp_editorial_playlists ?? null,
+        sp_playlist_total_reach: cm_stat.sp_playlist_total_reach ?? null,
+        num_am_playlists: cm_stat.num_am_playlists ?? null,
+        num_de_playlists: cm_stat.num_de_playlists ?? null,
+        num_yt_playlists: cm_stat.num_yt_playlists ?? null,
+        num_az_playlists: cm_stat.num_az_playlists ?? null,
+        shazam_counts: cm_stat.shazam_counts ?? null,
+        soundcloud_plays: cm_stat.soundcloud_playback_count ?? null,
+        youtube_views: cm_stat.youtube_views ?? null,
+        youtube_likes: cm_stat.youtube_likes ?? null,
+        tiktok_counts: cm_stat.tiktok_counts ?? null,
+        tiktok_top_videos_views: cm_stat.tiktok_top_videos_views ?? null,
+        tiktok_top_videos_likes: cm_stat.tiktok_top_videos_likes ?? null,
+        genius_page_views: cm_stat.genius_page_views ?? null,
+        pandora_lifetime_streams: cm_stat.pandora_lifetime_streams ?? null,
+        airplay_streams: cm_stat.airplay_streams ?? null,
+        tidal_popularity: cm_stat.tidal_popularity ?? null,
+        score: cm_stat.score ?? null,
+        // diffs (monthly)
+        monthly_diff: cm_stat.monthly_diff ?? null,
+        monthly_diff_percent: cm_stat.monthly_diff_percent ?? null,
+        weekly_diff: cm_stat.weekly_diff ?? null,
+      };
+
+      res.json({ track: combined });
+    } catch (err: any) {
+      console.error('[chartmetric/track]', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/chartmetric/artist  — artist overview stats
+  app.get('/api/chartmetric/artist', async (req: Request, res: Response) => {
+    const token = await getChartmetricToken();
+    if (!token) return res.status(503).json({ error: 'Chartmetric not configured' });
+    try {
+      const meta = await cmFetch(`/api/artist/${CHARTMETRIC_ARTIST_ID}`, token);
+      res.json({ artist: meta?.obj ?? meta });
+    } catch (err: any) {
+      console.error('[chartmetric/artist]', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/chartmetric/track/:cmId/stats?platform=spotify&type=popularity&since=2023-01-01
+  app.get('/api/chartmetric/track/:cmId/stats', async (req: Request, res: Response) => {
+    const { cmId } = req.params;
+    const { platform = 'spotify', type = 'popularity', mode = 'most-history', since = '2023-01-01', until } = req.query as Record<string, string>;
+    const token = await getChartmetricToken();
+    if (!token) return res.status(503).json({ error: 'Chartmetric not configured' });
+    try {
+      const params = new URLSearchParams({ type, since });
+      if (until) params.set('until', until);
+      const data = await cmFetch(`/api/track/${cmId}/${platform}/stats/${mode}?${params}`, token);
+      const series = data?.obj?.[0] ?? null;
+      res.json({ series });
+    } catch (err: any) {
+      console.error('[chartmetric/track/stats]', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/chartmetric/track/:cmId/playlists?platform=spotify&status=current
+  app.get('/api/chartmetric/track/:cmId/playlists', async (req: Request, res: Response) => {
+    const { cmId } = req.params;
+    const { platform = 'spotify', status = 'current', limit = '20' } = req.query as Record<string, string>;
+    const token = await getChartmetricToken();
+    if (!token) return res.status(503).json({ error: 'Chartmetric not configured' });
+    try {
+      const params = new URLSearchParams({ editorial: 'true', majorCurator: 'true', indie: 'true', limit });
+      const data = await cmFetch(`/api/track/${cmId}/${platform}/${status}/playlists?${params}`, token);
+      res.json({ playlists: data?.obj ?? [] });
+    } catch (err: any) {
+      console.error('[chartmetric/track/playlists]', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/chartmetric/track/:cmId/ids  — cross-platform IDs
+  app.get('/api/chartmetric/track/:cmId/ids', async (req: Request, res: Response) => {
+    const { cmId } = req.params;
+    const token = await getChartmetricToken();
+    if (!token) return res.status(503).json({ error: 'Chartmetric not configured' });
+    try {
+      const data = await cmFetch(`/api/track/chartmetric/${cmId}/get-ids`, token);
+      res.json({ ids: data?.obj?.[0] ?? null });
+    } catch (err: any) {
+      console.error('[chartmetric/track/ids]', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/chartmetric/track/:cmId/milestones
+  app.get('/api/chartmetric/track/:cmId/milestones', async (req: Request, res: Response) => {
+    const { cmId } = req.params;
+    const token = await getChartmetricToken();
+    if (!token) return res.status(503).json({ error: 'Chartmetric not configured' });
+    try {
+      const data = await cmFetch(`/api/track/${cmId}/milestones`, token);
+      res.json({ milestones: data?.obj?.insights ?? [] });
+    } catch (err: any) {
+      console.error('[chartmetric/track/milestones]', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/chartmetric/track/:cmId/tiktok-videos
+  app.get('/api/chartmetric/track/:cmId/tiktok-videos', async (req: Request, res: Response) => {
+    const { cmId } = req.params;
+    const token = await getChartmetricToken();
+    if (!token) return res.status(503).json({ error: 'Chartmetric not configured' });
+    try {
+      const data = await cmFetch(`/api/track/${cmId}/topVideos?sortBy=views`, token);
+      res.json({ videos: data?.obj ?? [] });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/chartmetric/track/:cmId/youtube-shorts
+  app.get('/api/chartmetric/track/:cmId/youtube-shorts', async (req: Request, res: Response) => {
+    const { cmId } = req.params;
+    const token = await getChartmetricToken();
+    if (!token) return res.status(503).json({ error: 'Chartmetric not configured' });
+    try {
+      const data = await cmFetch(`/api/track/youtube/${cmId}/topShorts?sortBy=views`, token);
+      res.json({ shorts: data?.obj ?? [] });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/chartmetric/track/:cmId/related
+  app.get('/api/chartmetric/track/:cmId/related', async (req: Request, res: Response) => {
+    const { cmId } = req.params;
+    const token = await getChartmetricToken();
+    if (!token) return res.status(503).json({ error: 'Chartmetric not configured' });
+    try {
+      const data = await cmFetch(`/api/track/${cmId}/relatedTracks`, token);
+      res.json({ tracks: data?.obj ?? [] });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/integrations/chartmetric/sync-releases
+  // Enriches releases table with Chartmetric track data (UPC, label, playlist counts, Shazam)
+  app.post('/api/integrations/chartmetric/sync-releases', async (req: Request, res: Response) => {
+    const token = await getChartmetricToken();
+    if (!token) return res.status(503).json({ error: 'Chartmetric not configured' });
+    const databaseUrl = readDatabaseUrlFromEnv();
+    if (!databaseUrl) return res.status(503).json({ error: 'DATABASE_URL not configured' });
+    const sql = postgres(databaseUrl, { ssl: 'require', max: 1 });
+    try {
+      // All releases that have a Spotify ID or an ISRC
+      const releases = await sql`
+        SELECT id, title, isrc, spotify_track_id, performance, distribution
+        FROM releases
+        WHERE spotify_track_id IS NOT NULL OR isrc IS NOT NULL
+      `;
+      const results: any[] = [];
+      for (const release of releases) {
+        try {
+          let cmId: number | null = null;
+          let resolvedIsrc: string | null = release.isrc ?? null;
+
+          // Primary: look up by Spotify track ID — also captures iTunes/YouTube IDs
+          let platformIds: Record<string, any> = {};
+          if (release.spotify_track_id) {
+            const idsData = await cmFetch(`/api/track/spotify/${release.spotify_track_id}/get-ids`, token);
+            const ids = idsData?.obj?.[0] ?? null;
+            if (ids?.chartmetric_ids?.[0]) {
+              cmId = ids.chartmetric_ids[0];
+              resolvedIsrc = ids.isrc ?? resolvedIsrc;
+              platformIds = {
+                itunes_ids:     ids.itunes_ids ?? null,
+                youtube_ids:    ids.youtube_ids ?? null,
+                soundcloud_ids: ids.soundcloud_ids ?? null,
+                deezer_ids:     ids.deezer_ids ?? null,
+                tiktok_ids:     ids.tiktok_ids ?? null,
+                shazam_ids:     ids.shazam_ids ?? null,
+                genius_ids:     ids.genius_ids ?? null,
+              };
+            }
+          }
+
+          // Fallback: search by ISRC if Spotify lookup failed
+          if (!cmId && resolvedIsrc) {
+            const searchData = await cmFetch(`/api/search?q=${encodeURIComponent(resolvedIsrc)}&type=tracks`, token);
+            const tracks: any[] = searchData?.obj?.tracks ?? [];
+            const match = tracks.find((t: any) => t.isrc === resolvedIsrc) ?? tracks[0];
+            if (match?.id) cmId = match.id;
+          }
+
+          if (!cmId) { results.push({ id: release.id, title: release.title, status: 'not_found' }); continue; }
+
+          // Backfill ISRC on the release row if we now know it
+          if (resolvedIsrc && !release.isrc) {
+            await sql`UPDATE releases SET isrc = ${resolvedIsrc} WHERE id = ${release.id}`;
+          }
+
+          const meta = await cmFetch(`/api/track/${cmId}`, token);
+          const obj = meta?.obj ?? meta;
+          const album = (obj.albums ?? [])[0] ?? {};
+          const cm_stat = obj.cm_statistics ?? {};
+
+          // Full data shape — same as /api/chartmetric/track live endpoint
+          const cm: Record<string, any> = {
+            cm_track_id: cmId,
+            name: obj.name ?? release.title,
+            isrc: resolvedIsrc ?? obj.isrc ?? null,
+            upc: album.upc ?? null,
+            label_name: album.label ?? obj.album_label ?? null,
+            release_date: album.release_date ?? obj.release_date ?? null,
+            genres: (obj.tags ?? '').split(',').map((g: string) => g.trim()).filter(Boolean),
+            moods: (obj.moods ?? []).map((m: any) => typeof m === 'string' ? m : m.name),
+            tags: obj.tags ?? null,
+            explicit: obj.explicit ?? false,
+            duration_ms: obj.duration_ms ?? null,
+            songwriters: obj.songwriters ?? null,
+            career_health: obj.career_health ?? null,
+            track_stage: obj.track_stage ?? null,
+            image_url: obj.image_url ?? null,
+            // cm_statistics
+            sp_streams: cm_stat.sp_streams ?? null,
+            sp_popularity: cm_stat.sp_popularity ?? null,
+            num_sp_playlists: cm_stat.num_sp_playlists ?? null,
+            num_sp_editorial_playlists: cm_stat.num_sp_editorial_playlists ?? null,
+            sp_playlist_total_reach: cm_stat.sp_playlist_total_reach ?? null,
+            num_am_playlists: cm_stat.num_am_playlists ?? null,
+            num_de_playlists: cm_stat.num_de_playlists ?? null,
+            num_yt_playlists: cm_stat.num_yt_playlists ?? null,
+            num_az_playlists: cm_stat.num_az_playlists ?? null,
+            shazam_counts: cm_stat.shazam_counts ?? null,
+            soundcloud_plays: cm_stat.soundcloud_playback_count ?? null,
+            youtube_views: cm_stat.youtube_views ?? null,
+            youtube_likes: cm_stat.youtube_likes ?? null,
+            tiktok_counts: cm_stat.tiktok_counts ?? null,
+            tiktok_top_videos_views: cm_stat.tiktok_top_videos_views ?? null,
+            tiktok_top_videos_likes: cm_stat.tiktok_top_videos_likes ?? null,
+            genius_page_views: cm_stat.genius_page_views ?? null,
+            pandora_lifetime_streams: cm_stat.pandora_lifetime_streams ?? null,
+            airplay_streams: cm_stat.airplay_streams ?? null,
+            tidal_popularity: cm_stat.tidal_popularity ?? null,
+            score: cm_stat.score ?? null,
+            monthly_diff: cm_stat.monthly_diff ?? null,
+            monthly_diff_percent: cm_stat.monthly_diff_percent ?? null,
+            weekly_diff: cm_stat.weekly_diff ?? null,
+            // Cross-platform IDs from Chartmetric get-ids
+            ...platformIds,
+            // Derived links
+            apple_music_url: platformIds.itunes_ids?.[0]
+              ? `https://music.apple.com/album/-/${platformIds.itunes_ids[0]}`
+              : null,
+            youtube_url: platformIds.youtube_ids?.[0]
+              ? `https://www.youtube.com/watch?v=${platformIds.youtube_ids[0]}`
+              : null,
+            synced_at: new Date().toISOString(),
+          };
+
+          // Also update performance.streams.spotify so the track card displays it
+          const existingPerf = (release.performance ?? {}) as Record<string, any>;
+          const existingStreams = (existingPerf.streams ?? {}) as Record<string, number>;
+          const updatedPerformance = {
+            ...existingPerf,
+            streams: {
+              ...existingStreams,
+              ...(cm.sp_streams != null ? { spotify: cm.sp_streams } : {}),
+              ...(cm.soundcloud_plays != null ? { soundcloud: cm.soundcloud_plays } : {}),
+              ...(cm.youtube_views != null ? { youtube: cm.youtube_views } : {}),
+            },
+          };
+
+          // Backfill distribution URLs from Chartmetric IDs if not already set
+          const existingDist = (release.distribution ?? {}) as Record<string, any>;
+          const updatedDist = {
+            ...existingDist,
+            ...(cm.apple_music_url && !existingDist.apple_music_url ? { apple_music_url: cm.apple_music_url } : {}),
+            ...(cm.youtube_url && !existingDist.youtube_url ? { youtube_url: cm.youtube_url } : {}),
+          };
+
+          await sql`
+            UPDATE releases
+            SET
+              chartmetric_data = ${JSON.stringify(cm)},
+              performance = ${sql.json(updatedPerformance)},
+              distribution = ${sql.json(updatedDist)},
+              updated_at = NOW()
+            WHERE id = ${release.id}
+          `;
+
+          // Log cross-platform snapshot so charts show growth over time
+          await sql`
+            INSERT INTO release_analytics_snapshots
+              (release_id, sp_streams, sp_popularity, youtube_views, snapped_at)
+            VALUES (
+              ${release.id}::uuid,
+              ${cm.sp_streams ?? null},
+              ${cm.sp_popularity ?? null},
+              ${cm.youtube_views ?? null},
+              NOW()
+            )
+          `.catch(() => {});
+
+          results.push({ id: release.id, title: release.title, status: 'updated', cm });
+        } catch (e: any) {
+          results.push({ id: release.id, status: 'error', error: e.message });
+        }
+        await new Promise(r => setTimeout(r, 300)); // rate limit
+      }
+      res.json({ synced: results.length, results });
+    } catch (err: any) {
+      console.error('[chartmetric/sync-releases]', err.message);
+      res.status(500).json({ error: err.message });
+    } finally {
+      await sql.end();
+    }
+  });
+
+  // ── Artist-level Chartmetric routes ────────────────────────────────────────
+
+  // GET /api/chartmetric/artist/cmstats
+  app.get('/api/chartmetric/artist/cmstats', async (req: Request, res: Response) => {
+    try {
+      const token = await getCmToken();
+      const data = await cmFetch(`/api/artist/${CHARTMETRIC_ARTIST_ID}/cmStats`, token);
+      res.json(data?.obj ?? data ?? {});
+    } catch (err: any) {
+      console.error('[chartmetric/artist/cmstats]', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/chartmetric/artist/career
+  app.get('/api/chartmetric/artist/career', async (req: Request, res: Response) => {
+    try {
+      const token = await getCmToken();
+      const data = await cmFetch(`/api/artist/${CHARTMETRIC_ARTIST_ID}/career`, token);
+      res.json(data?.obj ?? data ?? {});
+    } catch (err: any) {
+      console.error('[chartmetric/artist/career]', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/chartmetric/artist/stat/:source?since=YYYY-MM-DD&until=YYYY-MM-DD
+  app.get('/api/chartmetric/artist/stat/:source', async (req: Request, res: Response) => {
+    try {
+      const { source } = req.params;
+      const params = new URLSearchParams();
+      if (req.query.since) params.set('since', String(req.query.since));
+      if (req.query.until) params.set('until', String(req.query.until));
+      const token = await getCmToken();
+      const data = await cmFetch(`/api/artist/${CHARTMETRIC_ARTIST_ID}/stat/${source}?${params}`, token);
+      res.json(data?.obj ?? data ?? {});
+    } catch (err: any) {
+      console.error('[chartmetric/artist/stat]', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/chartmetric/artist/milestones
+  app.get('/api/chartmetric/artist/milestones', async (req: Request, res: Response) => {
+    try {
+      const token = await getCmToken();
+      const data = await cmFetch(`/api/artist/${CHARTMETRIC_ARTIST_ID}/milestones`, token);
+      res.json(data?.obj ?? data ?? {});
+    } catch (err: any) {
+      console.error('[chartmetric/artist/milestones]', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/chartmetric/artist/news
+  app.get('/api/chartmetric/artist/news', async (req: Request, res: Response) => {
+    try {
+      const token = await getCmToken();
+      const data = await cmFetch(`/api/artist/${CHARTMETRIC_ARTIST_ID}/news`, token);
+      res.json(data?.obj ?? data ?? {});
+    } catch (err: any) {
+      console.error('[chartmetric/artist/news]', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/chartmetric/artist/playlists?platform=spotify&status=current
+  app.get('/api/chartmetric/artist/playlists', async (req: Request, res: Response) => {
+    try {
+      const platform = String(req.query.platform ?? 'spotify');
+      const status = String(req.query.status ?? 'current');
+      const params = new URLSearchParams();
+      if (req.query.limit) params.set('limit', String(req.query.limit));
+      const token = await getCmToken();
+      const data = await cmFetch(`/api/artist/${CHARTMETRIC_ARTIST_ID}/${platform}/${status}/playlists?${params}`, token);
+      res.json(data?.obj ?? data ?? {});
+    } catch (err: any) {
+      console.error('[chartmetric/artist/playlists]', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/chartmetric/artist/where-people-listen?latest=true
+  app.get('/api/chartmetric/artist/where-people-listen', async (req: Request, res: Response) => {
+    try {
+      const params = new URLSearchParams();
+      if (req.query.latest) params.set('latest', String(req.query.latest));
+      if (req.query.since) params.set('since', String(req.query.since));
+      const token = await getCmToken();
+      const data = await cmFetch(`/api/artist/${CHARTMETRIC_ARTIST_ID}/where-people-listen?${params}`, token);
+      res.json(data?.obj ?? data ?? {});
+    } catch (err: any) {
+      console.error('[chartmetric/artist/where-people-listen]', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/chartmetric/artist/related
+  app.get('/api/chartmetric/artist/related', async (req: Request, res: Response) => {
+    try {
+      const token = await getCmToken();
+      const data = await cmFetch(`/api/artist/${CHARTMETRIC_ARTIST_ID}/relatedartists`, token);
+      res.json(data?.obj ?? data ?? {});
+    } catch (err: any) {
+      console.error('[chartmetric/artist/related]', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   const httpServer = http.createServer(app);
 

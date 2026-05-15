@@ -15,6 +15,10 @@ import {
   LogOut,
   Settings,
   FileText,
+  BarChart2,
+  Music2,
+  Video,
+  Plug,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { GlobalSearch } from './GlobalSearch';
@@ -38,6 +42,7 @@ const TOP_NAV: NavGroup[] = [
     label: 'Music',
     children: [
       { label: 'Ideas & WIPs', path: '/ideas', icon: Sparkles, description: 'Tracks in progress' },
+      { label: 'Released Tracks', path: '/music/released', icon: Music2, description: 'Your Spotify & SoundCloud releases' },
     ],
   },
   {
@@ -50,6 +55,14 @@ const TOP_NAV: NavGroup[] = [
     ],
   },
   { label: 'Coach', path: '/coach' },
+  {
+    label: 'Connectors',
+    children: [
+      { label: 'Social Analytics', path: '/connectors/social-analytics', icon: BarChart2, description: 'Instagram, TikTok, YouTube & more' },
+      { label: 'Music Analytics', path: '/connectors/music-analytics', icon: Music2, description: 'Streams, listeners & royalties' },
+      { label: 'Post & Schedule', path: '/connectors/post-schedule', icon: Video, description: 'Schedule Reels across platforms' },
+    ],
+  },
 ];
 
 const MOBILE_NAV = [
@@ -97,8 +110,8 @@ function NavDropdown({ label, children }: { label: string; children: DropdownChi
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.97 }}
             transition={{ duration: 0.13, ease: 'easeOut' }}
-      className="absolute top-[calc(100%+6px)] left-0 z-50 min-w-[13rem] overflow-hidden rounded-2xl border border-border/60 shadow-[var(--shadow-lifted)]"
-            style={{ background: 'rgba(255,255,255,0.96)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
+      className="absolute top-[calc(100%+6px)] left-0 z-[20] min-w-[13rem] overflow-hidden rounded-2xl border border-border/60 shadow-[var(--shadow-lifted)]"
+            style={{ background: 'var(--shell-panel)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
           >
             {children.map((item) => (
               <NavLink
@@ -253,9 +266,10 @@ function LayoutInner() {
           {/* WES wordmark */}
           <NavLink
             to="/dashboard"
-            className="ml-2 flex items-center"
+            className="ml-2 flex items-center gap-1.5 group"
           >
-            <span className="text-[13px] font-bold tracking-[0.18em] text-text-primary uppercase select-none">
+            <span className="w-1.5 h-1.5 rounded-full bg-brand group-hover:bg-accent transition-colors duration-200" />
+            <span className="text-[13px] font-bold tracking-[0.2em] text-text-primary uppercase select-none font-heading">
               WES
             </span>
           </NavLink>
@@ -282,7 +296,7 @@ function LayoutInner() {
               style={{ background: 'var(--shell-panel)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)' }}
             >
               <div className="h-14 px-4 flex items-center justify-between border-b border-border/50">
-                <span className="text-[13px] font-bold tracking-[0.18em] text-text-primary uppercase">WES</span>
+                <span className="text-[13px] font-bold tracking-[0.2em] text-text-primary uppercase font-heading">WES</span>
                 <button
                   onClick={() => setMobileOpen(false)}
                   className="p-2 text-text-muted hover:text-text-primary rounded-lg transition-colors"

@@ -82,20 +82,9 @@ export function useSoundCloud() {
       const response = await axios.get(`/api/soundcloud/login?code_challenge=${challenge}&state=${state}`);
       
       if (response.data && response.data.url) {
-        const width = 600;
-        const height = 700;
-        const left = window.screenX + (window.outerWidth - width) / 2;
-        const top = window.screenY + (window.outerHeight - height) / 2;
-        
-        const popup = window.open(
-          response.data.url,
-          'soundcloud_login',
-          `width=${width},height=${height},left=${left},top=${top}`
-        );
-
-        if (!popup) {
-          alert('Popup blocked! Please allow popups for this site.');
-        }
+        // Store return path so callback can redirect back
+        localStorage.setItem('soundcloud_return_path', window.location.pathname);
+        window.location.href = response.data.url;
       } else {
         throw new Error('No login URL returned from server');
       }
@@ -104,36 +93,6 @@ export function useSoundCloud() {
       alert('Failed to start SoundCloud login: ' + (err.message || 'Unknown error'));
     }
   }, []);
-
-  useEffect(() => {
-    const handleMessage = async (event: MessageEvent) => {
-      // Validate origin
-      const origin = event.origin;
-      if (
-        !origin.endsWith('.run.app') &&
-        !origin.endsWith('.replit.dev') &&
-        !origin.includes('localhost')
-      ) {
-        return;
-      }
-
-      if (event.data?.type === 'SOUNDCLOUD_AUTH_CODE') {
-        const { code, state } = event.data;
-        try {
-          await exchangeToken(code, state);
-        } catch (err) {
-          console.error('SoundCloud authentication failed:', err);
-          alert('SoundCloud authentication failed. Please try again.');
-        }
-      } else if (event.data?.type === 'SOUNDCLOUD_AUTH_ERROR') {
-        console.error('SoundCloud auth error from popup:', event.data.error, event.data.description);
-        alert(`SoundCloud login failed: ${event.data.description || event.data.error}`);
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [exchangeToken]);
 
   const fetchMe = useCallback(async () => {
     if (!token) return null;

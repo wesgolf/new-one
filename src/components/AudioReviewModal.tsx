@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Download, Layers, Loader2, MapPin, MessageSquare, Pause, Play, Plus, Rocket, Send, Upload, X } from 'lucide-react';
+import { ChevronDown, Download, Layers, Loader2, MapPin, MessageSquare, Pause, Play, Plus, Send, Upload, X } from 'lucide-react';
 import { analyzeIdeaAudioInBackground } from '../lib/ideaAudioAnalysis';
 import { saveIdea, saveIdeaAsset, saveIdeaComment, updateIdeaCommentTimestamp, uploadIdeaAudio } from '../lib/supabaseData';
 import { dropboxConfigured, shouldFallbackFromDropbox, uploadAudioToDropbox } from '../services/dropboxService';
@@ -107,7 +107,6 @@ export function AudioReviewModal({ open, idea, assets, comments, initialSelected
   const [uploadingVersion, setUploadingVersion] = useState(false);
   const [versionNotice, setVersionNotice] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'notes' | 'timeline'>('notes');
-  const [promotingRelease, setPromotingRelease] = useState(false);
   const commentInputRef = useRef<HTMLInputElement | null>(null);
 
   const versions = useMemo(() => labeledAudioAssets(assets), [assets]);
@@ -161,50 +160,34 @@ export function AudioReviewModal({ open, idea, assets, comments, initialSelected
       items.push({
         id: `idea-created-${idea.id}`,
         at: new Date(idea.created_at).getTime(),
-        title: 'Idea created',
-        meta: idea.next_action ? `Next action: ${idea.next_action.replaceAll('_', ' ')}` : null,
+        title: idea.title,
+        meta: 'Idea started',
       });
     }
 
     for (const version of versions) {
+      const uploader = (version.metadata as any)?.uploaded_by_name as string | undefined;
+      const note = (version.metadata as any)?.note as string | undefined;
       items.push({
         id: `version-${version.id}`,
         at: new Date(version.created_at ?? 0).getTime(),
-        title: `${version.versionLabel} uploaded`,
-        meta:
-          ((version.metadata as any)?.uploaded_by_name as string | undefined) ??
-          ((version.metadata as any)?.note as string | undefined) ??
-          null,
-        body: (version.metadata as any)?.note ?? null,
+        title: version.versionLabel,
+        meta: uploader ?? null,
+        body: note ?? null,
       });
     }
 
     for (const comment of comments) {
+      const versionCtx = comment.version != null ? `on Version ${comment.version}` : null;
       items.push({
         id: `comment-${comment.id}`,
         at: new Date(comment.created_at ?? 0).getTime(),
-        title: `${comment.author_name ?? 'A collaborator'} left feedback`,
-        meta:
-          comment.version != null
-            ? `Version ${comment.version}`
-            : comment.asset_id
-              ? 'Version note'
-              : 'General note',
+        title: comment.author_name ?? 'Someone',
+        meta: versionCtx,
         body: comment.body,
       });
     }
 
-    if (idea.promoted_to_release_at) {
-      items.push({
-        id: `release-handoff-${idea.id}`,
-        at: new Date(idea.promoted_to_release_at).getTime(),
-        title: 'Moved into release planning',
-        meta:
-          idea.release_handoff?.selected_version != null
-            ? `Based on Version ${idea.release_handoff.selected_version}`
-            : 'Release handoff ready',
-      });
-    }
 
     return items.sort((a, b) => b.at - a.at);
   }, [comments, idea, versions]);
@@ -388,7 +371,7 @@ export function AudioReviewModal({ open, idea, assets, comments, initialSelected
       >
 
         <div className="relative shrink-0 border-b border-border px-6 py-5">
-          <div className="absolute inset-y-0 left-0 w-40 bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.14),_transparent_72%)]" />
+          <div className="absolute inset-y-0 left-0 w-40 bg-[radial-gradient(circle_at_top_left,_rgba(15,23,42,0.05),_transparent_72%)]" />
           <div className="relative flex items-center justify-between gap-4">
             <div className="min-w-0 flex-1">
               <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Audio Review</p>
@@ -401,22 +384,13 @@ export function AudioReviewModal({ open, idea, assets, comments, initialSelected
                   {sortedComments.length} note{sortedComments.length === 1 ? '' : 's'}
                 </span>
                 {idea.next_action ? (
-                  <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-blue-700">
+                  <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-700 capitalize">
                     {idea.next_action.replaceAll('_', ' ')}
                   </span>
                 ) : null}
               </div>
             </div>
             <div className="ml-4 flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                onClick={() => void handlePromoteToRelease()}
-                disabled={promotingRelease || !audioAsset}
-                className="btn-secondary !rounded-xl !px-3 !py-2 !text-xs"
-              >
-                {promotingRelease ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Rocket className="h-3.5 w-3.5" />}
-                {idea.promoted_to_release_at ? 'Update handoff' : 'Promote'}
-              </button>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -485,7 +459,7 @@ export function AudioReviewModal({ open, idea, assets, comments, initialSelected
             </div>
           ) : null}
           {versionUploadFile ? (
-            <div className="mb-5 rounded-[1.6rem] border border-blue-200 bg-blue-50 p-4">
+            <div className="mb-5 rounded-[1.6rem] border border-slate-200 bg-slate-50 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-slate-900">Add Version {versions.length + 1}</p>
@@ -508,13 +482,13 @@ export function AudioReviewModal({ open, idea, assets, comments, initialSelected
                   value={versionUploadNote}
                   onChange={(event) => setVersionUploadNote(event.target.value)}
                   placeholder="Short note for this version"
-                  className="flex-1 rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-400"
+                  className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-400"
                 />
                 <button
                   type="button"
                   onClick={() => void handleAddVersion()}
                   disabled={uploadingVersion}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
                 >
                   {uploadingVersion ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                   Save version
@@ -785,22 +759,22 @@ export function AudioReviewModal({ open, idea, assets, comments, initialSelected
               <p className="text-xs text-slate-400 mt-1">Upload a version or add feedback to build the track timeline.</p>
             </div>
           ) : (
-            <ul className="space-y-3 px-6 py-5">
+            <ul className="space-y-2 px-6 py-5">
               {timelineItems.map((item) => (
-                <li key={item.id} className="rounded-[1.35rem] border border-slate-200/80 bg-slate-50/80 px-5 py-4">
+                <li key={item.id} className="rounded-2xl border border-slate-100 bg-white px-4 py-3.5 shadow-[0_1px_4px_rgba(15,23,42,0.04)]">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-800">{item.title}</p>
-                      {item.meta ? (
-                        <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">
-                          {item.meta}
-                        </p>
-                      ) : null}
-                      {item.body ? (
-                        <p className="mt-2 text-sm text-slate-600 line-clamp-2">{item.body}</p>
-                      ) : null}
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <p className="text-sm font-semibold text-slate-800 leading-snug">{item.title}</p>
+                        {item.meta && (
+                          <span className="text-[11px] text-slate-400">{item.meta}</span>
+                        )}
+                      </div>
+                      {item.body && (
+                        <p className="mt-1.5 text-sm text-slate-500 line-clamp-2 leading-relaxed">{item.body}</p>
+                      )}
                     </div>
-                    <span className="shrink-0 text-[11px] text-slate-400">
+                    <span className="shrink-0 text-[11px] text-slate-400 whitespace-nowrap">
                       {formatMetaDate(new Date(item.at).toISOString())}
                     </span>
                   </div>
